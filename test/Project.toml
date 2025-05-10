@@ -1,0 +1,4 @@
+[deps]
+ArrayAD = "c45fa1ca-6901-44ac-ae5b-5513a4852d50"
+MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
