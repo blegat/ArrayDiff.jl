@@ -648,8 +648,7 @@ function test_linearity_no_hess()
     MOI.initialize(evaluator, [:Grad, :Jac])
     # We initialized without the need for the hessian so
     # the linearity shouldn't be computed.
-    @test only(evaluator.backend.subexpressions).linearity ==
-          ArrayAD.NONLINEAR
+    @test only(evaluator.backend.subexpressions).linearity == ArrayAD.NONLINEAR
     return
 end
 

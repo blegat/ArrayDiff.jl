@@ -23,9 +23,11 @@ function MOI.Nonlinear.Evaluator(
     ::Mode,
     ordered_variables::Vector{MOI.VariableIndex},
 )
-    return MOI.Nonlinear.Evaluator(model, NLPEvaluator(model, ordered_variables))
+    return MOI.Nonlinear.Evaluator(
+        model,
+        NLPEvaluator(model, ordered_variables),
+    )
 end
-
 
 # Override basic math functions to return NaN instead of throwing errors.
 # This is what NLP solvers expect, and sometimes the results aren't needed
