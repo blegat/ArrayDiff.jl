@@ -2,3 +2,6 @@ name = "ArrayAD"
 uuid = "c45fa1ca-6901-44ac-ae5b-5513a4852d50"
 authors = ["Benoît Legat <benoit.legat@gmail.com>"]
 version = "0.1.0"
+
+[deps]
+MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"

@@ -4,7 +4,7 @@
 # Use of this source code is governed by an MIT-style license that can be found
 # in the LICENSE.md file or at https://opensource.org/licenses/MIT.
 
-module TestReverseAD
+module TestArrayAD
 
 using Test
 import LinearAlgebra
@@ -12,8 +12,8 @@ import MathOptInterface as MOI
 import SparseArrays
 
 const Nonlinear = MOI.Nonlinear
-const ReverseAD = Nonlinear.ReverseAD
-const Coloring = ReverseAD.Coloring
+const ArrayAD = Nonlinear.ArrayAD
+const Coloring = ArrayAD.Coloring
 
 function runtests()
     for name in names(@__MODULE__; all = true)
@@ -553,11 +553,11 @@ function test_linearity()
         ex = Nonlinear.add_expression(model, input)
         expr = model[ex]
         adj = Nonlinear.adjacency_matrix(expr.nodes)
-        nodes = ReverseAD._replace_moi_variables(expr.nodes, variables)
-        ret = ReverseAD._classify_linearity(nodes, adj, ReverseAD.Linearity[])
+        nodes = ArrayAD._replace_moi_variables(expr.nodes, variables)
+        ret = ArrayAD._classify_linearity(nodes, adj, ArrayAD.Linearity[])
         @test ret[1] == test_value
         indexed_set = Coloring.IndexedSet(100)
-        edge_list = ReverseAD._compute_hessian_sparsity(
+        edge_list = ArrayAD._compute_hessian_sparsity(
             nodes,
             adj,
             ret,
@@ -565,14 +565,14 @@ function test_linearity()
             Set{Tuple{Int,Int}}[],
             Vector{Int}[],
         )
-        if ret[1] != ReverseAD.NONLINEAR
+        if ret[1] != ArrayAD.NONLINEAR
             @test length(edge_list) == 0
         elseif length(IJ) > 0
             @test IJ == edge_list
         end
         if length(indices) > 0
             empty!(indexed_set)
-            ReverseAD._compute_gradient_sparsity!(indexed_set, nodes)
+            ArrayAD._compute_gradient_sparsity!(indexed_set, nodes)
             ix = sort(collect(indexed_set))
             @test indices == ix
         end
@@ -580,58 +580,58 @@ function test_linearity()
     end
     _test_linearity(
         :(sin($x^2) + cos($y * 4) - 2.0),
-        ReverseAD.NONLINEAR,
+        ArrayAD.NONLINEAR,
         Set([(2, 2), (1, 1)]),
         [1, 2],
     )
-    _test_linearity(:(3 * 4 * ($x + $y)), ReverseAD.LINEAR)
+    _test_linearity(:(3 * 4 * ($x + $y)), ArrayAD.LINEAR)
     _test_linearity(
         :($z * $y),
-        ReverseAD.NONLINEAR,
+        ArrayAD.NONLINEAR,
         Set([(3, 2), (3, 3), (2, 2)]),
         [2, 3],
     )
-    _test_linearity(:(3 + 4), ReverseAD.CONSTANT)
-    _test_linearity(:(sin(3) + $x), ReverseAD.LINEAR)
+    _test_linearity(:(3 + 4), ArrayAD.CONSTANT)
+    _test_linearity(:(sin(3) + $x), ArrayAD.LINEAR)
     _test_linearity(
         :(cos($z) * sin(3) + $x),
-        ReverseAD.NONLINEAR,
+        ArrayAD.NONLINEAR,
         Set([(3, 3)]),
         [1, 3],
     )
-    _test_linearity(:($x - 3 * $y), ReverseAD.LINEAR)
-    _test_linearity(:(-$x), ReverseAD.LINEAR)
-    _test_linearity(:(+$x), ReverseAD.LINEAR)
+    _test_linearity(:($x - 3 * $y), ArrayAD.LINEAR)
+    _test_linearity(:(-$x), ArrayAD.LINEAR)
+    _test_linearity(:(+$x), ArrayAD.LINEAR)
     _test_linearity(
         :($x^$y),
-        ReverseAD.NONLINEAR,
+        ArrayAD.NONLINEAR,
         Set([(2, 2), (1, 1), (2, 1)]),
         [1, 2],
     )
-    _test_linearity(:($x / 3 + $y), ReverseAD.LINEAR)
+    _test_linearity(:($x / 3 + $y), ArrayAD.LINEAR)
     _test_linearity(
         :(3 / ($x * $y)),
-        ReverseAD.NONLINEAR,
+        ArrayAD.NONLINEAR,
         Set([(2, 2), (1, 1), (2, 1)]),
         [1, 2],
     )
-    _test_linearity(:(1 / ($x + 3)), ReverseAD.NONLINEAR, Set([(1, 1)]), [1])
+    _test_linearity(:(1 / ($x + 3)), ArrayAD.NONLINEAR, Set([(1, 1)]), [1])
     _test_linearity(
         :(ifelse($x <= 1, $x, $y)),
-        ReverseAD.PIECEWISE_LINEAR,
+        ArrayAD.PIECEWISE_LINEAR,
         Set([]),
         [],
     )
     _test_linearity(
         :(ifelse($x <= 1, $x^2, $y)),
-        ReverseAD.NONLINEAR,
+        ArrayAD.NONLINEAR,
         Set([(1, 1)]),
         [1, 2],
     )
-    _test_linearity(:(ifelse(1 <= 1, 2, 3)), ReverseAD.CONSTANT)
+    _test_linearity(:(ifelse(1 <= 1, 2, 3)), ArrayAD.CONSTANT)
     _test_linearity(
         :(1 / ifelse($x < 1, $x, 0)),
-        ReverseAD.NONLINEAR,
+        ArrayAD.NONLINEAR,
         Set([(1, 1)]),
         [1],
     )
@@ -648,7 +648,7 @@ function test_linearity_no_hess()
     # We initialized without the need for the hessian so
     # the linearity shouldn't be computed.
     @test only(evaluator.backend.subexpressions).linearity ==
-          ReverseAD.NONLINEAR
+          ArrayAD.NONLINEAR
     return
 end
 
@@ -1247,7 +1247,7 @@ end
 function test_unsafe_vector_view()
     x = Float64[]
     GC.@preserve x begin
-        view = MOI.Nonlinear.ReverseAD._UnsafeVectorView(x, 3)
+        view = MOI.Nonlinear.ArrayAD._UnsafeVectorView(x, 3)
         @test length(x) == 3
         view[2] = 1.0
         @test x[2] == 1.0
@@ -1388,12 +1388,12 @@ end
 function test_generate_hessian_slice_inner()
     # Test that it evaluates without error. The code contents are tested
     # elsewhere.
-    MOI.Nonlinear.ReverseAD._generate_hessian_slice_inner()
+    MOI.Nonlinear.ArrayAD._generate_hessian_slice_inner()
     d = ex = nothing  # These arguments are untyped and not needed for this test
-    for id in [0, MOI.Nonlinear.ReverseAD.MAX_CHUNK + 1]
+    for id in [0, MOI.Nonlinear.ArrayAD.MAX_CHUNK + 1]
         @test_throws(
             ErrorException("Invalid chunk size: $id"),
-            MOI.Nonlinear.ReverseAD._hessian_slice_inner(d, ex, id),
+            MOI.Nonlinear.ArrayAD._hessian_slice_inner(d, ex, id),
         )
     end
     return
@@ -1423,4 +1423,4 @@ end
 
 end  # module
 
-TestReverseAD.runtests()
+TestArrayAD.runtests()
