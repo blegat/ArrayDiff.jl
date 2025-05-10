@@ -8,7 +8,7 @@ module ArrayAD
 
 import ForwardDiff
 import MathOptInterface as MOI
-import ..Nonlinear
+const Nonlinear = MOI.Nonlinear
 import SparseArrays
 
 # Override basic math functions to return NaN instead of throwing errors.

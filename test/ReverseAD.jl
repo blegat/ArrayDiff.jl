@@ -8,11 +8,12 @@ module TestArrayAD
 
 using Test
 import LinearAlgebra
-import MathOptInterface as MOI
 import SparseArrays
 
+import MathOptInterface as MOI
 const Nonlinear = MOI.Nonlinear
-const ArrayAD = Nonlinear.ArrayAD
+
+import ArrayAD
 const Coloring = ArrayAD.Coloring
 
 function runtests()
