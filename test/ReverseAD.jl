@@ -644,7 +644,7 @@ function test_linearity_no_hess()
     model = Nonlinear.Model()
     ex = Nonlinear.add_expression(model, :($x + 1))
     Nonlinear.set_objective(model, ex)
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac])
     # We initialized without the need for the hessian so
     # the linearity shouldn't be computed.
@@ -1248,7 +1248,7 @@ end
 function test_unsafe_vector_view()
     x = Float64[]
     GC.@preserve x begin
-        view = MOI.Nonlinear.ArrayAD._UnsafeVectorView(x, 3)
+        view = ArrayAD._UnsafeVectorView(x, 3)
         @test length(x) == 3
         view[2] = 1.0
         @test x[2] == 1.0
@@ -1389,12 +1389,12 @@ end
 function test_generate_hessian_slice_inner()
     # Test that it evaluates without error. The code contents are tested
     # elsewhere.
-    MOI.Nonlinear.ArrayAD._generate_hessian_slice_inner()
+    ArrayAD._generate_hessian_slice_inner()
     d = ex = nothing  # These arguments are untyped and not needed for this test
-    for id in [0, MOI.Nonlinear.ArrayAD.MAX_CHUNK + 1]
+    for id in [0, ArrayAD.MAX_CHUNK + 1]
         @test_throws(
             ErrorException("Invalid chunk size: $id"),
-            MOI.Nonlinear.ArrayAD._hessian_slice_inner(d, ex, id),
+            ArrayAD._hessian_slice_inner(d, ex, id),
         )
     end
     return

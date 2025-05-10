@@ -11,6 +11,22 @@ import MathOptInterface as MOI
 const Nonlinear = MOI.Nonlinear
 import SparseArrays
 
+"""
+    Mode() <: AbstractAutomaticDifferentiation
+
+Fork of `MOI.Nonlinear.SparseReverseMode` to add array support.
+"""
+struct Mode <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
+
+function MOI.Nonlinear.Evaluator(
+    model::MOI.Nonlinear.Model,
+    ::Mode,
+    ordered_variables::Vector{MOI.VariableIndex},
+)
+    return MOI.Nonlinear.Evaluator(model, NLPEvaluator(model, ordered_variables))
+end
+
+
 # Override basic math functions to return NaN instead of throwing errors.
 # This is what NLP solvers expect, and sometimes the results aren't needed
 # anyway, because the code may compute derivatives wrt constants.
