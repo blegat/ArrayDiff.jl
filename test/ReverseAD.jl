@@ -4,7 +4,7 @@
 # Use of this source code is governed by an MIT-style license that can be found
 # in the LICENSE.md file or at https://opensource.org/licenses/MIT.
 
-module TestArrayAD
+module TestReverseAD
 
 using Test
 import LinearAlgebra
@@ -31,7 +31,7 @@ function test_objective_quadratic_univariate()
     x = MOI.VariableIndex(1)
     model = Nonlinear.Model()
     Nonlinear.set_objective(model, :($x^2 + 1))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.eval_objective(evaluator, [1.2]) == 1.2^2 + 1
     g = [NaN]
@@ -62,7 +62,7 @@ function test_objective_and_constraints_quadratic_univariate()
     model = Nonlinear.Model()
     Nonlinear.set_objective(model, :($x^2 + 1))
     Nonlinear.add_constraint(model, :($x^2), MOI.LessThan(2.0))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.eval_objective(evaluator, [1.2]) == 1.2^2 + 1
     g = [NaN]
@@ -99,7 +99,7 @@ function test_objective_quadratic_multivariate()
     model = Nonlinear.Model()
     Nonlinear.set_objective(model, :($x^2 + $x * $y + $y^2))
     evaluator =
-        Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x, y])
+        Nonlinear.Evaluator(model, ArrayAD.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.eval_objective(evaluator, [1.2, 2.3]) == 1.2^2 + 1.2 * 2.3 + 2.3^2
     g = [NaN, NaN]
@@ -137,7 +137,7 @@ function test_objective_quadratic_multivariate_subexpressions()
     exy = Nonlinear.add_expression(model, :($ex + $x * $y))
     Nonlinear.set_objective(model, :($exy + $ey))
     evaluator =
-        Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x, y])
+        Nonlinear.Evaluator(model, ArrayAD.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     val = [1.2, 2.3]
     @test MOI.eval_objective(evaluator, val) == 1.2^2 + 1.2 * 2.3 + 2.3^2
@@ -180,7 +180,7 @@ function test_objective_ifelse_comparison()
     model = Nonlinear.Model()
     Nonlinear.set_objective(model, :(ifelse(1 <= $x <= 2, $x^2, $y^2)))
     evaluator =
-        Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x, y])
+        Nonlinear.Evaluator(model, ArrayAD.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.eval_objective(evaluator, [1.2, 2.3]) == 1.2^2
     @test MOI.eval_objective(evaluator, [2.2, 2.3]) == 2.3^2
@@ -198,7 +198,7 @@ function test_objective_ifelse_logic()
     model = Nonlinear.Model()
     Nonlinear.set_objective(model, :(ifelse(1 <= $x && $x <= 2, $x^2, $y^2)))
     evaluator =
-        Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x, y])
+        Nonlinear.Evaluator(model, ArrayAD.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.eval_objective(evaluator, [1.2, 2.3]) == 1.2^2
     @test MOI.eval_objective(evaluator, [2.2, 2.3]) == 2.3^2
@@ -215,7 +215,7 @@ function test_objective_parameter()
     model = Nonlinear.Model()
     p = Nonlinear.add_parameter(model, 1.2)
     Nonlinear.set_objective(model, :($p * $x))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.eval_objective(evaluator, [1.3]) == 1.2 * 1.3
     g = [NaN]
@@ -231,7 +231,7 @@ function test_objective_subexpression()
     expr = Nonlinear.add_expression(model, input)
     expr_2 = Nonlinear.add_expression(model, :($expr^2))
     Nonlinear.set_objective(model, :($expr_2^2))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Grad])
     @test MOI.eval_objective(evaluator, [1.3]) == ((1.3^2 + 1)^2)^2
     g = [NaN]
@@ -244,7 +244,7 @@ function test_constraint_quadratic_univariate()
     x = MOI.VariableIndex(1)
     model = Nonlinear.Model()
     Nonlinear.add_constraint(model, :($x^2), MOI.LessThan(2.0))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     g = [NaN]
     x_val = [1.2]
@@ -271,7 +271,7 @@ function test_constraint_quadratic_multivariate()
     model = Nonlinear.Model()
     Nonlinear.add_constraint(model, :($x^2 + $x * $y + $y^2), MOI.LessThan(2.0))
     evaluator =
-        Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x, y])
+        Nonlinear.Evaluator(model, ArrayAD.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     g = [NaN]
     x_val = [1.2, 2.3]
@@ -298,7 +298,7 @@ function test_constraint_quadratic_multivariate_subexpressions()
     exy = Nonlinear.add_expression(model, :($ex + $x * $y))
     Nonlinear.add_constraint(model, :($exy + $ey), MOI.LessThan(2.0))
     evaluator =
-        Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x, y])
+        Nonlinear.Evaluator(model, ArrayAD.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     g = [NaN]
     x_val = [1.2, 2.3]
@@ -346,7 +346,7 @@ function test_hessian_sparsity_registered_function()
     Nonlinear.register_operator(model, :f, 2, f, ∇f, ∇²f)
     Nonlinear.set_objective(model, :(f($x, $z) + $y^2))
     evaluator =
-        Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x, y, z])
+        Nonlinear.Evaluator(model, ArrayAD.Mode(), [x, y, z])
     @test :Hess in MOI.features_available(evaluator)
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.hessian_lagrangian_structure(evaluator) ==
@@ -377,7 +377,7 @@ function test_hessian_sparsity_registered_rosenbrock()
     Nonlinear.register_operator(model, :rosenbrock, 2, f, ∇f, ∇²f)
     Nonlinear.set_objective(model, :(rosenbrock($x, $y)))
     evaluator =
-        Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x, y])
+        Nonlinear.Evaluator(model, ArrayAD.Mode(), [x, y])
     @test :Hess in MOI.features_available(evaluator)
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.hessian_lagrangian_structure(evaluator) ==
@@ -408,7 +408,7 @@ function test_hessian_registered_error()
     Nonlinear.register_operator(model, :rosenbrock, 2, f, ∇f, ∇²f)
     Nonlinear.set_objective(model, :(rosenbrock($x, $y)))
     evaluator =
-        Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x, y])
+        Nonlinear.Evaluator(model, ArrayAD.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     H = fill(NaN, 3)
     @test_throws(
@@ -506,7 +506,7 @@ function test_derivatives()
     model = Nonlinear.Model()
     Nonlinear.set_objective(model, :(sin($a^2) + cos($b * 4) / 5 - 2.0))
     evaluator =
-        Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [a, b])
+        Nonlinear.Evaluator(model, ArrayAD.Mode(), [a, b])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     x = [2.0, 3.0]
     @test MOI.eval_objective(evaluator, x) ==
@@ -532,7 +532,7 @@ function test_NLPBlockData()
     Nonlinear.add_constraint(model, :($x - 2), MOI.GreaterThan(0.0))
     Nonlinear.add_constraint(model, :($x - 3), MOI.EqualTo(0.0))
     Nonlinear.add_constraint(model, :($x), MOI.Interval(4.0, 5.0))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     block = MOI.NLPBlockData(evaluator)
     @test block.constraint_bounds == [
         MOI.NLPBoundsPair(-Inf, 0.0),
@@ -660,7 +660,7 @@ function test_dual_forward()
         Nonlinear.set_objective(model, input)
         evaluator = Nonlinear.Evaluator(
             model,
-            Nonlinear.SparseReverseMode(),
+            ArrayAD.Mode(),
             MOI.VariableIndex[x, y],
         )
         MOI.initialize(evaluator, [:Grad])
@@ -708,7 +708,7 @@ function test_gradient_registered_function()
     Nonlinear.set_objective(model, :(Φ($y, $x - 1) * c($z)))
     evaluator = Nonlinear.Evaluator(
         model,
-        Nonlinear.SparseReverseMode(),
+        ArrayAD.Mode(),
         MOI.VariableIndex[x, y, z],
     )
     MOI.initialize(evaluator, [:Grad])
@@ -733,7 +733,7 @@ function test_gradient_jump_855()
     )
     evaluator = Nonlinear.Evaluator(
         model,
-        Nonlinear.SparseReverseMode(),
+        ArrayAD.Mode(),
         MOI.VariableIndex[x],
     )
     MOI.initialize(evaluator, [:Grad])
@@ -751,7 +751,7 @@ function test_gradient_abs()
     Nonlinear.set_objective(model, :(abs($x)))
     evaluator = Nonlinear.Evaluator(
         model,
-        Nonlinear.SparseReverseMode(),
+        ArrayAD.Mode(),
         MOI.VariableIndex[x],
     )
     MOI.initialize(evaluator, [:Grad])
@@ -770,7 +770,7 @@ function test_gradient_trig()
     Nonlinear.set_objective(model, :(sin($x^2) + cos($y * 4) / 5 - 2.0))
     evaluator = Nonlinear.Evaluator(
         model,
-        Nonlinear.SparseReverseMode(),
+        ArrayAD.Mode(),
         MOI.VariableIndex[x, y],
     )
     MOI.initialize(evaluator, [:Grad])
@@ -786,7 +786,7 @@ function test_gradient_logical()
     Nonlinear.set_objective(model, :($x > 0.5 && $x < 0.9))
     evaluator = Nonlinear.Evaluator(
         model,
-        Nonlinear.SparseReverseMode(),
+        ArrayAD.Mode(),
         MOI.VariableIndex[x],
     )
     MOI.initialize(evaluator, [:Grad])
@@ -803,7 +803,7 @@ function test_gradient_ifelse()
     Nonlinear.set_objective(model, :(ifelse($x >= 0.5 || $x < 0.1, $x, 5)))
     evaluator = Nonlinear.Evaluator(
         model,
-        Nonlinear.SparseReverseMode(),
+        ArrayAD.Mode(),
         MOI.VariableIndex[x],
     )
     MOI.initialize(evaluator, [:Grad])
@@ -826,7 +826,7 @@ function test_gradient_sqrt_nan()
     Nonlinear.set_objective(model, :(sqrt($x)))
     evaluator = Nonlinear.Evaluator(
         model,
-        Nonlinear.SparseReverseMode(),
+        ArrayAD.Mode(),
         MOI.VariableIndex[x],
     )
     MOI.initialize(evaluator, [:Grad])
@@ -845,7 +845,7 @@ function test_gradient_variable_power()
     Nonlinear.set_objective(model, :((1 / $x)^$y - $z))
     evaluator = Nonlinear.Evaluator(
         model,
-        Nonlinear.SparseReverseMode(),
+        ArrayAD.Mode(),
         MOI.VariableIndex[x, y, z],
     )
     MOI.initialize(evaluator, [:Grad])
@@ -868,7 +868,7 @@ function test_single_parameter()
     Nonlinear.set_objective(model, :($p))
     evaluator = Nonlinear.Evaluator(
         model,
-        Nonlinear.SparseReverseMode(),
+        ArrayAD.Mode(),
         MOI.VariableIndex[x],
     )
     MOI.initialize(evaluator, [:Grad])
@@ -885,7 +885,7 @@ function test_gradient_nested_subexpressions()
     Nonlinear.set_objective(model, ex2)
     evaluator = Nonlinear.Evaluator(
         model,
-        Nonlinear.SparseReverseMode(),
+        ArrayAD.Mode(),
         MOI.VariableIndex[x, y],
     )
     MOI.initialize(evaluator, [:Grad])
@@ -902,7 +902,7 @@ function test_gradient_view()
     Nonlinear.set_objective(model, :(($x - 1)^2 + 4 * ($y - $x^2)^2))
     evaluator = Nonlinear.Evaluator(
         model,
-        Nonlinear.SparseReverseMode(),
+        ArrayAD.Mode(),
         MOI.VariableIndex[x, y],
     )
     MOI.initialize(evaluator, [:Grad])
@@ -947,7 +947,7 @@ function _test_odd_chunks_Hessian_products(N)
     model = Nonlinear.Model()
     x = MOI.VariableIndex.(1:N)
     Nonlinear.set_objective(model, Expr(:call, :*, x...))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), x)
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), x)
     MOI.initialize(evaluator, [:Hess])
     hessian_sparsity = MOI.hessian_lagrangian_structure(evaluator)
     V = zeros(length(hessian_sparsity))
@@ -977,7 +977,7 @@ function test_jacobians_and_jacvec()
     Nonlinear.set_objective(model, :($a * $b + $c^2))
     Nonlinear.add_constraint(model, :($c * $b), MOI.LessThan(1.0))
     Nonlinear.add_constraint(model, :($a^2 / 2), MOI.LessThan(1.0))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), x)
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), x)
     MOI.initialize(evaluator, [:Jac, :JacVec])
     values = [1.0, 2.0, 3.0] # For a, b, c.
     jacobian_sparsity = MOI.jacobian_structure(evaluator)
@@ -1009,7 +1009,7 @@ function test_jacobians_and_jacvec_with_subexpressions()
     Nonlinear.set_objective(model, :($a * $b + $c^2))
     Nonlinear.add_constraint(model, :($bc), MOI.LessThan(1.0))
     Nonlinear.add_constraint(model, :($a^2 / 2), MOI.LessThan(1.0))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), x)
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), x)
     MOI.initialize(evaluator, [:Jac, :JacVec])
     values = [1.0, 2.0, 3.0] # For a, b, c.
     jacobian_sparsity = MOI.jacobian_structure(evaluator)
@@ -1037,7 +1037,7 @@ function test_pow_complex_result()
     x = MOI.VariableIndex(1)
     model = Nonlinear.Model()
     Nonlinear.set_objective(model, :(ifelse($x > 0, $x^1.5, -(-$x)^1.5)))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     x = [-2.0]
     @test MOI.eval_objective(evaluator, x) ≈ -(2^1.5)
@@ -1058,7 +1058,7 @@ function test_constraint_gradient()
     Nonlinear.add_constraint(model, :($x^2 + $x * $y + $y^2), MOI.LessThan(2.0))
     Nonlinear.add_constraint(model, :(cos($y)), MOI.LessThan(2.0))
     evaluator =
-        Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x, y])
+        Nonlinear.Evaluator(model, ArrayAD.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac])
     @test MOI.constraint_gradient_structure(evaluator, 1) == [1, 2]
     @test MOI.constraint_gradient_structure(evaluator, 2) == [2]
@@ -1077,7 +1077,7 @@ function test_hessian_length()
     x = MOI.VariableIndex(1)
     model = Nonlinear.Model()
     Nonlinear.set_objective(model, :(log($x)))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Hess])
     H = Float64[]
     got, want = 0, 1
@@ -1095,7 +1095,7 @@ function test_jacobian_length()
     x = MOI.VariableIndex(1)
     model = Nonlinear.Model()
     Nonlinear.add_constraint(model, :(sin($x)), MOI.LessThan(0.5))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Jac])
     J = Float64[]
     @test_throws BoundsError MOI.eval_constraint_jacobian(evaluator, J, [1.0])
@@ -1107,7 +1107,7 @@ function test_timers()
     model = Nonlinear.Model()
     Nonlinear.set_objective(model, :(log($x)))
     Nonlinear.add_constraint(model, :(sin($x)), MOI.LessThan(0.5))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     y = [1.2]
     g = [NaN]
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
@@ -1148,7 +1148,7 @@ function test_varying_length_x()
     x = MOI.VariableIndex(1)
     MOI.Nonlinear.set_objective(model, :(sin($x)))
     evaluator =
-        MOI.Nonlinear.Evaluator(model, MOI.Nonlinear.SparseReverseMode(), [x])
+        MOI.Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, Symbol[:Jac])
     ∇f = [NaN]
     MOI.eval_objective_gradient(evaluator, ∇f, [1.0, 2.0])
@@ -1165,7 +1165,7 @@ function test_univariate_operator_with_no_second_order()
     x = MOI.VariableIndex(1)
     MOI.Nonlinear.add_constraint(model, :(op_f($x)), MOI.LessThan(2.0))
     evaluator =
-        MOI.Nonlinear.Evaluator(model, MOI.Nonlinear.SparseReverseMode(), [x])
+        MOI.Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     @test !(:Hess in MOI.features_available(evaluator))
     MOI.initialize(evaluator, [:Grad, :Jac])
     J = zeros(length(MOI.jacobian_structure(evaluator)))
@@ -1177,7 +1177,7 @@ end
 function test_no_objective()
     model = Nonlinear.Model()
     x = MOI.VariableIndex(1)
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Grad])
     @test_throws(
         ErrorException("No nonlinear objective."),
@@ -1195,7 +1195,7 @@ function test_x_power_1()
     model = Nonlinear.Model()
     x = MOI.VariableIndex(1)
     MOI.Nonlinear.set_objective(model, :($x^1))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Hess])
     @test MOI.eval_objective(evaluator, [2.0]) ≈ 2.0
     H = [NaN]
@@ -1209,7 +1209,7 @@ function test_variable_first_node_in_tape()
     x = MOI.VariableIndex(1)
     expr = MOI.Nonlinear.add_expression(model, :($x))
     MOI.Nonlinear.set_objective(model, :(sin($expr)))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     H = [NaN]
     MOI.eval_hessian_lagrangian(evaluator, H, [2.0], 1.5, [])
@@ -1223,7 +1223,7 @@ function test_subexpression_first_node_in_tape()
     expr = MOI.Nonlinear.add_expression(model, :($x))
     expr2 = MOI.Nonlinear.add_expression(model, :($expr))
     MOI.Nonlinear.set_objective(model, :(sin($expr2)))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     H = [NaN]
     MOI.eval_hessian_lagrangian(evaluator, H, [2.0], 1.5, [])
@@ -1236,7 +1236,7 @@ function test_parameter_in_hessian()
     x = MOI.VariableIndex(1)
     p = MOI.Nonlinear.add_parameter(model, 3.0)
     MOI.Nonlinear.set_objective(model, :(sin($x + $p)))
-    evaluator = Nonlinear.Evaluator(model, Nonlinear.SparseReverseMode(), [x])
+    evaluator = Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     H = [NaN]
     MOI.eval_hessian_lagrangian(evaluator, H, [2.0], 1.5, [])
@@ -1262,7 +1262,7 @@ function test_classify_linearity_ifelse()
     MOI.Nonlinear.set_objective(model, :(ifelse($y, $x, 1)))
     evaluator = MOI.Nonlinear.Evaluator(
         model,
-        MOI.Nonlinear.SparseReverseMode(),
+        ArrayAD.Mode(),
         [x, y],
     )
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
@@ -1279,7 +1279,7 @@ function test_classify_linearity_logic()
     MOI.Nonlinear.set_objective(model, :($x && $y))
     evaluator = MOI.Nonlinear.Evaluator(
         model,
-        MOI.Nonlinear.SparseReverseMode(),
+        ArrayAD.Mode(),
         [x, y],
     )
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
@@ -1300,7 +1300,7 @@ function test_hessian_sparsity_with_subexpressions()
     MOI.Nonlinear.set_objective(model, :(sin($expr2)))
     evaluator = MOI.Nonlinear.Evaluator(
         model,
-        MOI.Nonlinear.SparseReverseMode(),
+        ArrayAD.Mode(),
         [x, y],
     )
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
@@ -1318,7 +1318,7 @@ function test_toposort_subexpressions()
     MOI.Nonlinear.add_constraint(model, :($d), MOI.LessThan(1.0))
     MOI.Nonlinear.add_constraint(model, :($c), MOI.LessThan(1.0))
     evaluator =
-        MOI.Nonlinear.Evaluator(model, MOI.Nonlinear.SparseReverseMode(), [x])
+        MOI.Nonlinear.Evaluator(model, ArrayAD.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     g = [NaN, NaN]
     MOI.eval_constraint(evaluator, g, [2.0])
@@ -1340,7 +1340,7 @@ function test_eval_user_defined_operator_ForwardDiff_gradient!()
         :($ex^3 + sin($(x[2])) / ψ($(x[2])) + t($(x[3]), $(x[4]))),
         MOI.LessThan(0.0),
     )
-    d = MOI.Nonlinear.Evaluator(model, MOI.Nonlinear.SparseReverseMode(), x)
+    d = MOI.Nonlinear.Evaluator(model, ArrayAD.Mode(), x)
     MOI.initialize(d, [:Jac])
     X = [1.1, 1.2, 1.3, 1.4]
     g = [NaN]
@@ -1372,7 +1372,7 @@ function test_eval_user_defined_operator_type_mismatch()
         :($ex^3 + sin($(x[2])) / ψ($(x[2])) + t($(x[3]), $(x[4]))),
         MOI.LessThan(0.0),
     )
-    d = MOI.Nonlinear.Evaluator(model, MOI.Nonlinear.SparseReverseMode(), x)
+    d = MOI.Nonlinear.Evaluator(model, ArrayAD.Mode(), x)
     MOI.initialize(d, [:Jac])
     X = [1.1, 1.2, 1.3, 1.4]
     g = [NaN]
@@ -1409,7 +1409,7 @@ function test_hessian_reinterpret_unsafe()
     )
     MOI.Nonlinear.add_constraint(model, :($(x[4]) * $(x[5])), MOI.EqualTo(1.0))
     evaluator =
-        MOI.Nonlinear.Evaluator(model, MOI.Nonlinear.SparseReverseMode(), x)
+        MOI.Nonlinear.Evaluator(model, ArrayAD.Mode(), x)
     MOI.initialize(evaluator, [:Hess])
     H_s = MOI.hessian_lagrangian_structure(evaluator)
     H = zeros(length(H_s))
@@ -1423,4 +1423,4 @@ end
 
 end  # module
 
-TestArrayAD.runtests()
+TestReverseAD.runtests()
