@@ -150,7 +150,6 @@ function _forward_eval(
                 for j in _eachindex(f.sizes, k)
                     tmp_sub = _getindex(f.forward_storage, f.sizes, ix1, j)
                     tmp_sub -= _getindex(f.forward_storage, f.sizes, ix2, j)
-                    tmp_sub = _getindex(f.partials_storage, f.sizes, ix1, one(T))
                     _setindex!(f.partials_storage, one(T), f.sizes, ix1, j)
                     _setindex!(f.partials_storage, -one(T), f.sizes, ix2, j)
                     _setindex!(f.forward_storage, tmp_sub, f.sizes, k, j)
@@ -230,7 +229,6 @@ function _forward_eval(
                     !(condition == 1)
                 f.forward_storage[k] = ifelse(condition == 1, lhs, rhs)
             else # atan, min, max or vect
-                @show node.index
                 f_input = _UnsafeVectorView(d.jac_storage, N)
                 ∇f = _UnsafeVectorView(d.user_output_buffer, N)
                 for (r, i) in enumerate(children_indices)
