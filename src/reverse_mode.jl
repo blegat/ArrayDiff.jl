@@ -147,11 +147,11 @@ function _forward_eval(
                 @inbounds ix1 = children_arr[child1]
                 @inbounds ix2 = children_arr[child1+1]
                 for j in _eachindex(f.sizes, k)
-                    tmp_sub = _getindex(f.forward_storage, f.sizes, ix1, j)
-                    tmp_sub -= _getindex(f.forward_storage, f.sizes, ix2, j)
-                    _setindex!(f.partials_storage, one(T), f.sizes, ix1, j)
-                    _setindex!(f.partials_storage, -one(T), f.sizes, ix2, j)
-                    _setindex!(f.forward_storage, tmp_sub, f.sizes, k, j)
+                    tmp_sub = @j f.forward_storage[ix1]
+                    tmp_sub -= @j f.forward_storage[ix2]
+                    @j f.partials_storage[ix1] = one(T)
+                    @j f.partials_storage[ix2] = -one(T)
+                    @j f.forward_storage[k] = tmp_sub
                 end
             elseif node.index == 3 # :*
                 tmp_prod = one(T)

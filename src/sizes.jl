@@ -61,10 +61,25 @@ macro j(expr)
         lhs, rhs = expr.args
         @assert Meta.isexpr(lhs, :ref)
         @assert length(expr.args) == 2
-        return Expr(:call, :_setindex!, esc(lhs.args[1]), esc(rhs), esc(:(f.sizes)), esc(lhs.args[2]), esc(:j))
+        return Expr(
+            :call,
+            :_setindex!,
+            esc(lhs.args[1]),
+            esc(rhs),
+            esc(:(f.sizes)),
+            esc(lhs.args[2]),
+            esc(:j),
+        )
     elseif Meta.isexpr(expr, :ref) && length(expr.args) == 2
         arr, idx = expr.args
-        return Expr(:call, :_getindex, esc(arr), esc(:(f.sizes)), esc(idx), esc(:j))
+        return Expr(
+            :call,
+            :_getindex,
+            esc(arr),
+            esc(:(f.sizes)),
+            esc(idx),
+            esc(:j),
+        )
     else
         error("Unsupported expression `$expr`")
     end
