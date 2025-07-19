@@ -79,18 +79,11 @@ macro s(expr)
         )
     elseif Meta.isexpr(expr, :ref) && length(expr.args) == 2
         arr, idx = expr.args
-        return Expr(
-            :call,
-            :_getscalar,
-            esc(arr),
-            esc(:(f.sizes)),
-            esc(idx),
-        )
+        return Expr(:call, :_getscalar, esc(arr), esc(:(f.sizes)), esc(idx))
     else
         error("Unsupported expression `$expr`")
     end
 end
-
 
 """
     @j(storage[node]) -> _getindex(storage, f.sizes, node, j)
