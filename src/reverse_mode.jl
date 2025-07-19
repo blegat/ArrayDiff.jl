@@ -109,20 +109,22 @@ function _forward_eval(
     # children, so a backwards pass through f.nodes is a forward pass through
     # the tree.
     children_arr = SparseArrays.rowvals(f.adj)
+    fill!(f.partials_storage, zero(T))
     for k in length(f.nodes):-1:1
         node = f.nodes[k]
-        f.partials_storage[k] = zero(T)
+        # Storage index if scalar
+        j = last(_storage_range(f.sizes, k))
         if node.type == Nonlinear.NODE_VARIABLE
-            f.forward_storage[k] = x[node.index]
+            f.forward_storage[j] = x[node.index]
             # This should never happen, because we will have replaced these by now.
             # elseif node.type == Nonlinear.NODE_MOI_VARIABLE
             #     f.forward_storage[k] = x[node.index]
         elseif node.type == Nonlinear.NODE_VALUE
-            f.forward_storage[k] = f.const_values[node.index]
+            f.forward_storage[j] = f.const_values[node.index]
         elseif node.type == Nonlinear.NODE_SUBEXPRESSION
-            f.forward_storage[k] = d.subexpression_forward_values[node.index]
+            f.forward_storage[j] = d.subexpression_forward_values[node.index]
         elseif node.type == Nonlinear.NODE_PARAMETER
-            f.forward_storage[k] = d.data.parameters[node.index]
+            f.forward_storage[j] = d.data.parameters[node.index]
         elseif node.type == Nonlinear.NODE_CALL_MULTIVARIATE
             children_indices = SparseArrays.nzrange(f.adj, k)
             N = length(children_indices)
@@ -130,23 +132,29 @@ function _forward_eval(
             # With appropriate benchmarking, the special-cased if-statements can
             # be removed in favor of the generic user-defined function case.
             if node.index == 1 # :+
-                tmp_sum = zero(T)
-                for c_idx in children_indices
-                    @inbounds ix = children_arr[c_idx]
-                    @inbounds f.partials_storage[ix] = one(T)
-                    @inbounds tmp_sum += f.forward_storage[ix]
+                for j in _eachindex(f.sizes, k)
+                    tmp_sum = zero(T)
+                    for c_idx in children_indices
+                        ix = children_arr[c_idx]
+                        _setindex!(f.partials_storage, one(T), f.sizes, ix, j)
+                        f.partials_storage[ix] = one(T)
+                        tmp_sum += _getindex(f.forward_storage, f.sizes, ix, j)
+                    end
+                    _setindex!(f.forward_storage, tmp_sum, f.sizes, k, j)
                 end
-                f.forward_storage[k] = tmp_sum
             elseif node.index == 2 # :-
                 @assert N == 2
                 child1 = first(children_indices)
                 @inbounds ix1 = children_arr[child1]
                 @inbounds ix2 = children_arr[child1+1]
-                @inbounds tmp_sub = f.forward_storage[ix1]
-                @inbounds tmp_sub -= f.forward_storage[ix2]
-                @inbounds f.partials_storage[ix1] = one(T)
-                @inbounds f.partials_storage[ix2] = -one(T)
-                f.forward_storage[k] = tmp_sub
+                for j in _eachindex(f.sizes, k)
+                    tmp_sub = _getindex(f.forward_storage, f.sizes, ix1, j)
+                    tmp_sub -= _getindex(f.forward_storage, f.sizes, ix2, j)
+                    tmp_sub = _getindex(f.partials_storage, f.sizes, ix1, one(T))
+                    _setindex!(f.partials_storage, one(T), f.sizes, ix1, j)
+                    _setindex!(f.partials_storage, -one(T), f.sizes, ix2, j)
+                    _setindex!(f.forward_storage, tmp_sub, f.sizes, k, j)
+                end
             elseif node.index == 3 # :*
                 tmp_prod = one(T)
                 for c_idx in children_indices
@@ -221,7 +229,8 @@ function _forward_eval(
                 @inbounds f.partials_storage[children_arr[idx1+2]] =
                     !(condition == 1)
                 f.forward_storage[k] = ifelse(condition == 1, lhs, rhs)
-            else
+            else # atan, min, max or vect
+                @show node.index
                 f_input = _UnsafeVectorView(d.jac_storage, N)
                 ∇f = _UnsafeVectorView(d.user_output_buffer, N)
                 for (r, i) in enumerate(children_indices)
