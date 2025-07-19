@@ -18,7 +18,7 @@ struct Sizes
 end
 
 function _size(sizes::Sizes, k::Int, dim::Int)
-    return sizes.size[sizes.size_offset[k] + dim]
+    return sizes.size[sizes.size_offset[k]+dim]
 end
 
 function _size(sizes::Sizes, k::Int)
@@ -42,11 +42,11 @@ function _storage_range(sizes::Sizes, k::Int)
 end
 
 function _getindex(x, sizes::Sizes, k::Int, j)
-    return x[sizes.storage_offset[k] + j]
+    return x[sizes.storage_offset[k]+j]
 end
 
 function _setindex!(x, value, sizes::Sizes, k::Int, j)
-    return x[sizes.storage_offset[k] + j] = value
+    return x[sizes.storage_offset[k]+j] = value
 end
 
 # /!\ Can only be called in decreasing `k` order
@@ -79,20 +79,33 @@ function _infer_sizes(
     nodes::Vector{Nonlinear.Node},
     adj::SparseArrays.SparseMatrixCSC{Bool,Int},
 )
-    sizes = Sizes(zeros(Int, length(nodes)), zeros(Int, length(nodes)), Int[], zeros(Int, length(nodes) + 1))
+    sizes = Sizes(
+        zeros(Int, length(nodes)),
+        zeros(Int, length(nodes)),
+        Int[],
+        zeros(Int, length(nodes) + 1),
+    )
     children_arr = SparseArrays.rowvals(adj)
     for k in length(nodes):-1:1
         node = nodes[k]
         children_indices = SparseArrays.nzrange(adj, k)
         N = length(children_indices)
         if node.type == Nonlinear.NODE_CALL_MULTIVARIATE
-            if !(node.index in eachindex(MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS))
+            if !(
+                node.index in
+                eachindex(MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS)
+            )
                 # TODO user-defined operators
                 continue
             end
             op = MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS[node.index]
             if op == :vect
-                _assert_scalar_children(sizes, children_arr, children_indices, op)
+                _assert_scalar_children(
+                    sizes,
+                    children_arr,
+                    children_indices,
+                    op,
+                )
                 _add_size!(sizes, k, (N,))
             elseif op == :dot
                 # TODO assert all arguments have same size
@@ -102,23 +115,43 @@ function _infer_sizes(
             elseif op == :*
                 # TODO assert compatible sizes and all ndims should be 0 or 2
                 first_matrix = findfirst(children_indices) do i
-                    !iszero(sizes.ndims[children_arr[i]])
+                    return !iszero(sizes.ndims[children_arr[i]])
                 end
                 if !isnothing(first_matrix)
                     last_matrix = findfirst(children_indices) do i
-                        !iszero(sizes.ndims[children_arr[i]])
+                        return !iszero(sizes.ndims[children_arr[i]])
                     end
-                    _add_size!(sizes, k, (_size(sizes, first_matrix, 1), _size(sizes, last_matrix, sizes.ndims[last_matrix])))
+                    _add_size!(
+                        sizes,
+                        k,
+                        (
+                            _size(sizes, first_matrix, 1),
+                            _size(sizes, last_matrix, sizes.ndims[last_matrix]),
+                        ),
+                    )
                 end
             elseif op == :^ || op == :/
                 @assert N == 2
-                _assert_scalar_children(sizes, children_arr, children_indices[2:end], op)
+                _assert_scalar_children(
+                    sizes,
+                    children_arr,
+                    children_indices[2:end],
+                    op,
+                )
                 _copy_size!(sizes, k, children_arr[first(children_indices)])
             else
-                _assert_scalar_children(sizes, children_arr, children_indices, op)
+                _assert_scalar_children(
+                    sizes,
+                    children_arr,
+                    children_indices,
+                    op,
+                )
             end
         elseif node.type == Nonlinear.NODE_CALL_UNIVARIATE
-            if !(node.index in eachindex(MOI.Nonlinear.DEFAULT_UNIVARIATE_OPERATORS))
+            if !(
+                node.index in
+                eachindex(MOI.Nonlinear.DEFAULT_UNIVARIATE_OPERATORS)
+            )
                 # TODO user-defined operators
                 continue
             end
@@ -127,12 +160,17 @@ function _infer_sizes(
             if op == :+ || op == :-
                 _copy_size!(sizes, k, children_arr[first(children_indices)])
             else
-                _assert_scalar_children(sizes, children_arr, children_indices, op)
+                _assert_scalar_children(
+                    sizes,
+                    children_arr,
+                    children_indices,
+                    op,
+                )
             end
         end
     end
     for k in eachindex(nodes)
-        sizes.storage_offset[k + 1] = sizes.storage_offset[k] + _length(sizes, k)
+        sizes.storage_offset[k+1] = sizes.storage_offset[k] + _length(sizes, k)
     end
     return sizes
 end
