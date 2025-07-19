@@ -41,12 +41,48 @@ function _storage_range(sizes::Sizes, k::Int)
     return sizes.storage_offset[k] .+ _eachindex(sizes, k)
 end
 
+function _getscalar(x, sizes::Sizes, k::Int)
+    return x[sizes.storage_offset[k]+1]
+end
+
+function _setscalar!(x, value, sizes::Sizes, k::Int)
+    return x[sizes.storage_offset[k]+1] = value
+end
+
 function _getindex(x, sizes::Sizes, k::Int, j)
     return x[sizes.storage_offset[k]+j]
 end
 
 function _setindex!(x, value, sizes::Sizes, k::Int, j)
     return x[sizes.storage_offset[k]+j] = value
+end
+
+"""
+    @s(storage[node]) -> _getscalar(storage, f.sizes, node)
+    @s(storage[node] = value) -> _setscalar!(storage, value, f.sizes, node)
+
+This "at scalar" converts `getindex` and `setindex!` calls to access the
+scalar in a vector corresponding to a node.
+"""
+macro s(expr)
+    if Meta.isexpr(expr, :(=)) && length(expr.args) == 2
+        lhs, rhs = expr.args
+        @assert Meta.isexpr(lhs, :ref)
+        @assert length(expr.args) == 2
+        return Expr(
+            :call,
+            :_setscalar!,
+            esc(lhs.args[1]),
+            esc(rhs),
+            esc(:(f.sizes)),
+            esc(lhs.args[2]),
+        )
+    elseif Meta.isexpr(expr, :ref) && length(expr.args) == 2
+        arr, idx = expr.args
+        return Expr(:call, :_getscalar, esc(arr), esc(:(f.sizes)), esc(idx))
+    else
+        error("Unsupported expression `$expr`")
+    end
 end
 
 """

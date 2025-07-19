@@ -227,7 +227,27 @@ function _forward_eval(
                 @inbounds f.partials_storage[children_arr[idx1+2]] =
                     !(condition == 1)
                 f.forward_storage[k] = ifelse(condition == 1, lhs, rhs)
-            else # atan, min, max or vect
+            elseif node.index == 10 # vect
+                for j in _eachindex(f.sizes, k)
+                    ix = children_arr[children_indices[j]]
+                    @s f.partials_storage[ix] = one(T)
+                    val = @s f.forward_storage[ix]
+                    @j f.forward_storage[k] = val
+                end
+            elseif node.index == 11 # dot
+                idx1, idx2 = children_indices
+                ix1 = children_arr[idx1]
+                ix2 = children_arr[idx2]
+                tmp_dot = zero(T)
+                for j in _eachindex(f.sizes, ix1)
+                    v1 = @j f.forward_storage[ix1]
+                    v2 = @j f.forward_storage[ix2]
+                    @j f.partials_storage[ix1] = v2
+                    @j f.partials_storage[ix2] = v1
+                    tmp_dot += v1 * v2
+                end
+                @s f.forward_storage[k] = tmp_dot
+            else # atan, min, max
                 f_input = _UnsafeVectorView(d.jac_storage, N)
                 ∇f = _UnsafeVectorView(d.user_output_buffer, N)
                 for (r, i) in enumerate(children_indices)
@@ -251,13 +271,27 @@ function _forward_eval(
             end
         elseif node.type == Nonlinear.NODE_CALL_UNIVARIATE
             child_idx = children_arr[f.adj.colptr[k]]
-            ret_f, ret_f′ = Nonlinear.eval_univariate_function_and_gradient(
-                operators,
-                node.index,
-                f.forward_storage[child_idx],
-            )
-            f.forward_storage[k] = ret_f
-            f.partials_storage[child_idx] = ret_f′
+            if node.index == 1 # :+
+                for j in _eachindex(f.sizes, k)
+                    @j f.partials_storage[child_idx] = one(T)
+                    val = @j f.forward_storage[child_idx]
+                    @j f.forward_storage[k] = val
+                end
+            elseif node.index == 2 # :-
+                for j in _eachindex(f.sizes, k)
+                    @j f.partials_storage[child_idx] = -one(T)
+                    val = @j f.forward_storage[child_idx]
+                    @j f.forward_storage[k] = -val
+                end
+            else
+                ret_f, ret_f′ = Nonlinear.eval_univariate_function_and_gradient(
+                    operators,
+                    node.index,
+                    f.forward_storage[child_idx],
+                )
+                f.forward_storage[k] = ret_f
+                f.partials_storage[child_idx] = ret_f′
+            end
         elseif node.type == Nonlinear.NODE_COMPARISON
             children_idx = SparseArrays.nzrange(f.adj, k)
             result = true
