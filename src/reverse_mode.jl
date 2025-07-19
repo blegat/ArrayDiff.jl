@@ -335,27 +335,71 @@ Reverse-mode evaluation of an expression tree given in `f`.
  * This function assumes that `f.reverse_storage` has been initialized with 0.0.
 """
 function _reverse_eval(f::_SubexpressionStorage)
-    @assert length(f.reverse_storage) >= length(f.nodes)
-    @assert length(f.partials_storage) >= length(f.nodes)
+    @assert length(f.reverse_storage) >= _length(f.sizes)
+    @assert length(f.partials_storage) >= _length(f.sizes)
     # f.nodes is already in order such that parents always appear before
     # children so a forward pass through nodes is a backwards pass through the
     # tree.
-    f.reverse_storage[1] = one(Float64)
-    for k in 2:length(f.nodes)
+    children_arr = SparseArrays.rowvals(f.adj)
+    for i in _storage_range(f.sizes, 1)
+        f.reverse_storage[i] = one(Float64)
+    end
+    for k in 1:length(f.nodes)
+        @show f.reverse_storage
         node = f.nodes[k]
-        if node.type == Nonlinear.NODE_VALUE ||
-           node.type == Nonlinear.NODE_LOGIC ||
-           node.type == Nonlinear.NODE_COMPARISON ||
-           node.type == Nonlinear.NODE_PARAMETER
+        children_indices = SparseArrays.nzrange(f.adj, k)
+        if node.type == MOI.Nonlinear.NODE_CALL_MULTIVARIATE
+            if node.index in
+                eachindex(MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS)
+                op = MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS[node.index]
+                if op == :vect
+                    @assert _eachindex(f.sizes, k) == eachindex(children_indices)
+                    for j in eachindex(children_indices)
+                        rev_parent = @s f.reverse_storage[k]
+                        ix = children_arr[children_indices[j]]
+                        # partial is 1 so we can ignore it
+                        @s f.reverse_storage[ix] = rev_parent
+                    end
+                    continue
+                elseif op == :dot
+                    # Node `k` is scalar, the jacobian w.r.t. each vectorized input
+                    # child is a row vector whose entries are stored in `f.partials_storage`
+                    rev_parent = @s f.reverse_storage[k]
+                    for j in _eachindex(f.sizes, k)
+                        for child_idx in children_indices
+                            ix = children_arr[child_idx]
+                            partial = @j f.partials_storage[ix]
+                            val = ifelse(
+                                rev_parent == 0.0 && !isfinite(partial),
+                                rev_parent,
+                                rev_parent * partial,
+                            )
+                            @j f.reverse_storage[ix] = val
+                        end
+                    end
+                    continue
+                end
+            end
+        elseif node.type != MOI.Nonlinear.NODE_CALL_UNIVARIATE
             continue
         end
-        rev_parent = f.reverse_storage[node.parent]
-        partial = f.partials_storage[k]
-        f.reverse_storage[k] = ifelse(
-            rev_parent == 0.0 && !isfinite(partial),
-            rev_parent,
-            rev_parent * partial,
-        )
+        # Node `k` has same size as its children.
+        # The Jacobian (between the vectorized versions) is diagonal and the diagonal entries
+        # are stored in `f.partials_storage`
+        for j in _eachindex(f.sizes, k)
+            rev_parent = @j f.reverse_storage[k]
+            for child_idx in children_indices
+                ix = children_arr[child_idx]
+                @assert _size(f.sizes, k) == _size(f.sizes, ix)
+                partial = @j f.partials_storage[ix]
+                val = ifelse(
+                    rev_parent == 0.0 && !isfinite(partial),
+                    rev_parent,
+                    rev_parent * partial,
+                )
+                @j f.reverse_storage[ix] = val
+            end
+        end
     end
     return
 end
@@ -406,12 +450,12 @@ function _extract_reverse_pass_inner(
     subexpressions::AbstractVector{T},
     scale::T,
 ) where {T}
-    @assert length(f.reverse_storage) >= length(f.nodes)
+    @assert length(f.reverse_storage) >= _length(f.sizes)
     for (k, node) in enumerate(f.nodes)
         if node.type == Nonlinear.NODE_VARIABLE
-            output[node.index] += scale * f.reverse_storage[k]
+            output[node.index] += scale * @s f.reverse_storage[k]
         elseif node.type == Nonlinear.NODE_SUBEXPRESSION
-            subexpressions[node.index] += scale * f.reverse_storage[k]
+            subexpressions[node.index] += scale * @s f.reverse_storage[k]
         end
     end
     return
