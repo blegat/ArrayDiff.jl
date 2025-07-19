@@ -6,6 +6,24 @@
 
 Experimental addition of array support to `MOI.Nonlinear.ReverseAD`
 
+Supported operators:
+
+- [x] `vect`, e.g, `[1, 2]`.
+- [x] `dot`
+- [ ] `row`, e.g. `[1 2; 3 4]`
+- [ ] `hcat`
+- [ ] `vcat`
+- [ ] `norm`
+- [ ] Matrix-Vector product
+- [ ] Matrix-Matrix product
+- [ ] Broadcasting scalar operator
+
+Supported levels of AD:
+
+- [x] 0-th order
+- [ ] 1-st order
+- [ ] 2-nd order
+
 > [!WARNING]
 > This code is still very much experimental
 
