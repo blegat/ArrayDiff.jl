@@ -7,6 +7,7 @@
 struct _SubexpressionStorage
     nodes::Vector{Nonlinear.Node}
     adj::SparseArrays.SparseMatrixCSC{Bool,Int}
+    sizes::Sizes
     const_values::Vector{Float64}
     forward_storage::Vector{Float64}
     partials_storage::Vector{Float64}
@@ -21,10 +22,12 @@ struct _SubexpressionStorage
         partials_storage_ϵ::Vector{Float64},
         linearity::Linearity,
     )
-        N = length(nodes)
+        sizes = _infer_sizes(nodes, adj)
+        N = _length(sizes)
         return new(
             nodes,
             adj,
+            _infer_sizes(nodes, adj),
             const_values,
             zeros(N),  # forward_storage,
             zeros(N),  # partials_storage,

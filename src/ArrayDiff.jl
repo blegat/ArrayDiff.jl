@@ -50,6 +50,7 @@ import NaNMath:
 
 include("Coloring/Coloring.jl")
 include("graph_tools.jl")
+include("sizes.jl")
 include("types.jl")
 include("utils.jl")
 
