@@ -638,7 +638,8 @@ function test_linearity_no_hess()
     MOI.initialize(evaluator, [:Grad, :Jac])
     # We initialized without the need for the hessian so
     # the linearity shouldn't be computed.
-    @test only(evaluator.backend.subexpressions).linearity == ArrayDiff.NONLINEAR
+    @test only(evaluator.backend.subexpressions).linearity ==
+          ArrayDiff.NONLINEAR
     return
 end
 
@@ -648,8 +649,11 @@ function test_dual_forward()
     function _test_dual_forward(input, x_input, test_value)
         model = Nonlinear.Model()
         Nonlinear.set_objective(model, input)
-        evaluator =
-            Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x, y])
+        evaluator = Nonlinear.Evaluator(
+            model,
+            ArrayDiff.Mode(),
+            MOI.VariableIndex[x, y],
+        )
         MOI.initialize(evaluator, [:Grad])
         ∇f = fill(NaN, 2)
         MOI.eval_objective_gradient(evaluator, ∇f, x_input)
@@ -715,7 +719,8 @@ function test_gradient_jump_855()
         model,
         :(ifelse($x <= 3.0, ($x - 2.0)^2, 2 * log($x - 2.0) + 1.0)),
     )
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
+    evaluator =
+        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
     MOI.initialize(evaluator, [:Grad])
     ∇f = fill(NaN, 1)
     MOI.eval_objective_gradient(evaluator, ∇f, [-1.0])
@@ -729,7 +734,8 @@ function test_gradient_abs()
     x = MOI.VariableIndex(1)
     model = Nonlinear.Model()
     Nonlinear.set_objective(model, :(abs($x)))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
+    evaluator =
+        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
     MOI.initialize(evaluator, [:Grad])
     ∇f = fill(NaN, 1)
     MOI.eval_objective_gradient(evaluator, ∇f, [2.0])
@@ -757,7 +763,8 @@ function test_gradient_logical()
     x = MOI.VariableIndex(1)
     model = Nonlinear.Model()
     Nonlinear.set_objective(model, :($x > 0.5 && $x < 0.9))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
+    evaluator =
+        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
     MOI.initialize(evaluator, [:Grad])
     @test MOI.eval_objective(evaluator, [1.5]) == 0.0
     ∇f = fill(NaN, 1)
@@ -770,7 +777,8 @@ function test_gradient_ifelse()
     x = MOI.VariableIndex(1)
     model = Nonlinear.Model()
     Nonlinear.set_objective(model, :(ifelse($x >= 0.5 || $x < 0.1, $x, 5)))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
+    evaluator =
+        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
     MOI.initialize(evaluator, [:Grad])
     @test MOI.eval_objective(evaluator, [1.5]) == 1.5
     ∇f = fill(NaN, 1)
@@ -789,7 +797,8 @@ function test_gradient_sqrt_nan()
     x = MOI.VariableIndex(1)
     model = Nonlinear.Model()
     Nonlinear.set_objective(model, :(sqrt($x)))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
+    evaluator =
+        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
     MOI.initialize(evaluator, [:Grad])
     @test isnan(MOI.eval_objective(evaluator, [-1.5]))
     ∇f = fill(Inf, 1)
@@ -824,7 +833,8 @@ function test_single_parameter()
     model = Nonlinear.Model()
     p = Nonlinear.add_parameter(model, 105.2)
     Nonlinear.set_objective(model, :($p))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
+    evaluator =
+        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
     MOI.initialize(evaluator, [:Grad])
     @test MOI.eval_objective(evaluator, [-0.1]) == 105.2
     return
