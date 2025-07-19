@@ -6,6 +6,14 @@
 
 Experimental addition of array support to `MOI.Nonlinear.ReverseAD`
 
+> [!WARNING]
+> This code is still very much experimental
+
+You need to use the following branch of [MathOptInterface](https://github.com/jump-dev/MathOptInterface.jl)
+```julia
+Pkg.add(PackageSpec(name="MathOptInterface", rev="bl/arraydiff"))
+```
+
 Supported operators:
 
 - [x] `vect`, e.g, `[1, 2]`.
@@ -23,9 +31,6 @@ Supported levels of AD:
 - [x] 0-th order
 - [ ] 1-st order
 - [ ] 2-nd order
-
-> [!WARNING]
-> This code is still very much experimental
 
 [build-img]: https://github.com/blegat/ArrayDiff.jl/actions/workflows/ci.yml/badge.svg?branch=main
 [build-url]: https://github.com/blegat/ArrayDiff.jl/actions?query=workflow%3ACI
