@@ -136,11 +136,10 @@ function _forward_eval(
                     tmp_sum = zero(T)
                     for c_idx in children_indices
                         ix = children_arr[c_idx]
-                        _setindex!(f.partials_storage, one(T), f.sizes, ix, j)
-                        f.partials_storage[ix] = one(T)
-                        tmp_sum += _getindex(f.forward_storage, f.sizes, ix, j)
+                        @j f.partials_storage[ix] = one(T)
+                        tmp_sum += @j f.forward_storage[ix]
                     end
-                    _setindex!(f.forward_storage, tmp_sum, f.sizes, k, j)
+                    @j f.forward_storage[k] = tmp_sum
                 end
             elseif node.index == 2 # :-
                 @assert N == 2
