@@ -1,4 +1,4 @@
-name = "ArrayAD"
+name = "ArrayDiff"
 uuid = "c45fa1ca-6901-44ac-ae5b-5513a4852d50"
 authors = ["Benoît Legat <benoit.legat@gmail.com>"]
 version = "0.1.0"

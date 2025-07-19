@@ -188,8 +188,8 @@ julia> x = [(1, 2, 3), (4, 5, 6), (7, 8, 9)]
  (4, 5, 6)
  (7, 8, 9)
 
-julia> MOI.Nonlinear.ArrayAD._reinterpret_unsafe(NTuple{2,Int}, x)
-4-element MathOptInterface.Nonlinear.ArrayAD._UnsafeVectorView{Tuple{Int64, Int64}}:
+julia> MOI.Nonlinear.ArrayDiff._reinterpret_unsafe(NTuple{2,Int}, x)
+4-element MathOptInterface.Nonlinear.ArrayDiff._UnsafeVectorView{Tuple{Int64, Int64}}:
  (1, 2)
  (3, 4)
  (5, 6)
