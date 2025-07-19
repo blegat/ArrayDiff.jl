@@ -41,6 +41,14 @@ function _storage_range(sizes::Sizes, k::Int)
     return sizes.storage_offset[k] .+ _eachindex(sizes, k)
 end
 
+function _getindex(x, sizes::Sizes, k::Int, j)
+    return x[sizes.storage_offset[k] + j]
+end
+
+function _setindex!(x, value, sizes::Sizes, k::Int, j)
+    return x[sizes.storage_offset[k] + j] = value
+end
+
 # /!\ Can only be called in decreasing `k` order
 function _add_size!(sizes::Sizes, k::Int, size::Tuple)
     sizes.ndims[k] = length(size)
@@ -77,9 +85,7 @@ function _infer_sizes(
         node = nodes[k]
         children_indices = SparseArrays.nzrange(adj, k)
         N = length(children_indices)
-        if node.type == Nonlinear.NODE_SUBEXPRESSION
-            error("Subexpressions not supported yet")
-        elseif node.type == Nonlinear.NODE_CALL_MULTIVARIATE
+        if node.type == Nonlinear.NODE_CALL_MULTIVARIATE
             op = MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS[node.index]
             if op == :vect
                 _assert_scalar_children(sizes, children_arr, children_indices, op)
