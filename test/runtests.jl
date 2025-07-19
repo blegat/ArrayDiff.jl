@@ -1,3 +1,2 @@
 include("ReverseAD.jl")
-
-import SparseArrays
+include("ArrayDiff.jl")
