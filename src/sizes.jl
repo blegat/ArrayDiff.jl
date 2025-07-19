@@ -22,7 +22,7 @@ function _size(sizes::Sizes, k::Int, dim::Int)
 end
 
 function _size(sizes::Sizes, k::Int)
-    return view(sizes.size, sizes.size_offset[k] .+ Base.OneTo(dim))
+    return view(sizes.size, sizes.size_offset[k] .+ Base.OneTo(sizes.ndims[k]))
 end
 
 function _length(sizes::Sizes, k::Int)
@@ -71,8 +71,7 @@ function _infer_sizes(
     nodes::Vector{Nonlinear.Node},
     adj::SparseArrays.SparseMatrixCSC{Bool,Int},
 )
-    sizes = Sizes(zeros(Int, length(nodes)), Int[], zeros(Int, length(nodes)), zeros(Int, length(nodes) + 1))
-    operators = d.data.operators
+    sizes = Sizes(zeros(Int, length(nodes)), zeros(Int, length(nodes)), Int[], zeros(Int, length(nodes) + 1))
     children_arr = SparseArrays.rowvals(adj)
     for k in length(nodes):-1:1
         node = nodes[k]
@@ -85,6 +84,8 @@ function _infer_sizes(
             if op == :vect
                 _assert_scalar_children(sizes, children_arr, children_indices, op)
                 _add_size!(sizes, k, (N,))
+            elseif op == :dot
+                # TODO assert all arguments have same size
             elseif op == :+ || op == :-
                 # TODO assert all arguments have same size
                 _copy_size!(sizes, k, children_arr[first(children_indices)])
