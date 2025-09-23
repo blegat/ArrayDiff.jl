@@ -366,7 +366,8 @@ function _reverse_eval(f::_SubexpressionStorage)
                     # Node `k` is scalar, the jacobian w.r.t. each vectorized input
                     # child is a row vector whose entries are stored in `f.partials_storage`
                     rev_parent = @s f.reverse_storage[k]
-                    for j in _eachindex(f.sizes, children_arr[children_indices[1]])
+                    for j in
+                        _eachindex(f.sizes, children_arr[children_indices[1]])
                         for child_idx in children_indices
                             ix = children_arr[child_idx]
                             partial = @j f.partials_storage[ix]
