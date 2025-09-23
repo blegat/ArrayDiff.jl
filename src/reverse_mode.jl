@@ -356,17 +356,17 @@ function _reverse_eval(f::_SubexpressionStorage)
                     @assert _eachindex(f.sizes, k) ==
                             eachindex(children_indices)
                     for j in eachindex(children_indices)
-                        rev_parent = @s f.reverse_storage[k]
                         ix = children_arr[children_indices[j]]
+                        rev_parent_j = @j f.reverse_storage[k]
                         # partial is 1 so we can ignore it
-                        @s f.reverse_storage[ix] = rev_parent
+                        @s f.reverse_storage[ix] = rev_parent_j
                     end
                     continue
                 elseif op == :dot
                     # Node `k` is scalar, the jacobian w.r.t. each vectorized input
                     # child is a row vector whose entries are stored in `f.partials_storage`
                     rev_parent = @s f.reverse_storage[k]
-                    for j in _eachindex(f.sizes, k)
+                    for j in _eachindex(f.sizes, children_arr[children_indices[1]])
                         for child_idx in children_indices
                             ix = children_arr[child_idx]
                             partial = @j f.partials_storage[ix]
