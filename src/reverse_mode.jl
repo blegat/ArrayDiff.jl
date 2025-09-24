@@ -345,7 +345,6 @@ function _reverse_eval(f::_SubexpressionStorage)
         f.reverse_storage[i] = one(Float64)
     end
     for k in 1:length(f.nodes)
-        @show f.reverse_storage
         node = f.nodes[k]
         children_indices = SparseArrays.nzrange(f.adj, k)
         if node.type == MOI.Nonlinear.NODE_CALL_MULTIVARIATE
