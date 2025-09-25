@@ -100,6 +100,11 @@ function test_objective_norm_bivariate()
     g = ones(2)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == x / 5.0
+    y = [0.0, 0.0]
+    @test MOI.eval_objective(evaluator, y) == 0.0
+    g = ones(2)
+    MOI.eval_objective_gradient(evaluator, g, y)
+    @test g == [0.0, 0.0]
     return
 end
 
