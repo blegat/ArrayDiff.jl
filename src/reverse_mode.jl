@@ -247,6 +247,24 @@ function _forward_eval(
                     tmp_dot += v1 * v2
                 end
                 @s f.forward_storage[k] = tmp_dot
+            elseif node.index == 12 # hcat
+                idx1, idx2 = children_indices
+                ix1 = children_arr[idx1]
+                ix2 = children_arr[idx2]
+                nb_cols1 = f.sizes.ndims[ix1] <= 1 ? 1 : _size(f.sizes, ix1, 2)
+                col_size = _size(f.sizes, k, 1)
+                for j in _eachindex(f.sizes, k)
+                    col = (j - 1) ÷ col_size + 1
+                    if col <= nb_cols1
+                        @j f.partials_storage[ix1] = one(T)
+                        val = @j f.forward_storage[ix1]
+                        @j f.forward_storage[k] = val
+                    else
+                        @j f.partials_storage[ix2] = one(T)
+                        val = @j f.forward_storage[ix2]
+                        @j f.forward_storage[k] = val
+                    end
+                end
             else # atan, min, max
                 f_input = _UnsafeVectorView(d.jac_storage, N)
                 ∇f = _UnsafeVectorView(d.user_output_buffer, N)
@@ -323,6 +341,18 @@ function _forward_eval(
             f.partials_storage[rhs] = zero(T)
         end
     end
+    # This function is written assuming that the final output is scalar.
+    # Therefore cannot return the matrix, so I guess I return it's first entry only, 
+    # as long as sum or matx-vect products are not implemented.
+
+    #println("Last node ", f.nodes[1].index)
+    #if f.nodes[1].index == 12
+    #    mtx = reshape(
+    #        f.forward_storage[_storage_range(f.sizes, 1)],
+    #        f.sizes.size[1:f.sizes.ndims[1]]...,
+    #    )
+    #    return mtx
+    #end
     return f.forward_storage[1]
 end
 
@@ -377,6 +407,29 @@ function _reverse_eval(f::_SubexpressionStorage)
                             )
                             @j f.reverse_storage[ix] = val
                         end
+                    end
+                    continue
+                elseif op == :hcat
+                    total_cols = 0
+                    for c_idx in children_indices
+                        total_cols += f.sizes.ndims[children_arr[c_idx]] <= 1 ?
+                            1 : _size(f.sizes, children_arr[c_idx], 2)
+                    end
+                    row_size = _size(f.sizes, k, 1)
+                    col_start = 1
+                    for c_idx in children_indices
+                        child = children_arr[c_idx]
+                        child_col_size = f.sizes.ndims[child] <= 1 ?
+                            1 : _size(f.sizes, child, 2)
+                        for i in 1:row_size
+                            for j in 1:child_col_size
+                                rev_parent_j =
+                                    @j f.reverse_storage[k]
+                                # partial is 1 so we can ignore it
+                                @j f.reverse_storage[child] = rev_parent_j
+                            end
+                        end
+                        col_start += child_col_size
                     end
                     continue
                 end

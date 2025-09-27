@@ -184,6 +184,16 @@ function _infer_sizes(
             elseif op == :+ || op == :-
                 # TODO assert all arguments have same size
                 _copy_size!(sizes, k, children_arr[first(children_indices)])
+            elseif op == :hcat
+                total_cols = 0
+                for c_idx in children_indices
+                    total_cols += sizes.ndims[children_arr[c_idx]] <= 1 ?
+                        1 : _size(sizes, children_arr[c_idx], 2)
+                end
+                child_shape = _size(sizes, children_arr[first(children_indices)])
+                shape = sizes.ndims[children_arr[first(children_indices)]] <= 2 ?
+                    (child_shape[1], total_cols) : (child_shape[1], total_cols, child_shape[3:end]...)
+                _add_size!(sizes, k, tuple(shape...))
             elseif op == :*
                 # TODO assert compatible sizes and all ndims should be 0 or 2
                 first_matrix = findfirst(children_indices) do i
