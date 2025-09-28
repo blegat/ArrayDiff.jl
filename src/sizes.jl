@@ -190,9 +190,14 @@ function _infer_sizes(
                     total_cols += sizes.ndims[children_arr[c_idx]] <= 1 ?
                         1 : _size(sizes, children_arr[c_idx], 2)
                 end
-                child_shape = _size(sizes, children_arr[first(children_indices)])
-                shape = sizes.ndims[children_arr[first(children_indices)]] <= 2 ?
-                    (child_shape[1], total_cols) : (child_shape[1], total_cols, child_shape[3:end]...)
+                if sizes.ndims[children_arr[first(children_indices)]] == 0
+                    shape = (1, total_cols)
+                elseif sizes.ndims[children_arr[first(children_indices)]] <= 2
+                    shape = ( _size(sizes, children_arr[first(children_indices)], 1), total_cols)
+                else 
+                    child_shape = _size(sizes, children_arr[first(children_indices)])
+                    shape = (child_shape[1], total_cols, child_shape[3:end]...)
+                end
                 _add_size!(sizes, k, tuple(shape...))
             elseif op == :*
                 # TODO assert compatible sizes and all ndims should be 0 or 2

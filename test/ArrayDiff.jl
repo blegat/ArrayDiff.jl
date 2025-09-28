@@ -64,6 +64,36 @@ function test_objective_dot_bivariate()
     return
 end
 
+function test_objective_hcat_0dim()
+    model = Nonlinear.Model()
+    x1 = MOI.VariableIndex(1)
+    x2 = MOI.VariableIndex(2)
+    x3 = MOI.VariableIndex(3)
+    x4 = MOI.VariableIndex(4)
+    Nonlinear.set_objective(
+        model,
+        :(dot([$x1 $x3], [$x2 $x4]))
+    )
+    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
+    MOI.initialize(evaluator, [:Grad])
+    sizes = evaluator.backend.objective.expr.sizes
+    @test sizes.ndims == [0, 2, 0, 0, 2, 0, 0]
+    @test sizes.size_offset == [0, 2, 0, 0, 0, 0, 0]
+    @test sizes.size == [1, 2, 1, 2]
+    @test sizes.storage_offset == [0, 1, 3, 4, 5, 7, 8, 9]
+    x1 = 1.0
+    x2 = 2.0
+    x3 = 3.0
+    x4 = 4.0
+    println(MOI.eval_objective(evaluator, [x1, x2, x3, x4]))
+    @test MOI.eval_objective(evaluator, [x1, x2, x3, x4]) ==
+          14.0
+    g = ones(4)
+    MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3, x4])
+    @test g == [2.0, 1.0, 4.0, 3.0]
+    return
+end
+
 function test_objective_hcat_1dim()
     model = Nonlinear.Model()
     x1 = MOI.VariableIndex(1)
