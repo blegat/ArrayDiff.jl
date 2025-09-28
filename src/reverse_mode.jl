@@ -252,18 +252,16 @@ function _forward_eval(
                 ix1 = children_arr[idx1]
                 ix2 = children_arr[idx2]
                 nb_cols1 = f.sizes.ndims[ix1] <= 1 ? 1 : _size(f.sizes, ix1, 2)
-                col_size = _size(f.sizes, k, 1)
-                for j in _eachindex(f.sizes, k)
-                    col = (j - 1) ÷ col_size + 1
-                    if col <= nb_cols1
-                        @j f.partials_storage[ix1] = one(T)
-                        val = @j f.forward_storage[ix1]
-                        @j f.forward_storage[k] = val
-                    else
-                        @j f.partials_storage[ix2] = one(T)
-                        val = @j f.forward_storage[ix2]
-                        @j f.forward_storage[k] = val
-                    end
+                col_size = f.sizes.ndims[ix1] == 0 ? 1 : _size(f.sizes, k, 1)
+                for j in _eachindex(f.sizes, ix1)
+                    @j f.partials_storage[ix1] = one(T)
+                    val = @j f.forward_storage[ix1]
+                    @j f.forward_storage[k] = val
+                end
+                for j in _eachindex(f.sizes, ix2)
+                    @j f.partials_storage[ix2] = one(T)
+                    val = @j f.forward_storage[ix2]
+                    _setindex!(f.forward_storage, val, f.sizes, k, j + nb_cols1 * col_size)
                 end
             else # atan, min, max
                 f_input = _UnsafeVectorView(d.jac_storage, N)
@@ -410,26 +408,28 @@ function _reverse_eval(f::_SubexpressionStorage)
                     end
                     continue
                 elseif op == :hcat
-                    total_cols = 0
-                    for c_idx in children_indices
-                        total_cols += f.sizes.ndims[children_arr[c_idx]] <= 1 ?
-                            1 : _size(f.sizes, children_arr[c_idx], 2)
+                    idx1, idx2 = children_indices
+                    ix1 = children_arr[idx1]
+                    ix2 = children_arr[idx2]
+                    nb_cols1 = f.sizes.ndims[ix1] <= 1 ? 1 : _size(f.sizes, ix1, 2)
+                    col_size = f.sizes.ndims[ix1] == 0 ? 1 : _size(f.sizes, k, 1)
+                    for j in _eachindex(f.sizes, ix1)
+                        partial = @j f.partials_storage[ix1]
+                        val = ifelse(
+                            _getindex(f.reverse_storage, f.sizes, k, j) == 0.0 && !isfinite(partial),
+                            _getindex(f.reverse_storage, f.sizes, k, j),
+                            _getindex(f.reverse_storage, f.sizes, k, j) * partial,
+                        )
+                        @j f.reverse_storage[ix1] = val
                     end
-                    row_size = _size(f.sizes, k, 1)
-                    col_start = 1
-                    for c_idx in children_indices
-                        child = children_arr[c_idx]
-                        child_col_size = f.sizes.ndims[child] <= 1 ?
-                            1 : _size(f.sizes, child, 2)
-                        for i in 1:row_size
-                            for j in 1:child_col_size
-                                rev_parent_j =
-                                    @j f.reverse_storage[k]
-                                # partial is 1 so we can ignore it
-                                @j f.reverse_storage[child] = rev_parent_j
-                            end
-                        end
-                        col_start += child_col_size
+                    for j in _eachindex(f.sizes, ix2)
+                        partial = @j f.partials_storage[ix2]
+                        val = ifelse(
+                            _getindex(f.reverse_storage, f.sizes, k, j + nb_cols1 * col_size) == 0.0 && !isfinite(partial),
+                            _getindex(f.reverse_storage, f.sizes, k, j + nb_cols1 * col_size),
+                            _getindex(f.reverse_storage, f.sizes, k, j + nb_cols1 * col_size) * partial,
+                        )
+                        @j f.reverse_storage[ix2] = val
                     end
                     continue
                 end
