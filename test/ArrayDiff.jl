@@ -121,6 +121,48 @@ function test_objective_hcat_1dim()
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3, x4])
     @test g == [2.0, 1.0, 4.0, 3.0]
+  
+function test_objective_norm_univariate()
+    model = Nonlinear.Model()
+    x = MOI.VariableIndex(1)
+    Nonlinear.set_objective(model, :(norm([$x])))
+    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    MOI.initialize(evaluator, [:Grad])
+    sizes = evaluator.backend.objective.expr.sizes
+    @test sizes.ndims == [0, 1, 0]
+    @test sizes.size_offset == [0, 0, 0]
+    @test sizes.size == [1]
+    @test sizes.storage_offset == [0, 1, 2, 3]
+    x = [1.2]
+    @test MOI.eval_objective(evaluator, x) == abs(x[1])
+    g = ones(1)
+    MOI.eval_objective_gradient(evaluator, g, x)
+    @test g[1] == sign(x[1])
+    return
+end
+
+function test_objective_norm_bivariate()
+    model = Nonlinear.Model()
+    x = MOI.VariableIndex(1)
+    y = MOI.VariableIndex(2)
+    Nonlinear.set_objective(model, :(norm([$x, $y])))
+    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    MOI.initialize(evaluator, [:Grad])
+    sizes = evaluator.backend.objective.expr.sizes
+    @test sizes.ndims == [0, 1, 0, 0]
+    @test sizes.size_offset == [0, 0, 0, 0]
+    @test sizes.size == [2]
+    @test sizes.storage_offset == [0, 1, 3, 4, 5]
+    x = [3.0, 4.0]
+    @test MOI.eval_objective(evaluator, x) == 5.0
+    g = ones(2)
+    MOI.eval_objective_gradient(evaluator, g, x)
+    @test g == x / 5.0
+    y = [0.0, 0.0]
+    @test MOI.eval_objective(evaluator, y) == 0.0
+    g = ones(2)
+    MOI.eval_objective_gradient(evaluator, g, y)
+    @test g == [0.0, 0.0]
     return
 end
 

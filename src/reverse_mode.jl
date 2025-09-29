@@ -262,6 +262,21 @@ function _forward_eval(
                     @j f.partials_storage[ix2] = one(T)
                     val = @j f.forward_storage[ix2]
                     _setindex!(f.forward_storage, val, f.sizes, k, j + nb_cols1 * col_size)
+            elseif node.index == 14 # norm 
+                ix = children_arr[children_indices[1]]
+                tmp_norm_squared = zero(T)
+                for j in _eachindex(f.sizes, ix)
+                    v = @j f.forward_storage[ix]
+                    tmp_norm_squared += v * v
+                end
+                @s f.forward_storage[k] = sqrt(tmp_norm_squared)
+                for j in _eachindex(f.sizes, ix)
+                    v = @j f.forward_storage[ix]
+                    if tmp_norm_squared == 0
+                        @j f.partials_storage[ix] = zero(T)
+                    else
+                        @j f.partials_storage[ix] = v / @s f.forward_storage[k]
+                    end
                 end
             else # atan, min, max
                 f_input = _UnsafeVectorView(d.jac_storage, N)
@@ -430,6 +445,20 @@ function _reverse_eval(f::_SubexpressionStorage)
                             _getindex(f.reverse_storage, f.sizes, k, j + nb_cols1 * col_size) * partial,
                         )
                         @j f.reverse_storage[ix2] = val
+                elseif op == :norm
+                    # Node `k` is scalar, the jacobian w.r.t. the vectorized input
+                    # child is a row vector whose entries are stored in `f.partials_storage`
+                    rev_parent = @s f.reverse_storage[k]
+                    for j in
+                        _eachindex(f.sizes, children_arr[children_indices[1]])
+                        ix = children_arr[children_indices[1]]
+                        partial = @j f.partials_storage[ix]
+                        val = ifelse(
+                            rev_parent == 0.0 && !isfinite(partial),
+                            rev_parent,
+                            rev_parent * partial,
+                        )
+                        @j f.reverse_storage[ix] = val  
                     end
                     continue
                 end

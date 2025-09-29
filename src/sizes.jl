@@ -181,6 +181,8 @@ function _infer_sizes(
                 _add_size!(sizes, k, (N,))
             elseif op == :dot
                 # TODO assert all arguments have same size
+            elseif op == :norm
+                # TODO actually norm should be moved to univariate
             elseif op == :+ || op == :-
                 # TODO assert all arguments have same size
                 _copy_size!(sizes, k, children_arr[first(children_indices)])
