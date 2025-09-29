@@ -447,6 +447,7 @@ function _reverse_eval(f::_SubexpressionStorage)
                         )
                         @j f.reverse_storage[ix2] = val
                     end
+                    continue
                 elseif op == :norm
                     # Node `k` is scalar, the jacobian w.r.t. the vectorized input
                     # child is a row vector whose entries are stored in `f.partials_storage`
