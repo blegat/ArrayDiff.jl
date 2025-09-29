@@ -121,6 +121,8 @@ function test_objective_hcat_1dim()
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3, x4])
     @test g == [2.0, 1.0, 4.0, 3.0]
+    return
+end
   
 function test_objective_norm_univariate()
     model = Nonlinear.Model()
@@ -168,4 +170,4 @@ end
 
 end  # module
 
-TestArrayDiff.runtests()
+TestArrayDiff.runtests() 

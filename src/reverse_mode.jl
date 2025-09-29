@@ -262,6 +262,7 @@ function _forward_eval(
                     @j f.partials_storage[ix2] = one(T)
                     val = @j f.forward_storage[ix2]
                     _setindex!(f.forward_storage, val, f.sizes, k, j + nb_cols1 * col_size)
+                end
             elseif node.index == 14 # norm 
                 ix = children_arr[children_indices[1]]
                 tmp_norm_squared = zero(T)
@@ -445,6 +446,7 @@ function _reverse_eval(f::_SubexpressionStorage)
                             _getindex(f.reverse_storage, f.sizes, k, j + nb_cols1 * col_size) * partial,
                         )
                         @j f.reverse_storage[ix2] = val
+                    end
                 elseif op == :norm
                     # Node `k` is scalar, the jacobian w.r.t. the vectorized input
                     # child is a row vector whose entries are stored in `f.partials_storage`
