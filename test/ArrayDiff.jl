@@ -170,4 +170,4 @@ end
 
 end  # module
 
-TestArrayDiff.runtests() 
+TestArrayDiff.runtests()
