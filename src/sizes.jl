@@ -195,15 +195,14 @@ function _infer_sizes(
                 end
                 if sizes.ndims[children_arr[first(children_indices)]] == 0
                     shape = (1, total_cols)
-                elseif sizes.ndims[children_arr[first(children_indices)]] <= 2
+                else
+                    @assert sizes.ndims[children_arr[first(
+                        children_indices,
+                    )]] <= 2 "Hcat with ndims > 2 is not supported yet"
                     shape = (
                         _size(sizes, children_arr[first(children_indices)], 1),
                         total_cols,
                     )
-                else
-                    child_shape =
-                        _size(sizes, children_arr[first(children_indices)])
-                    shape = (child_shape[1], total_cols, child_shape[3:end]...)
                 end
                 _add_size!(sizes, k, tuple(shape...))
             elseif op == :*
