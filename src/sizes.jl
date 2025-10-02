@@ -189,15 +189,20 @@ function _infer_sizes(
             elseif op == :hcat
                 total_cols = 0
                 for c_idx in children_indices
-                    total_cols += sizes.ndims[children_arr[c_idx]] <= 1 ?
-                        1 : _size(sizes, children_arr[c_idx], 2)
+                    total_cols +=
+                        sizes.ndims[children_arr[c_idx]] <= 1 ? 1 :
+                        _size(sizes, children_arr[c_idx], 2)
                 end
                 if sizes.ndims[children_arr[first(children_indices)]] == 0
                     shape = (1, total_cols)
                 elseif sizes.ndims[children_arr[first(children_indices)]] <= 2
-                    shape = ( _size(sizes, children_arr[first(children_indices)], 1), total_cols)
-                else 
-                    child_shape = _size(sizes, children_arr[first(children_indices)])
+                    shape = (
+                        _size(sizes, children_arr[first(children_indices)], 1),
+                        total_cols,
+                    )
+                else
+                    child_shape =
+                        _size(sizes, children_arr[first(children_indices)])
                     shape = (child_shape[1], total_cols, child_shape[3:end]...)
                 end
                 _add_size!(sizes, k, tuple(shape...))
