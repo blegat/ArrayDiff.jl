@@ -361,18 +361,6 @@ function _forward_eval(
             f.partials_storage[rhs] = zero(T)
         end
     end
-    # This function is written assuming that the final output is scalar.
-    # Therefore cannot return the matrix, so I guess I return it's first entry only, 
-    # as long as sum or matx-vect products are not implemented.
-
-    #println("Last node ", f.nodes[1].index)
-    #if f.nodes[1].index == 12
-    #    mtx = reshape(
-    #        f.forward_storage[_storage_range(f.sizes, 1)],
-    #        f.sizes.size[1:f.sizes.ndims[1]]...,
-    #    )
-    #    return mtx
-    #end
     return f.forward_storage[1]
 end
 
