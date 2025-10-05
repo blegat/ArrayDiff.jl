@@ -179,6 +179,14 @@ function _infer_sizes(
                     op,
                 )
                 _add_size!(sizes, k, (N,))
+            elseif op == :row
+                _assert_scalar_children(
+                    sizes,
+                    children_arr,
+                    children_indices,
+                    op,
+                )
+                _add_size!(sizes, k, (1,N))
             elseif op == :dot
                 # TODO assert all arguments have same size
             elseif op == :norm
@@ -202,6 +210,25 @@ function _infer_sizes(
                     shape = (
                         _size(sizes, children_arr[first(children_indices)], 1),
                         total_cols,
+                    )
+                end
+                _add_size!(sizes, k, tuple(shape...))
+            elseif op == :vcat
+                total_rows = 0
+                for c_idx in children_indices
+                    total_rows +=
+                        sizes.ndims[children_arr[c_idx]] <= 1 ? 1 :
+                        _size(sizes, children_arr[c_idx], 1)
+                end
+                if sizes.ndims[children_arr[first(children_indices)]] == 0
+                    shape = (total_rows, 1)
+                else
+                    @assert sizes.ndims[children_arr[first(
+                        children_indices,
+                    )]] <= 2 "Hcat with ndims > 2 is not supported yet"
+                    shape = (
+                        total_rows,
+                        _size(sizes, children_arr[first(children_indices)], 2),
                     )
                 end
                 _add_size!(sizes, k, tuple(shape...))

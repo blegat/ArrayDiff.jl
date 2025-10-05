@@ -269,6 +269,35 @@ function _forward_eval(
                         j + nb_cols1 * col_size,
                     )
                 end
+            elseif node.index == 13 # vcat
+                idx1, idx2 = children_indices
+                ix1 = children_arr[idx1]
+                ix2 = children_arr[idx2]
+                nb_rows1 = f.sizes.ndims[ix1] <= 1 ? 1 : _size(f.sizes, ix1, 1)
+                nb_rows2 = f.sizes.ndims[ix2] <= 1 ? 1 : _size(f.sizes, ix2, 1)
+                nb_rows = nb_rows1 + nb_rows2
+                for j in _eachindex(f.sizes, ix1)
+                    @j f.partials_storage[ix1] = one(T)
+                    val = @j f.forward_storage[ix1]
+                    _setindex!(
+                        f.forward_storage,
+                        val,
+                        f.sizes,
+                        k,
+                        div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1
+                    )
+                end
+                for j in _eachindex(f.sizes, ix2)
+                    @j f.partials_storage[ix2] = one(T)
+                    val = @j f.forward_storage[ix2]
+                    _setindex!(
+                        f.forward_storage,
+                        val,
+                        f.sizes,
+                        k,
+                        div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1 + nb_rows1
+                    )
+                end
             elseif node.index == 14 # norm 
                 ix = children_arr[children_indices[1]]
                 tmp_norm_squared = zero(T)
@@ -284,6 +313,13 @@ function _forward_eval(
                     else
                         @j f.partials_storage[ix] = v / @s f.forward_storage[k]
                     end
+                end
+            elseif node.index == 16 # row
+                for j in _eachindex(f.sizes, k)
+                    ix = children_arr[children_indices[j]]
+                    @s f.partials_storage[ix] = one(T)
+                    val = @s f.forward_storage[ix]
+                    @j f.forward_storage[k] = val
                 end
             else # atan, min, max
                 f_input = _UnsafeVectorView(d.jac_storage, N)
@@ -461,6 +497,53 @@ function _reverse_eval(f::_SubexpressionStorage)
                         @j f.reverse_storage[ix2] = val
                     end
                     continue
+                elseif op == :vcat
+                    idx1, idx2 = children_indices
+                    ix1 = children_arr[idx1]
+                    ix2 = children_arr[idx2]
+                    nb_rows1 =
+                        f.sizes.ndims[ix1] <= 1 ? 1 : _size(f.sizes, ix1, 1)
+                    nb_rows2 = 
+                        f.sizes.ndims[ix2] <= 1 ? 1 : _size(f.sizes, ix2, 1)
+                    nb_rows = nb_rows1 + nb_rows2
+                    row_size =
+                        f.sizes.ndims[ix1] == 0 ? 1 : _size(f.sizes, k, 2)
+                    for j in _eachindex(f.sizes, ix1)
+                        partial = @j f.partials_storage[ix1]
+                        val = ifelse(
+                            _getindex(f.reverse_storage, f.sizes, k, div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1) ==
+                            0.0 && !isfinite(partial),
+                            _getindex(f.reverse_storage, f.sizes, k, div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1),
+                            _getindex(f.reverse_storage, f.sizes, k, div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1) *
+                            partial,
+                        )
+                        @j f.reverse_storage[ix1] = val
+                    end
+                    for j in _eachindex(f.sizes, ix2)
+                        partial = @j f.partials_storage[ix2]
+                        val = ifelse(
+                            _getindex(
+                                f.reverse_storage,
+                                f.sizes,
+                                k,
+                                div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1 + nb_rows1,
+                            ) == 0.0 && !isfinite(partial),
+                            _getindex(
+                                f.reverse_storage,
+                                f.sizes,
+                                k,
+                                div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1 + nb_rows1,
+                            ),
+                            _getindex(
+                                f.reverse_storage,
+                                f.sizes,
+                                k,
+                                div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1 + nb_rows1,
+                            ) * partial,
+                        )
+                        @j f.reverse_storage[ix2] = val
+                    end
+                    continue
                 elseif op == :norm
                     # Node `k` is scalar, the jacobian w.r.t. the vectorized input
                     # child is a row vector whose entries are stored in `f.partials_storage`
@@ -475,6 +558,14 @@ function _reverse_eval(f::_SubexpressionStorage)
                             rev_parent * partial,
                         )
                         @j f.reverse_storage[ix] = val
+                    end
+                    continue
+                elseif op == :row
+                    for j in _eachindex(f.sizes, k)
+                        ix = children_arr[children_indices[j]]
+                        rev_parent_j = @j f.reverse_storage[k]
+                        # partial is 1 so we can ignore it
+                        @s f.reverse_storage[ix] = rev_parent_j
                     end
                     continue
                 end
