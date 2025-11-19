@@ -10,6 +10,7 @@ import ForwardDiff
 import MathOptInterface as MOI
 const Nonlinear = MOI.Nonlinear
 import SparseArrays
+import SparseMatrixColorings
 
 """
     Mode() <: AbstractAutomaticDifferentiation
@@ -48,7 +49,8 @@ import NaNMath:
     pow,
     sqrt
 
-include("Coloring/Coloring.jl")
+include("indexed_set.jl")
+include("coloring_compat.jl")
 include("graph_tools.jl")
 include("sizes.jl")
 include("types.jl")

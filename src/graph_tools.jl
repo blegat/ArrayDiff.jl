@@ -151,7 +151,7 @@ end
 
 """
     _compute_gradient_sparsity!(
-        indices::Coloring.IndexedSet,
+        indices::IndexedSet,
         nodes::Vector{Nonlinear.Node},
     )
 
@@ -159,7 +159,7 @@ Compute the sparsity pattern of the gradient of an expression (that is, a list o
 which variable indices are present).
 """
 function _compute_gradient_sparsity!(
-    indices::Coloring.IndexedSet,
+    indices::IndexedSet,
     nodes::Vector{Nonlinear.Node},
 )
     for node in nodes
@@ -180,7 +180,7 @@ end
         nodes::Vector{Nonlinear.Node},
         adj,
         input_linearity::Vector{Linearity},
-        indexedset::Coloring.IndexedSet,
+        indexedset::IndexedSet,
         subexpression_edgelist::Vector{Set{Tuple{Int,Int}}},
         subexpression_variables::Vector{Vector{Int}},
     )
@@ -207,7 +207,7 @@ function _compute_hessian_sparsity(
     nodes::Vector{Nonlinear.Node},
     adj,
     input_linearity::Vector{Linearity},
-    indexedset::Coloring.IndexedSet,
+    indexedset::IndexedSet,
     subexpression_edgelist::Vector{Set{Tuple{Int,Int}}},
     subexpression_variables::Vector{Vector{Int}},
 )
