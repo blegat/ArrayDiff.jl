@@ -99,15 +99,53 @@ function _hessian_color_preprocess(
     algo = SparseMatrixColorings.GreedyColoringAlgorithm(; decompression=:substitution)
     tree_result = SparseMatrixColorings.coloring(S, problem, algo)
     
-    # Convert back to global indices
-    for k in eachindex(I)
-        I[k] = local_indices[I[k]]
-        J[k] = local_indices[J[k]]
+    # Reconstruct I and J from the tree structure (matching original _indirect_recover_structure)
+    # First add all diagonal elements
+    N = length(local_indices)
+    
+    # Count off-diagonal elements from tree structure
+    (; reverse_bfs_orders, tree_edge_indices, nt) = tree_result
+    nnz_offdiag = 0
+    for tree_idx in 1:nt
+        first = tree_edge_indices[tree_idx]
+        last = tree_edge_indices[tree_idx + 1] - 1
+        nnz_offdiag += (last - first + 1)
     end
+    
+    I_new = Vector{Int}(undef, N + nnz_offdiag)
+    J_new = Vector{Int}(undef, N + nnz_offdiag)
+    k = 0
+    
+    # Add all diagonal elements
+    for i in 1:N
+        k += 1
+        I_new[k] = local_indices[i]
+        J_new[k] = local_indices[i]
+    end
+    
+    # Then add off-diagonal elements from the tree structure
+    for tree_idx in 1:nt
+        first = tree_edge_indices[tree_idx]
+        last = tree_edge_indices[tree_idx + 1] - 1
+        for pos in first:last
+            (i_local, j_local) = reverse_bfs_orders[pos]
+            # Convert from local to global indices and normalize (lower triangle)
+            i_global = local_indices[i_local]
+            j_global = local_indices[j_local]
+            if j_global > i_global
+                i_global, j_global = j_global, i_global
+            end
+            k += 1
+            I_new[k] = i_global
+            J_new[k] = j_global
+        end
+    end
+    
+    @assert k == length(I_new)
     
     # Wrap result with local_indices
     result = ColoringResult(tree_result, local_indices)
-    return I, J, result
+    return I_new, J_new, result
 end
 
 """
