@@ -69,7 +69,7 @@ struct _FunctionStorage
     # Nonzero pattern of Hessian matrix
     hess_I::Vector{Int}
     hess_J::Vector{Int}
-    rinfo::Coloring.RecoveryInfo # coloring info for hessians
+    rinfo::Union{ColoringResult,Nothing} # coloring info for hessians
     seed_matrix::Matrix{Float64}
     # subexpressions which this function depends on, ordered for forward pass.
     dependent_subexpressions::Vector{Int}
@@ -77,7 +77,7 @@ struct _FunctionStorage
     function _FunctionStorage(
         expr::_SubexpressionStorage,
         num_variables,
-        coloring_storage::Coloring.IndexedSet,
+        coloring_storage::IndexedSet,
         want_hess::Bool,
         subexpressions::Vector{_SubexpressionStorage},
         dependent_subexpressions,
@@ -104,12 +104,12 @@ struct _FunctionStorage
                 subexpression_edgelist,
                 subexpression_variables,
             )
-            hess_I, hess_J, rinfo = Coloring.hessian_color_preprocess(
+            hess_I, hess_J, rinfo = _hessian_color_preprocess(
                 edgelist,
                 num_variables,
                 coloring_storage,
             )
-            seed_matrix = Coloring.seed_matrix(rinfo)
+            seed_matrix = _seed_matrix(rinfo)
             return new(
                 expr,
                 grad_sparsity,
@@ -125,7 +125,7 @@ struct _FunctionStorage
                 grad_sparsity,
                 Int[],
                 Int[],
-                Coloring.RecoveryInfo(),
+                nothing,
                 Array{Float64}(undef, 0, 0),
                 dependent_subexpressions,
             )
