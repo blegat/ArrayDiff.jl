@@ -46,6 +46,35 @@ function _hessian_color_preprocess(
     end
     local_indices = sort!(collect(seen_idx))
     empty!(seen_idx)
+    
+    # Handle empty case (no edges in Hessian)
+    if isempty(local_indices)
+        # Return empty structure - no variables to color
+        # We still need to return a valid ColoringResult, but with empty local_indices
+        # The I and J vectors are already empty, which is correct
+        # For the result, we'll create a minimal valid structure with a diagonal element
+        # Note: This case should rarely occur in practice
+        S = SparseArrays.spdiagm(0 => [true])
+        problem = SparseMatrixColorings.ColoringProblem(; structure=:symmetric, partition=:column)
+        algo = SparseMatrixColorings.GreedyColoringAlgorithm(; decompression=:substitution)
+        tree_result = SparseMatrixColorings.coloring(S, problem, algo)
+        result = ColoringResult(tree_result, Int[])
+        return I, J, result
+    end
+    
+    # Also handle case where we have vertices but no edges (diagonal-only Hessian)
+    if isempty(I)
+        # Create identity matrix pattern (diagonal only)
+        n = length(local_indices)
+        S = SparseArrays.spdiagm(0 => trues(n))
+        problem = SparseMatrixColorings.ColoringProblem(; structure=:symmetric, partition=:column)
+        algo = SparseMatrixColorings.GreedyColoringAlgorithm(; decompression=:substitution)
+        tree_result = SparseMatrixColorings.coloring(S, problem, algo)
+        result = ColoringResult(tree_result, local_indices)
+        # I and J are already empty, which is correct for no off-diagonal elements
+        return I, J, result
+    end
+    
     global_to_local_idx = seen_idx.nzidx # steal for storage
     for k in eachindex(local_indices)
         global_to_local_idx[local_indices[k]] = k
