@@ -212,7 +212,7 @@ end
 
 """
     _compute_gradient_sparsity!(
-        indices::Coloring.IndexedSet,
+        indices::IndexedSet,
         nodes::Vector{Nonlinear.Node},
     )
 
@@ -220,7 +220,7 @@ Compute the sparsity pattern of the gradient of an expression (that is, a list o
 which variable indices are present).
 """
 function _compute_gradient_sparsity!(
-    indices::Coloring.IndexedSet,
+    indices::MOI.Nonlinear.ReverseAD.Coloring.IndexedSet,
     nodes::Vector{Node},
 )
     for node in nodes
