@@ -20,9 +20,9 @@ function MOI.features_available(d::NLPEvaluator)
 end
 
 function MOI.initialize(
-    d::NLPEvaluator{T,S},
+    d::NLPEvaluator{T,S,R},
     requested_features::Vector{Symbol},
-) where {T<:Real,S<:AbstractVector{T}}
+) where {T<:Real,S<:AbstractVector{T},R}
     # Check that we support the features requested by the user.
     available_features = MOI.features_available(d)
     for feature in requested_features
@@ -42,7 +42,7 @@ function MOI.initialize(
     d.residual = nothing
     d.user_output_buffer = zeros(T, largest_user_input_dimension)
     d.jac_storage = zeros(T, max(N, largest_user_input_dimension))
-    d.constraints = _FunctionStorage{T,S}[]
+    d.constraints = _FunctionStorage{T,S,R}[]
     # Allocate `last_x` on the same device as the AD tape (S = Vector for the
     # CPU path, S = CuVector for GPU). Filling with NaN forces the
     # short-circuit check `last_x == x` to take the recompute branch on the
@@ -50,7 +50,7 @@ function MOI.initialize(
     d.last_x = fill!(S(undef, N), T(NaN))
     d.want_hess = :Hess in requested_features
     want_hess_storage = (:HessVec in requested_features) || d.want_hess
-    coloring_storage = Coloring.IndexedSet(N)
+    coloring_storage = MOI.Nonlinear.ReverseAD.Coloring.IndexedSet(N)
     max_expr_length = 0
     max_expr_with_sub_length = 0
     #
@@ -126,11 +126,11 @@ function MOI.initialize(
             d,
             S,
         )
-        objective = _FunctionStorage(
+        objective = _FunctionStorage{T,S,R}(
             subexpr,
             N,
             coloring_storage,
-            d.want_hess,
+            d.want_hess ? d.coloring_algorithm : nothing,
             d.subexpressions,
             individual_order[main_offset],
             subexpression_edgelist,
@@ -151,11 +151,11 @@ function MOI.initialize(
             d,
             S,
         )
-        residual = _FunctionStorage(
+        residual = _FunctionStorage{T,S,R}(
             subexpr,
             N,
             coloring_storage,
-            d.want_hess,
+            d.want_hess ? d.coloring_algorithm : nothing,
             d.subexpressions,
             individual_order[main_offset],
             subexpression_edgelist,
@@ -178,11 +178,11 @@ function MOI.initialize(
         )
         push!(
             d.constraints,
-            _FunctionStorage(
+            _FunctionStorage{T,S,R}(
                 subexpr,
                 N,
                 coloring_storage,
-                d.want_hess,
+                d.want_hess ? d.coloring_algorithm : nothing,
                 d.subexpressions,
                 individual_order[idx],
                 subexpression_edgelist,

@@ -8,7 +8,6 @@ import MathOptInterface as MOI
 const Nonlinear = MOI.Nonlinear
 
 import ArrayDiff
-const Coloring = ArrayDiff.Coloring
 
 function runtests()
     for name in names(@__MODULE__; all = true)
@@ -853,6 +852,33 @@ function test_model_typed_float32_evaluator_runs()
     MOI.eval_objective_gradient(evaluator, g, xv)
     @test g[1] ≈ 4 * xv[1]
     @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, xv)
+    return
+end
+
+function test_mode_storage_and_coloring()
+    algorithm = ArrayDiff.SMC.GreedyColoringAlgorithm(
+        ArrayDiff.SMC.LargestFirst();
+        decompression = :substitution,
+    )
+    for mode in (
+        ArrayDiff.Mode{Vector{Float32}}(),
+        ArrayDiff.Mode{Vector{Float32}}(algorithm),
+        ArrayDiff.Mode(algorithm),
+    )
+        model = ArrayDiff.model(mode)
+        T = eltype(model.parameters)
+        x = MOI.VariableIndex(1)
+        ArrayDiff.set_objective(model, :($x^2))
+        evaluator = ArrayDiff.Evaluator(model, mode, [x])
+        MOI.initialize(evaluator, [:Grad])
+        @test evaluator.backend.coloring_algorithm === mode.coloring_algorithm
+        @test evaluator.backend.last_x isa Vector{T}
+        @test evaluator.backend.objective.expr.forward_storage isa Vector{T}
+        @test MOI.eval_objective(evaluator, T[3]) == T(9)
+        g = zeros(T, 1)
+        MOI.eval_objective_gradient(evaluator, g, T[3])
+        @test g == T[6]
+    end
     return
 end
 

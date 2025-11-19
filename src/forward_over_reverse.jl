@@ -21,7 +21,7 @@ const MAX_CHUNK = 10
         f::_FunctionStorage,
         H::AbstractVector{Float64},
         λ::Float64,
-        offset::Int,
+        nzcount::Int,
     )::Int
 
 Evaluate the hessian matrix of the function `f` and store the result, scaled by
@@ -43,7 +43,7 @@ function _eval_hessian(
         return 0
     end
     chunk = min(size(ex.seed_matrix, 2), d.max_chunk)
-    Coloring.prepare_seed_matrix!(ex.seed_matrix, ex.rinfo)
+    _prepare_seed_matrix!(ex.seed_matrix, ex.rinfo)
     # Compute hessian-vector products
     num_products = size(ex.seed_matrix, 2) # number of hessian-vector products
     num_chunks = div(num_products, chunk)
@@ -65,8 +65,14 @@ function _eval_hessian(
         )
     end
     # TODO(odow): consider reverting to a view.
-    output_slice = _UnsafeVectorView(nzcount, length(ex.hess_I), pointer(H))
-    Coloring.recover_from_matmat!(
+    N = size(ex.seed_matrix, 1)
+    output_slice = _UnsafeVectorView{Float64}(
+        nzcount,
+        length(ex.hess_I),
+        pointer(H),
+    )::_UnsafeVectorView{Float64}
+    _recover_from_matmat!(
+        ex.hess_colptr,
         output_slice,
         ex.seed_matrix,
         ex.rinfo,
