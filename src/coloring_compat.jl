@@ -12,8 +12,8 @@
 
 Wrapper around TreeSetColoringResult that also stores local_indices mapping.
 """
-struct ColoringResult{M<:AbstractMatrix,T<:Integer,G<:SparseMatrixColorings.AdjacencyGraph{T},GT<:SparseMatrixColorings.AbstractGroups{T},R}
-    result::SparseMatrixColorings.TreeSetColoringResult{M,T,G,GT,R}
+struct ColoringResult{R<:SparseMatrixColorings.AbstractColoringResult}
+    result::R
     local_indices::Vector{Int}  # map from local to global indices
 end
 
@@ -21,6 +21,7 @@ end
     _hessian_color_preprocess(
         edgelist,
         num_total_var,
+        algo::SparseMatrixColorings.GreedyColoringAlgorithm,
         seen_idx = IndexedSet(0),
     )
 
@@ -34,6 +35,7 @@ SparseMatrixColorings.
 function _hessian_color_preprocess(
     edgelist,
     num_total_var,
+    algo::SparseMatrixColorings.GreedyColoringAlgorithm,
     seen_idx = IndexedSet(0),
 )
     resize!(seen_idx, num_total_var)
@@ -56,7 +58,6 @@ function _hessian_color_preprocess(
         # Note: This case should rarely occur in practice
         S = SparseArrays.spdiagm(0 => [true])
         problem = SparseMatrixColorings.ColoringProblem(; structure=:symmetric, partition=:column)
-        algo = SparseMatrixColorings.GreedyColoringAlgorithm(; decompression=:substitution)
         tree_result = SparseMatrixColorings.coloring(S, problem, algo)
         result = ColoringResult(tree_result, Int[])
         return I, J, result
@@ -68,7 +69,6 @@ function _hessian_color_preprocess(
         n = length(local_indices)
         S = SparseArrays.spdiagm(0 => trues(n))
         problem = SparseMatrixColorings.ColoringProblem(; structure=:symmetric, partition=:column)
-        algo = SparseMatrixColorings.GreedyColoringAlgorithm(; decompression=:substitution)
         tree_result = SparseMatrixColorings.coloring(S, problem, algo)
         result = ColoringResult(tree_result, local_indices)
         # I and J are already empty, which is correct for no off-diagonal elements
@@ -96,7 +96,6 @@ function _hessian_color_preprocess(
     
     # Perform coloring using SparseMatrixColorings
     problem = SparseMatrixColorings.ColoringProblem(; structure=:symmetric, partition=:column)
-    algo = SparseMatrixColorings.GreedyColoringAlgorithm(; decompression=:substitution)
     tree_result = SparseMatrixColorings.coloring(S, problem, algo)
     
     # Reconstruct I and J from the tree structure (matching original _indirect_recover_structure)
