@@ -19,7 +19,10 @@ function MOI.features_available(d::NLPEvaluator)
     return [:Grad, :Jac, :JacVec, :Hess, :HessVec]
 end
 
-function MOI.initialize(d::NLPEvaluator{R}, requested_features::Vector{Symbol}) where {R}
+function MOI.initialize(
+    d::NLPEvaluator{R},
+    requested_features::Vector{Symbol},
+) where {R}
     # Check that we support the features requested by the user.
     available_features = MOI.features_available(d)
     for feature in requested_features

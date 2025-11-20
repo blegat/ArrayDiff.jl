@@ -65,13 +65,12 @@ function _eval_hessian(
         )
     end
     # TODO(odow): consider reverting to a view.
-    output_slice = _UnsafeVectorView{Float64}(nzcount, length(ex.hess_I), pointer(H))::_UnsafeVectorView{Float64}
-    _recover_from_matmat!(
-        output_slice,
-        ex.seed_matrix,
-        ex.rinfo,
-        d.output_ϵ,
-    )
+    output_slice = _UnsafeVectorView{Float64}(
+        nzcount,
+        length(ex.hess_I),
+        pointer(H),
+    )::_UnsafeVectorView{Float64}
+    _recover_from_matmat!(output_slice, ex.seed_matrix, ex.rinfo, d.output_ϵ)
     for i in 1:length(output_slice)
         output_slice[i] *= scale
     end
