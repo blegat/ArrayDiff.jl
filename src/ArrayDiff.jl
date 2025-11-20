@@ -13,20 +13,24 @@ import SparseArrays
 import SparseMatrixColorings
 
 """
-    Mode() <: AbstractAutomaticDifferentiation
+    Mode(coloring_algorithm::SparseMatrixColorings.GreedyColoringAlgorithm) <: AbstractAutomaticDifferentiation
 
 Fork of `MOI.Nonlinear.SparseReverseMode` to add array support.
 """
-struct Mode <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
+struct Mode{C<:SparseMatrixColorings.GreedyColoringAlgorithm} <: MOI.Nonlinear.AbstractAutomaticDifferentiation
+    coloring_algorithm::C
+end
+
+Mode() = Mode(SparseMatrixColorings.GreedyColoringAlgorithm(; decompression=:substitution))
 
 function MOI.Nonlinear.Evaluator(
     model::MOI.Nonlinear.Model,
-    ::Mode,
+    mode::Mode,
     ordered_variables::Vector{MOI.VariableIndex},
 )
     return MOI.Nonlinear.Evaluator(
         model,
-        NLPEvaluator(model, ordered_variables),
+        NLPEvaluator(model, ordered_variables, mode.coloring_algorithm),
     )
 end
 
