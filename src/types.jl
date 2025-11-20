@@ -186,7 +186,7 @@ mutable struct NLPEvaluator{R,C<:SparseMatrixColorings.GreedyColoringAlgorithm} 
 
     function NLPEvaluator(
         data::Nonlinear.Model,
-        ordered_variables::Vector{MOI.VariableIndex};
+        ordered_variables::Vector{MOI.VariableIndex},
         coloring_algorithm::SparseMatrixColorings.GreedyColoringAlgorithm = SparseMatrixColorings.GreedyColoringAlgorithm(; decompression=:substitution),
     )
         problem = SparseMatrixColorings.ColoringProblem(; structure=:symmetric, partition=:column)
