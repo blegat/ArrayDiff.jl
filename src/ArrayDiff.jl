@@ -61,7 +61,7 @@ import NaNMath:
     sqrt
 
 include("indexed_set.jl")
-include("coloring_compat.jl")
+include("coloring.jl")
 include("graph_tools.jl")
 include("sizes.jl")
 include("types.jl")
