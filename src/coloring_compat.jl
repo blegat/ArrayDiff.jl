@@ -66,21 +66,6 @@ function _hessian_color_preprocess(
         return I, J, result
     end
 
-    # Also handle case where we have vertices but no edges (diagonal-only Hessian)
-    if isempty(I)
-        # Create identity matrix pattern (diagonal only)
-        n = length(local_indices)
-        S = SparseArrays.spdiagm(0 => trues(n))
-        problem = SparseMatrixColorings.ColoringProblem(;
-            structure = :symmetric,
-            partition = :column,
-        )
-        tree_result = SparseMatrixColorings.coloring(S, problem, algo)
-        result = ColoringResult(tree_result, local_indices)
-        # I and J are already empty, which is correct for no off-diagonal elements
-        return I, J, result
-    end
-
     global_to_local_idx = seen_idx.nzidx # steal for storage
     for k in eachindex(local_indices)
         global_to_local_idx[local_indices[k]] = k
