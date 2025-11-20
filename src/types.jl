@@ -78,7 +78,10 @@ struct _FunctionStorage{R<:SparseMatrixColorings.AbstractColoringResult}
         expr::_SubexpressionStorage,
         num_variables,
         coloring_storage::IndexedSet,
-        coloring_algorithm::Union{Nothing,SparseMatrixColorings.GreedyColoringAlgorithm},
+        coloring_algorithm::Union{
+            Nothing,
+            SparseMatrixColorings.GreedyColoringAlgorithm,
+        },
         subexpressions::Vector{_SubexpressionStorage},
         dependent_subexpressions,
         subexpression_edgelist,
@@ -147,7 +150,10 @@ interface.
 !!! warning
     Before using, you must initialize the evaluator using `MOI.initialize`.
 """
-mutable struct NLPEvaluator{R,C<:SparseMatrixColorings.GreedyColoringAlgorithm} <: MOI.AbstractNLPEvaluator
+mutable struct NLPEvaluator{
+    R,
+    C<:SparseMatrixColorings.GreedyColoringAlgorithm,
+} <: MOI.AbstractNLPEvaluator
     data::Nonlinear.Model
     ordered_variables::Vector{MOI.VariableIndex}
     coloring_algorithm::C
@@ -187,9 +193,14 @@ mutable struct NLPEvaluator{R,C<:SparseMatrixColorings.GreedyColoringAlgorithm} 
     function NLPEvaluator(
         data::Nonlinear.Model,
         ordered_variables::Vector{MOI.VariableIndex},
-        coloring_algorithm::SparseMatrixColorings.GreedyColoringAlgorithm = SparseMatrixColorings.GreedyColoringAlgorithm(; decompression=:substitution),
+        coloring_algorithm::SparseMatrixColorings.GreedyColoringAlgorithm = SparseMatrixColorings.GreedyColoringAlgorithm(;
+            decompression = :substitution,
+        ),
     )
-        problem = SparseMatrixColorings.ColoringProblem(; structure=:symmetric, partition=:column)
+        problem = SparseMatrixColorings.ColoringProblem(;
+            structure = :symmetric,
+            partition = :column,
+        )
         C = typeof(coloring_algorithm)
         R = Base.promote_op(
             SparseMatrixColorings.coloring,

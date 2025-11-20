@@ -17,11 +17,18 @@ import SparseMatrixColorings
 
 Fork of `MOI.Nonlinear.SparseReverseMode` to add array support.
 """
-struct Mode{C<:SparseMatrixColorings.GreedyColoringAlgorithm} <: MOI.Nonlinear.AbstractAutomaticDifferentiation
+struct Mode{C<:SparseMatrixColorings.GreedyColoringAlgorithm} <:
+       MOI.Nonlinear.AbstractAutomaticDifferentiation
     coloring_algorithm::C
 end
 
-Mode() = Mode(SparseMatrixColorings.GreedyColoringAlgorithm(; decompression=:substitution))
+function Mode()
+    return Mode(
+        SparseMatrixColorings.GreedyColoringAlgorithm(;
+            decompression = :substitution,
+        ),
+    )
+end
 
 function MOI.Nonlinear.Evaluator(
     model::MOI.Nonlinear.Model,
