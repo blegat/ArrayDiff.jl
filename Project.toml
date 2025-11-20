@@ -11,7 +11,7 @@ NaNMath = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [compat]
-DataStructures = "0.18"
+DataStructures = "0.18, 0.19"
 ForwardDiff = "1"
 MathOptInterface = "1.40"
 NaNMath = "1"
