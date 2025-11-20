@@ -12,8 +12,8 @@
 
 Wrapper around TreeSetColoringResult that also stores local_indices mapping.
 """
-struct ColoringResult
-    result::SparseMatrixColorings.TreeSetColoringResult
+struct ColoringResult{M<:AbstractMatrix,T<:Integer,G<:SparseMatrixColorings.AdjacencyGraph{T},GT<:SparseMatrixColorings.AbstractGroups{T},R}
+    result::SparseMatrixColorings.TreeSetColoringResult{M,T,G,GT,R}
     local_indices::Vector{Int}  # map from local to global indices
 end
 
