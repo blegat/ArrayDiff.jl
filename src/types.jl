@@ -63,28 +63,28 @@ function _subexpression_and_linearity(
     linearity
 end
 
-struct _FunctionStorage
+struct _FunctionStorage{R<:SparseMatrixColorings.AbstractColoringResult}
     expr::_SubexpressionStorage
     grad_sparsity::Vector{Int}
     # Nonzero pattern of Hessian matrix
     hess_I::Vector{Int}
     hess_J::Vector{Int}
-    rinfo::Union{ColoringResult,Nothing} # coloring info for hessians
+    rinfo::Union{Nothing,ColoringResult{R}}
     seed_matrix::Matrix{Float64}
     # subexpressions which this function depends on, ordered for forward pass.
     dependent_subexpressions::Vector{Int}
 
-    function _FunctionStorage(
+    function _FunctionStorage{R}(
         expr::_SubexpressionStorage,
         num_variables,
         coloring_storage::IndexedSet,
-        want_hess::Bool,
+        coloring_algorithm::Union{Nothing,SparseMatrixColorings.GreedyColoringAlgorithm},
         subexpressions::Vector{_SubexpressionStorage},
         dependent_subexpressions,
         subexpression_edgelist,
         subexpression_variables,
         linearity::Vector{Linearity},
-    )
+    ) where {R}
         empty!(coloring_storage)
         _compute_gradient_sparsity!(coloring_storage, expr.nodes)
         for k in dependent_subexpressions
@@ -95,7 +95,7 @@ struct _FunctionStorage
         end
         grad_sparsity = sort!(collect(coloring_storage))
         empty!(coloring_storage)
-        if want_hess
+        if !isnothing(coloring_algorithm)
             edgelist = _compute_hessian_sparsity(
                 expr.nodes,
                 expr.adj,
@@ -107,10 +107,11 @@ struct _FunctionStorage
             hess_I, hess_J, rinfo = _hessian_color_preprocess(
                 edgelist,
                 num_variables,
+                coloring_algorithm,
                 coloring_storage,
             )
             seed_matrix = _seed_matrix(rinfo)
-            return new(
+            return new{R}(
                 expr,
                 grad_sparsity,
                 hess_I,
@@ -120,7 +121,7 @@ struct _FunctionStorage
                 dependent_subexpressions,
             )
         else
-            return new(
+            return new{R}(
                 expr,
                 grad_sparsity,
                 Int[],
@@ -137,6 +138,7 @@ end
     NLPEvaluator(
         model::Nonlinear.Model,
         ordered_variables::Vector{MOI.VariableIndex},
+        coloring_algorithm::SparseMatrixColorings.AbstractColoringAlgorithm = SparseMatrixColorings.GreedyColoringAlgorithm(; decompression=:substitution),
     )
 
 Return an `NLPEvaluator` object that implements the `MOI.AbstractNLPEvaluator`
@@ -145,12 +147,13 @@ interface.
 !!! warning
     Before using, you must initialize the evaluator using `MOI.initialize`.
 """
-mutable struct NLPEvaluator <: MOI.AbstractNLPEvaluator
+mutable struct NLPEvaluator{R,C<:SparseMatrixColorings.GreedyColoringAlgorithm} <: MOI.AbstractNLPEvaluator
     data::Nonlinear.Model
     ordered_variables::Vector{MOI.VariableIndex}
+    coloring_algorithm::C
 
-    objective::Union{Nothing,_FunctionStorage}
-    constraints::Vector{_FunctionStorage}
+    objective::Union{Nothing,_FunctionStorage{R}}
+    constraints::Vector{_FunctionStorage{R}}
     subexpressions::Vector{_SubexpressionStorage}
     subexpression_order::Vector{Int}
     # Storage for the subexpressions in reverse-mode automatic differentiation.
@@ -183,8 +186,17 @@ mutable struct NLPEvaluator <: MOI.AbstractNLPEvaluator
 
     function NLPEvaluator(
         data::Nonlinear.Model,
-        ordered_variables::Vector{MOI.VariableIndex},
+        ordered_variables::Vector{MOI.VariableIndex};
+        coloring_algorithm::SparseMatrixColorings.GreedyColoringAlgorithm = SparseMatrixColorings.GreedyColoringAlgorithm(; decompression=:substitution),
     )
-        return new(data, ordered_variables)
+        problem = SparseMatrixColorings.ColoringProblem(; structure=:symmetric, partition=:column)
+        C = typeof(coloring_algorithm)
+        R = Base.promote_op(
+            SparseMatrixColorings.coloring,
+            SparseArrays.SparseMatrixCSC{Bool,Int},
+            typeof(problem),
+            C,
+        )
+        return new{R,C}(data, ordered_variables, coloring_algorithm)
     end
 end

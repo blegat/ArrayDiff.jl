@@ -14,7 +14,6 @@ import MathOptInterface as MOI
 const Nonlinear = MOI.Nonlinear
 
 import ArrayDiff
-# Coloring submodule removed - using SparseMatrixColorings instead
 
 function runtests()
     for name in names(@__MODULE__; all = true)
@@ -481,7 +480,8 @@ end
 
 function test_coloring_end_to_end_hessian_coloring_and_recovery()
     # Test the new coloring API through the compatibility layer
-    I, J, rinfo = ArrayDiff._hessian_color_preprocess(Set([(1, 2)]), 2, ArrayDiff.IndexedSet(0))
+    coloring_algorithm = ArrayDiff.SparseMatrixColorings.GreedyColoringAlgorithm(; decompression=:substitution)
+    I, J, rinfo = ArrayDiff._hessian_color_preprocess(Set([(1, 2)]), 2, coloring_algorithm, ArrayDiff.IndexedSet(0))
     R = ArrayDiff._seed_matrix(rinfo)
     ArrayDiff._prepare_seed_matrix!(R, rinfo)
     @test I == [1, 2, 2]
