@@ -179,11 +179,59 @@ function _infer_sizes(
                     op,
                 )
                 _add_size!(sizes, k, (N,))
+            elseif op == :row
+                _assert_scalar_children(
+                    sizes,
+                    children_arr,
+                    children_indices,
+                    op,
+                )
+                _add_size!(sizes, k, (1, N))
             elseif op == :dot
                 # TODO assert all arguments have same size
+            elseif op == :norm
+                # TODO actually norm should be moved to univariate
             elseif op == :+ || op == :-
                 # TODO assert all arguments have same size
                 _copy_size!(sizes, k, children_arr[first(children_indices)])
+            elseif op == :hcat
+                total_cols = 0
+                for c_idx in children_indices
+                    total_cols +=
+                        sizes.ndims[children_arr[c_idx]] <= 1 ? 1 :
+                        _size(sizes, children_arr[c_idx], 2)
+                end
+                if sizes.ndims[children_arr[first(children_indices)]] == 0
+                    shape = (1, total_cols)
+                else
+                    @assert sizes.ndims[children_arr[first(
+                        children_indices,
+                    )]] <= 2 "Hcat with ndims > 2 is not supported yet"
+                    shape = (
+                        _size(sizes, children_arr[first(children_indices)], 1),
+                        total_cols,
+                    )
+                end
+                _add_size!(sizes, k, tuple(shape...))
+            elseif op == :vcat
+                total_rows = 0
+                for c_idx in children_indices
+                    total_rows +=
+                        sizes.ndims[children_arr[c_idx]] <= 1 ? 1 :
+                        _size(sizes, children_arr[c_idx], 1)
+                end
+                if sizes.ndims[children_arr[first(children_indices)]] == 0
+                    shape = (total_rows, 1)
+                else
+                    @assert sizes.ndims[children_arr[first(
+                        children_indices,
+                    )]] <= 2 "Hcat with ndims > 2 is not supported yet"
+                    shape = (
+                        total_rows,
+                        _size(sizes, children_arr[first(children_indices)], 2),
+                    )
+                end
+                _add_size!(sizes, k, tuple(shape...))
             elseif op == :*
                 # TODO assert compatible sizes and all ndims should be 0 or 2
                 first_matrix = findfirst(children_indices) do i
@@ -193,14 +241,24 @@ function _infer_sizes(
                     last_matrix = findfirst(children_indices) do i
                         return !iszero(sizes.ndims[children_arr[i]])
                     end
-                    _add_size!(
-                        sizes,
-                        k,
-                        (
-                            _size(sizes, first_matrix, 1),
-                            _size(sizes, last_matrix, sizes.ndims[last_matrix]),
-                        ),
-                    )
+                    if sizes.ndims[last_matrix] == 0 ||
+                       sizes.ndims[first_matrix] == 0
+                        _add_size!(sizes, k, (1, 1))
+                        continue
+                    else
+                        _add_size!(
+                            sizes,
+                            k,
+                            (
+                                _size(sizes, first_matrix, 1),
+                                _size(
+                                    sizes,
+                                    last_matrix,
+                                    sizes.ndims[last_matrix],
+                                ),
+                            ),
+                        )
+                    end
                 end
             elseif op == :^ || op == :/
                 @assert N == 2
