@@ -400,6 +400,7 @@ function _forward_eval(
             f.partials_storage[rhs] = zero(T)
         end
     end
+    @assert f.sizes.ndims[1] == 0 "Final result must be scalar, got ndims = $(f.sizes.ndims[1])"
     return f.forward_storage[1]
 end
 
