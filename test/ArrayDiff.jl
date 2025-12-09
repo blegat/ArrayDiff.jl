@@ -64,7 +64,7 @@ function test_objective_dot_bivariate()
     return
 end
 
-function test_objective_hcat_0dim()
+function test_objective_hcat_scalars()
     model = Nonlinear.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
@@ -89,7 +89,7 @@ function test_objective_hcat_0dim()
     return
 end
 
-function test_objective_hcat_1dim()
+function test_objective_hcat_vectors()
     model = Nonlinear.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
@@ -114,6 +114,28 @@ function test_objective_hcat_1dim()
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3, x4])
     @test g == [2.0, 1.0, 4.0, 3.0]
+    return
+end
+
+function test_objective_dot_bivariate_on_rows()
+    model = Nonlinear.Model()
+    x = MOI.VariableIndex(1)
+    y = MOI.VariableIndex(2)
+    Nonlinear.set_objective(model, :(dot([$x $y] - [1 2], -[1 2] + [$x $y])))
+    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    MOI.initialize(evaluator, [:Grad])
+    sizes = evaluator.backend.objective.expr.sizes
+    @test sizes.ndims == [0, 2, 2, 0, 0, 2, 0, 0, 2, 2, 2, 0, 0, 2, 0, 0]
+    @test sizes.size_offset ==
+          [0, 12, 10, 0, 0, 8, 0, 0, 6, 4, 2, 0, 0, 0, 0, 0]
+    @test sizes.size == [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2]
+    @test sizes.storage_offset ==
+          [0, 1, 3, 5, 6, 7, 9, 10, 11, 13, 15, 17, 18, 19, 21, 22, 23]
+    x = [5, -1]
+    @test MOI.eval_objective(evaluator, x) ≈ 25
+    g = ones(2)
+    MOI.eval_objective_gradient(evaluator, g, x)
+    @test g == 2(x - [1, 2])
     return
 end
 
@@ -165,7 +187,7 @@ function test_objective_norm_of_row()
     model = Nonlinear.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
-    Nonlinear.set_objective(model, :(norm(row($x1, $x2))))
+    Nonlinear.set_objective(model, :(norm([$x1 $x2])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
@@ -182,7 +204,7 @@ function test_objective_norm_of_row()
     return
 end
 
-function test_objective_vcat_0dim()
+function test_objective_norm_of_vcat_vector()
     model = Nonlinear.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
@@ -205,18 +227,15 @@ function test_objective_vcat_0dim()
     MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3, x4])
     @test g == [1.0 / sqrt(10.0), 0.0, 3.0 / sqrt(10.0), 0.0]
     return
-end  
+end
 
-function test_objective_vcat_1dim()
+function test_objective_norm_of_vcat_matrix()
     model = Nonlinear.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
     x3 = MOI.VariableIndex(3)
     x4 = MOI.VariableIndex(4)
-    Nonlinear.set_objective(
-        model,
-        :(norm(vcat([$x1 $x3], [$x2 $x4])))
-    )
+    Nonlinear.set_objective(model, :(norm(vcat([$x1 $x3], [$x2 $x4]))))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
@@ -231,7 +250,12 @@ function test_objective_vcat_1dim()
     @test MOI.eval_objective(evaluator, [x1, x2, x3, x4]) == sqrt(30.0)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3, x4])
-    @test g == [1.0 / sqrt(30.0), 2.0 / sqrt(30.0), 3.0 / sqrt(30.0), 4.0 / sqrt(30.0)]
+    @test g == [
+        1.0 / sqrt(30.0),
+        2.0 / sqrt(30.0),
+        3.0 / sqrt(30.0),
+        4.0 / sqrt(30.0),
+    ]
     return
 end
 
@@ -241,10 +265,7 @@ function test_objective_norm_of_matrix()
     x2 = MOI.VariableIndex(2)
     x3 = MOI.VariableIndex(3)
     x4 = MOI.VariableIndex(4)
-    Nonlinear.set_objective(
-        model,
-        :(norm([$x1 $x2; $x3 $x4])),
-    )
+    Nonlinear.set_objective(model, :(norm([$x1 $x2; $x3 $x4])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
@@ -259,9 +280,14 @@ function test_objective_norm_of_matrix()
     @test MOI.eval_objective(evaluator, [x1, x2, x3, x4]) == sqrt(30.0)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3, x4])
-    @test g == [1.0 / sqrt(30.0), 2.0 / sqrt(30.0), 3.0 / sqrt(30.0), 4.0 / sqrt(30.0)]
+    @test g == [
+        1.0 / sqrt(30.0),
+        2.0 / sqrt(30.0),
+        3.0 / sqrt(30.0),
+        4.0 / sqrt(30.0),
+    ]
     return
-end 
+end
 
 function test_objective_norm_of_matrix_with_sum()
     model = Nonlinear.Model()
@@ -269,17 +295,16 @@ function test_objective_norm_of_matrix_with_sum()
     x2 = MOI.VariableIndex(2)
     x3 = MOI.VariableIndex(3)
     x4 = MOI.VariableIndex(4)
-    Nonlinear.set_objective(
-        model,
-        :(norm([$x1 $x2; $x3 $x4] - [1 1; 1 1])),
-    )
+    Nonlinear.set_objective(model, :(norm([$x1 $x2; $x3 $x4] - [1 1; 1 1])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 2, 2, 2, 0, 0, 2, 0, 0, 2, 2, 0, 0, 2, 0, 0]
-    @test sizes.size_offset == [0, 12, 10, 8, 0, 0, 6, 0, 0, 4, 2, 0, 0, 0, 0, 0]
+    @test sizes.size_offset ==
+          [0, 12, 10, 8, 0, 0, 6, 0, 0, 4, 2, 0, 0, 0, 0, 0]
     @test sizes.size == [1, 2, 1, 2, 2, 2, 1, 2, 1, 2, 2, 2, 2, 2]
-    @test sizes.storage_offset == [0, 1, 5, 9, 11, 12, 13, 15, 16, 17, 21, 23, 24, 25, 27, 28, 29]
+    @test sizes.storage_offset ==
+          [0, 1, 5, 9, 11, 12, 13, 15, 16, 17, 21, 23, 24, 25, 27, 28, 29]
     x1 = 1.0
     x2 = 2.0
     x3 = 3.0
@@ -290,34 +315,6 @@ function test_objective_norm_of_matrix_with_sum()
     @test g == [0.0, 1.0 / sqrt(14.0), 2.0 / sqrt(14.0), 3.0 / sqrt(14.0)]
     return
 end
-
-#function test_objective_norm_of_matrix_with_scalar_mult()
-#    model = Nonlinear.Model()
-#    x1 = MOI.VariableIndex(1)
-#    x2 = MOI.VariableIndex(2)
-#    x3 = MOI.VariableIndex(3)
-#    x4 = MOI.VariableIndex(4)
-#    Nonlinear.set_objective(
-#        model,
-#        :(norm(2 * [$x1 $x2; $x3 $x4] - [1 2; 3 4])),
-#    )
-#    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
-#    MOI.initialize(evaluator, [:Grad])
-#    sizes = evaluator.backend.objective.expr.sizes
-#    @test sizes.ndims == [0, 2, 2, 2, 0, 0, 2, 0, 0, 2, 2, 0, 0, 2, 0, 0]
-#    @test sizes.size_offset == [0, 12, 10, 8, 0, 0, 6, 0, 0, 4, 2, 0, 0, 0, 0, 0]
-#    @test sizes.size == [1, 2, 1, 2, 2, 2, 1, 2, 1, 2, 2, 2, 2, 2]
-#    @test sizes.storage_offset == [0, 1, 5, 9, 11, 12, 13, 15, 16, 17, 21, 23, 24, 25, 27, 28, 29]
-#    x1 = 2.0
-#    x2 = 4.0
-#    x3 = 6.0
-#    x4 = 8.0
-#    @test MOI.eval_objective(evaluator, [x1, x2, x3, x4]) == sqrt(30.0)
-#    g = ones(4)
-#    MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3, x4])
-#    @test g == [1.0 / sqrt(30.0), 2.0 / sqrt(30.0), 3.0 / sqrt(30.0), 4.0 / sqrt(30.0)]
-#    return
-#end
 
 end  # module
 

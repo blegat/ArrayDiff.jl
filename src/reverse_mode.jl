@@ -284,7 +284,7 @@ function _forward_eval(
                         val,
                         f.sizes,
                         k,
-                        div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1
+                        div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1,
                     )
                 end
                 for j in _eachindex(f.sizes, ix2)
@@ -295,7 +295,10 @@ function _forward_eval(
                         val,
                         f.sizes,
                         k,
-                        div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1 + nb_rows1
+                        div(j-1, nb_rows1) * nb_rows +
+                        1 +
+                        (j-1) % nb_rows1 +
+                        nb_rows1,
                     )
                 end
             elseif node.index == 14 # norm 
@@ -503,7 +506,7 @@ function _reverse_eval(f::_SubexpressionStorage)
                     ix2 = children_arr[idx2]
                     nb_rows1 =
                         f.sizes.ndims[ix1] <= 1 ? 1 : _size(f.sizes, ix1, 1)
-                    nb_rows2 = 
+                    nb_rows2 =
                         f.sizes.ndims[ix2] <= 1 ? 1 : _size(f.sizes, ix2, 1)
                     nb_rows = nb_rows1 + nb_rows2
                     row_size =
@@ -511,11 +514,30 @@ function _reverse_eval(f::_SubexpressionStorage)
                     for j in _eachindex(f.sizes, ix1)
                         partial = @j f.partials_storage[ix1]
                         val = ifelse(
-                            _getindex(f.reverse_storage, f.sizes, k, div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1) ==
-                            0.0 && !isfinite(partial),
-                            _getindex(f.reverse_storage, f.sizes, k, div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1),
-                            _getindex(f.reverse_storage, f.sizes, k, div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1) *
-                            partial,
+                            _getindex(
+                                f.reverse_storage,
+                                f.sizes,
+                                k,
+                                div(j-1, nb_rows1) * nb_rows +
+                                1 +
+                                (j-1) % nb_rows1,
+                            ) == 0.0 && !isfinite(partial),
+                            _getindex(
+                                f.reverse_storage,
+                                f.sizes,
+                                k,
+                                div(j-1, nb_rows1) * nb_rows +
+                                1 +
+                                (j-1) % nb_rows1,
+                            ),
+                            _getindex(
+                                f.reverse_storage,
+                                f.sizes,
+                                k,
+                                div(j-1, nb_rows1) * nb_rows +
+                                1 +
+                                (j-1) % nb_rows1,
+                            ) * partial,
                         )
                         @j f.reverse_storage[ix1] = val
                     end
@@ -526,19 +548,28 @@ function _reverse_eval(f::_SubexpressionStorage)
                                 f.reverse_storage,
                                 f.sizes,
                                 k,
-                                div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1 + nb_rows1,
+                                div(j-1, nb_rows1) * nb_rows +
+                                1 +
+                                (j-1) % nb_rows1 +
+                                nb_rows1,
                             ) == 0.0 && !isfinite(partial),
                             _getindex(
                                 f.reverse_storage,
                                 f.sizes,
                                 k,
-                                div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1 + nb_rows1,
+                                div(j-1, nb_rows1) * nb_rows +
+                                1 +
+                                (j-1) % nb_rows1 +
+                                nb_rows1,
                             ),
                             _getindex(
                                 f.reverse_storage,
                                 f.sizes,
                                 k,
-                                div(j-1, nb_rows1) * nb_rows + 1 + (j-1) % nb_rows1 + nb_rows1,
+                                div(j-1, nb_rows1) * nb_rows +
+                                1 +
+                                (j-1) % nb_rows1 +
+                                nb_rows1,
                             ) * partial,
                         )
                         @j f.reverse_storage[ix2] = val

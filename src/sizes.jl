@@ -186,7 +186,7 @@ function _infer_sizes(
                     children_indices,
                     op,
                 )
-                _add_size!(sizes, k, (1,N))
+                _add_size!(sizes, k, (1, N))
             elseif op == :dot
                 # TODO assert all arguments have same size
             elseif op == :norm
@@ -241,14 +241,24 @@ function _infer_sizes(
                     last_matrix = findfirst(children_indices) do i
                         return !iszero(sizes.ndims[children_arr[i]])
                     end
-                    _add_size!(
-                        sizes,
-                        k,
-                        (
-                            _size(sizes, first_matrix, 1),
-                            _size(sizes, last_matrix, sizes.ndims[last_matrix]),
-                        ),
-                    )
+                    if sizes.ndims[last_matrix] == 0 ||
+                       sizes.ndims[first_matrix] == 0
+                        _add_size!(sizes, k, (1, 1))
+                        continue
+                    else
+                        _add_size!(
+                            sizes,
+                            k,
+                            (
+                                _size(sizes, first_matrix, 1),
+                                _size(
+                                    sizes,
+                                    last_matrix,
+                                    sizes.ndims[last_matrix],
+                                ),
+                            ),
+                        )
+                    end
                 end
             elseif op == :^ || op == :/
                 @assert N == 2
