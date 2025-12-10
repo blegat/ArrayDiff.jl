@@ -18,10 +18,10 @@ Supported operators:
 
 - [x] `vect`, e.g, `[1, 2]`.
 - [x] `dot`
-- [ ] `row`, e.g. `[1 2; 3 4]`
-- [ ] `hcat`
-- [ ] `vcat`
-- [ ] `norm`
+- [x] `row`, e.g. `[1 2; 3 4]`
+- [x] `hcat`
+- [x] `vcat`
+- [x] `norm`
 - [ ] Matrix-Vector product
 - [ ] Matrix-Matrix product
 - [ ] Broadcasting scalar operator
@@ -29,7 +29,7 @@ Supported operators:
 Supported levels of AD:
 
 - [x] 0-th order
-- [ ] 1-st order
+- [x] 1-st order
 - [ ] 2-nd order
 
 [build-img]: https://github.com/blegat/ArrayDiff.jl/actions/workflows/ci.yml/badge.svg?branch=main
