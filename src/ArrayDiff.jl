@@ -10,22 +10,34 @@ import ForwardDiff
 import MathOptInterface as MOI
 const Nonlinear = MOI.Nonlinear
 import SparseArrays
+import SparseMatrixColorings
 
 """
-    Mode() <: AbstractAutomaticDifferentiation
+    Mode(coloring_algorithm::SparseMatrixColorings.GreedyColoringAlgorithm) <: AbstractAutomaticDifferentiation
 
 Fork of `MOI.Nonlinear.SparseReverseMode` to add array support.
 """
-struct Mode <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
+struct Mode{C<:SparseMatrixColorings.GreedyColoringAlgorithm} <:
+       MOI.Nonlinear.AbstractAutomaticDifferentiation
+    coloring_algorithm::C
+end
+
+function Mode()
+    return Mode(
+        SparseMatrixColorings.GreedyColoringAlgorithm(;
+            decompression = :substitution,
+        ),
+    )
+end
 
 function MOI.Nonlinear.Evaluator(
     model::MOI.Nonlinear.Model,
-    ::Mode,
+    mode::Mode,
     ordered_variables::Vector{MOI.VariableIndex},
 )
     return MOI.Nonlinear.Evaluator(
         model,
-        NLPEvaluator(model, ordered_variables),
+        NLPEvaluator(model, ordered_variables, mode.coloring_algorithm),
     )
 end
 
@@ -48,7 +60,8 @@ import NaNMath:
     pow,
     sqrt
 
-include("Coloring/Coloring.jl")
+include("indexed_set.jl")
+include("coloring.jl")
 include("graph_tools.jl")
 include("sizes.jl")
 include("types.jl")
