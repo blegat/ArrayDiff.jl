@@ -154,36 +154,62 @@ function _forward_eval(
                     @j f.forward_storage[k] = tmp_sub
                 end
             elseif node.index == 3 # :*
-                tmp_prod = one(T)
-                for c_idx in children_indices
-                    @inbounds tmp_prod *= f.forward_storage[children_arr[c_idx]]
-                end
-                if tmp_prod == zero(T) || N <= 2
-                    # This is inefficient if there are a lot of children.
-                    # 2 is chosen as a limit because (x*y)/y does not always
-                    # equal x for floating-point numbers. This can produce
-                    # unexpected error in partials. There's still an error when
-                    # multiplying three or more terms, but users are less likely
-                    # to complain about it.
-                    for c_idx in children_indices
-                        prod_others = one(T)
-                        for c_idx2 in children_indices
-                            (c_idx == c_idx2) && continue
-                            ix = children_arr[c_idx2]
-                            prod_others *= f.forward_storage[ix]
-                        end
-                        f.partials_storage[children_arr[c_idx]] = prod_others
+                # Node `k` is not scalar, so we do matrix multiplication
+                if f.sizes.ndims[k] != 0
+                    @assert N == 2
+                    idx1 = first(children_indices)
+                    idx2 = last(children_indices)
+                    @inbounds ix1 = children_arr[idx1]
+                    @inbounds ix2 = children_arr[idx2]
+                    v1 = zeros(_size(f.sizes, ix1)...)
+                    v2 = zeros(_size(f.sizes, ix2)...)
+                    for j in _eachindex(f.sizes, ix1)
+                        v1[j] = @j f.forward_storage[ix1]
+                        @j f.partials_storage[ix2] = v1[j]
                     end
+                    for j in _eachindex(f.sizes, ix2)
+                        v2[j] = @j f.forward_storage[ix2]
+                        @j f.partials_storage[ix1] = v2[j]
+                    end
+                    v_prod = v1 * v2
+                    for j in _eachindex(f.sizes, k)
+                        @j f.forward_storage[k] = v_prod[j]
+                    end
+                    # Node `k` is scalar
                 else
-                    # Compute all-minus-one partial derivatives by dividing from
-                    # the total product.
+                    tmp_prod = one(T)
                     for c_idx in children_indices
-                        ix = children_arr[c_idx]
-                        f.partials_storage[ix] =
-                            tmp_prod / f.forward_storage[ix]
+                        @inbounds tmp_prod *=
+                            f.forward_storage[children_arr[c_idx]]
                     end
+                    if tmp_prod == zero(T) || N <= 2
+                        # This is inefficient if there are a lot of children.
+                        # 2 is chosen as a limit because (x*y)/y does not always
+                        # equal x for floating-point numbers. This can produce
+                        # unexpected error in partials. There's still an error when
+                        # multiplying three or more terms, but users are less likely
+                        # to complain about it.
+                        for c_idx in children_indices
+                            prod_others = one(T)
+                            for c_idx2 in children_indices
+                                (c_idx == c_idx2) && continue
+                                ix = children_arr[c_idx2]
+                                prod_others *= f.forward_storage[ix]
+                            end
+                            f.partials_storage[children_arr[c_idx]] =
+                                prod_others
+                        end
+                    else
+                        # Compute all-minus-one partial derivatives by dividing from
+                        # the total product.
+                        for c_idx in children_indices
+                            ix = children_arr[c_idx]
+                            f.partials_storage[ix] =
+                                tmp_prod / f.forward_storage[ix]
+                        end
+                    end
+                    @inbounds f.forward_storage[k] = tmp_prod
                 end
-                @inbounds f.forward_storage[k] = tmp_prod
             elseif node.index == 4 # :^
                 @assert N == 2
                 idx1 = first(children_indices)
@@ -429,7 +455,36 @@ function _reverse_eval(f::_SubexpressionStorage)
             if node.index in
                eachindex(MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS)
                 op = MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS[node.index]
-                if op == :vect
+                if op == :*
+                    if f.sizes.ndims[k] != 0
+                        # Node `k` is not scalar, so we do matrix multiplication
+                        idx1 = first(children_indices)
+                        idx2 = last(children_indices)
+                        ix1 = children_arr[idx1]
+                        ix2 = children_arr[idx2]
+                        v1 = zeros(_size(f.sizes, ix1)...)
+                        v2 = zeros(_size(f.sizes, ix2)...)
+                        for j in _eachindex(f.sizes, ix1)
+                            v1[j] = @j f.forward_storage[ix1]
+                        end
+                        for j in _eachindex(f.sizes, ix2)
+                            v2[j] = @j f.forward_storage[ix2]
+                        end
+                        rev_parent = zeros(_size(f.sizes, k)...)
+                        for j in _eachindex(f.sizes, k)
+                            rev_parent[j] = @j f.reverse_storage[k]
+                        end
+                        rev_v1 = rev_parent * v2'
+                        rev_v2 = v1' * rev_parent
+                        for j in _eachindex(f.sizes, ix1)
+                            @j f.reverse_storage[ix1] = rev_v1[j]
+                        end
+                        for j in _eachindex(f.sizes, ix2)
+                            @j f.reverse_storage[ix2] = rev_v2[j]
+                        end
+                        continue
+                    end
+                elseif op == :vect
                     @assert _eachindex(f.sizes, k) ==
                             eachindex(children_indices)
                     for j in eachindex(children_indices)
