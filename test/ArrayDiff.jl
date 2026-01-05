@@ -26,7 +26,7 @@ function test_objective_dot_univariate()
     x = MOI.VariableIndex(1)
     Nonlinear.set_objective(model, :(dot([$x], [$x])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
-    MOI.initialize(evaluator, [:Grad])
+    MOI.initialize(evaluator, [:Grad, :Hess])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 1, 0, 1, 0]
     @test sizes.size_offset == [0, 1, 0, 0, 0]
