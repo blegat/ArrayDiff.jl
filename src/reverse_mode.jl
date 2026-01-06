@@ -29,6 +29,10 @@ single pass through the tree by iterating forwards through the vector of stored
 nodes.
 """
 function _reverse_mode(d::NLPEvaluator, x)
+    # Because the operators are checked with `Int` and not `Symbol`
+    # if we get a model that didn't add our new operators but had user-defined
+    # operators, we will think that these are one of our new operators
+    @assert :vect in d.data.operators.multivariate_operators
     if d.last_x == x
         # Fail fast if the primal solution has not changed since last call.
         return
