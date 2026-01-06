@@ -19,15 +19,15 @@ function model()
     return moel
 end
 
-function parse_expression(data::Model, input)
+function parse_expression(data::MOI.Nonlinear.Model, input)
     expr = Expression()
     parse_expression(data, expr, input, -1)
     return expr
 end
 
 function parse_expression(
-    data::Model,
-    expr::Expression,
+    data::MOI.Nonlinear.Model,
+    expr::MOI.Nonlinear.Expression,
     x::Expr,
     parent_index::Int,
 )
@@ -68,17 +68,13 @@ function _parse_expression(stack, data, expr, x, parent_index)
         _parse_vcat_expression(stack, data, expr, x, parent_index)
     elseif Meta.isexpr(x, :row)
         _parse_row_expression(stack, data, expr, x, parent_index)
-    elsval = @s f.forward_storage[ix]
-                    @j f.forward_storage[k] = val
-                end
-            elseif node.index == 11 # dot
-                idx1e
+    else
         error("Unsupported expression: $x")
     end
 end
 
 function eval_multivariate_function(
-    registry::OperatorRegistry,
+    registry::MOI.Nonlinear.OperatorRegistry,
     op::Symbol,
     x::AbstractVector{T},
 ) where {T}
