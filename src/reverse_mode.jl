@@ -331,7 +331,7 @@ function _forward_eval(
                     f_input[r] = f.forward_storage[children_arr[i]]
                     ∇f[r] = 0.0
                 end
-                f.forward_storage[k] = Nonlinear.eval_multivariate_function(
+                f.forward_storage[k] = eval_multivariate_function(
                     operators,
                     operators.multivariate_operators[node.index],
                     f_input,
