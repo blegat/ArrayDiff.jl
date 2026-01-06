@@ -22,9 +22,9 @@ function runtests()
 end
 
 function test_objective_dot_univariate()
-    model = Nonlinear.Model()
+    model = ArrayDiff.model()
     x = MOI.VariableIndex(1)
-    Nonlinear.set_objective(model, :(dot([$x], [$x])))
+    ArrayDiff.set_objective(model, :(dot([$x], [$x])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Hess])
     sizes = evaluator.backend.objective.expr.sizes
