@@ -7,15 +7,10 @@ end
 
 function Model()
     model = MOI.Nonlinear.Model()
-    append!(model.operators.multivariate_operators, [
-        :vect,
-        :dot,
-        :hcat,
-        :vcat,
-        :norm,
-        :sum,
-        :row,
-    ])
+    append!(
+        model.operators.multivariate_operators,
+        [:vect, :dot, :hcat, :vcat, :norm, :sum, :row],
+    )
     return model
 end
 
@@ -25,7 +20,9 @@ function parse_expression(data::MOI.Nonlinear.Model, input)
     return expr
 end
 
-parse_expression(data, expr, item, parent) = MOI.Nonlinear.parse_expression(data, expr, item, parent)
+function parse_expression(data, expr, item, parent)
+    return MOI.Nonlinear.parse_expression(data, expr, item, parent)
+end
 
 function parse_expression(
     data::MOI.Nonlinear.Model,
@@ -49,19 +46,49 @@ end
 function _parse_expression(stack, data, expr, x, parent_index)
     if Meta.isexpr(x, :call)
         if length(x.args) == 2 && !Meta.isexpr(x.args[2], :...)
-            MOI.Nonlinear._parse_univariate_expression(stack, data, expr, x, parent_index)
+            MOI.Nonlinear._parse_univariate_expression(
+                stack,
+                data,
+                expr,
+                x,
+                parent_index,
+            )
         else
             # The call is either n-ary, or it is a splat, in which case we
             # cannot tell just yet whether the expression is unary or nary.
             # Punt to multivariate and try to recover later.
-            MOI.Nonlinear._parse_multivariate_expression(stack, data, expr, x, parent_index)
+            MOI.Nonlinear._parse_multivariate_expression(
+                stack,
+                data,
+                expr,
+                x,
+                parent_index,
+            )
         end
     elseif Meta.isexpr(x, :comparison)
-        MOI.Nonlinear._parse_comparison_expression(stack, data, expr, x, parent_index)
+        MOI.Nonlinear._parse_comparison_expression(
+            stack,
+            data,
+            expr,
+            x,
+            parent_index,
+        )
     elseif Meta.isexpr(x, :...)
-        MOI.Nonlinear._parse_splat_expression(stack, data, expr, x, parent_index)
+        MOI.Nonlinear._parse_splat_expression(
+            stack,
+            data,
+            expr,
+            x,
+            parent_index,
+        )
     elseif Meta.isexpr(x, :&&) || Meta.isexpr(x, :||)
-        MOI.Nonlinear._parse_logic_expression(stack, data, expr, x, parent_index)
+        MOI.Nonlinear._parse_logic_expression(
+            stack,
+            data,
+            expr,
+            x,
+            parent_index,
+        )
     elseif Meta.isexpr(x, :vect)
         _parse_vect_expression(stack, data, expr, x, parent_index)
     elseif Meta.isexpr(x, :hcat)
@@ -126,7 +153,14 @@ function _parse_vect_expression(
 )
     @assert Meta.isexpr(x, :vect)
     id = get(data.operators.multivariate_operator_to_id, :vect, nothing)
-    push!(expr.nodes, MOI.Nonlinear.Node(MOI.Nonlinear.NODE_CALL_MULTIVARIATE, id, parent_index))
+    push!(
+        expr.nodes,
+        MOI.Nonlinear.Node(
+            MOI.Nonlinear.NODE_CALL_MULTIVARIATE,
+            id,
+            parent_index,
+        ),
+    )
     for i in length(x.args):-1:1
         push!(stack, (length(expr.nodes), x.args[i]))
     end
@@ -142,7 +176,14 @@ function _parse_row_expression(
 )
     @assert Meta.isexpr(x, :row)
     id = get(data.operators.multivariate_operator_to_id, :row, nothing)
-    push!(expr.nodes, MOI.Nonlinear.Node(MOI.Nonlinear.NODE_CALL_MULTIVARIATE, id, parent_index))
+    push!(
+        expr.nodes,
+        MOI.Nonlinear.Node(
+            MOI.Nonlinear.NODE_CALL_MULTIVARIATE,
+            id,
+            parent_index,
+        ),
+    )
     for i in length(x.args):-1:1
         push!(stack, (length(expr.nodes), x.args[i]))
     end
@@ -158,7 +199,14 @@ function _parse_hcat_expression(
 )
     @assert Meta.isexpr(x, :hcat)
     id = get(data.operators.multivariate_operator_to_id, :hcat, nothing)
-    push!(expr.nodes, MOI.Nonlinear.Node(MOI.Nonlinear.NODE_CALL_MULTIVARIATE, id, parent_index))
+    push!(
+        expr.nodes,
+        MOI.Nonlinear.Node(
+            MOI.Nonlinear.NODE_CALL_MULTIVARIATE,
+            id,
+            parent_index,
+        ),
+    )
     for i in length(x.args):-1:1
         push!(stack, (length(expr.nodes), x.args[i]))
     end
@@ -174,7 +222,14 @@ function _parse_vcat_expression(
 )
     @assert Meta.isexpr(x, :vcat)
     id = get(data.operators.multivariate_operator_to_id, :vcat, nothing)
-    push!(expr.nodes, MOI.Nonlinear.Node(MOI.Nonlinear.NODE_CALL_MULTIVARIATE, id, parent_index))
+    push!(
+        expr.nodes,
+        MOI.Nonlinear.Node(
+            MOI.Nonlinear.NODE_CALL_MULTIVARIATE,
+            id,
+            parent_index,
+        ),
+    )
     for i in length(x.args):-1:1
         push!(stack, (length(expr.nodes), x.args[i]))
     end
