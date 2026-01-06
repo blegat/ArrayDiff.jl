@@ -25,6 +25,8 @@ function parse_expression(data::MOI.Nonlinear.Model, input)
     return expr
 end
 
+parse_expression(data, expr, item, parent) = MOI.Nonlinear.parse_expression(data, expr, item, parent)
+
 function parse_expression(
     data::MOI.Nonlinear.Model,
     expr::MOI.Nonlinear.Expression,
@@ -111,6 +113,70 @@ function eval_multivariate_function(
     operator = registry.registered_multivariate_operators[offset]
     @assert length(x) == operator.N
     ret = operator.f(x)
-    check_return_type(T, ret)
+    MOI.Nonlinear.check_return_type(T, ret)
     return ret::T
+end
+
+function _parse_vect_expression(
+    stack::Vector{Tuple{Int,Any}},
+    data::MOI.Nonlinear.Model,
+    expr::MOI.Nonlinear.Expression,
+    x::Expr,
+    parent_index::Int,
+)
+    @assert Meta.isexpr(x, :vect)
+    id = get(data.operators.multivariate_operator_to_id, :vect, nothing)
+    push!(expr.nodes, MOI.Nonlinear.Node(MOI.Nonlinear.NODE_CALL_MULTIVARIATE, id, parent_index))
+    for i in length(x.args):-1:1
+        push!(stack, (length(expr.nodes), x.args[i]))
+    end
+    return
+end
+
+function _parse_row_expression(
+    stack::Vector{Tuple{Int,Any}},
+    data::MOI.Nonlinear.Model,
+    expr::MOI.Nonlinear.Expression,
+    x::Expr,
+    parent_index::Int,
+)
+    @assert Meta.isexpr(x, :row)
+    id = get(data.operators.multivariate_operator_to_id, :row, nothing)
+    push!(expr.nodes, MOI.Nonlinear.Node(MOI.Nonlinear.NODE_CALL_MULTIVARIATE, id, parent_index))
+    for i in length(x.args):-1:1
+        push!(stack, (length(expr.nodes), x.args[i]))
+    end
+    return
+end
+
+function _parse_hcat_expression(
+    stack::Vector{Tuple{Int,Any}},
+    data::MOI.Nonlinear.Model,
+    expr::MOI.Nonlinear.Expression,
+    x::Expr,
+    parent_index::Int,
+)
+    @assert Meta.isexpr(x, :hcat)
+    id = get(data.operators.multivariate_operator_to_id, :hcat, nothing)
+    push!(expr.nodes, MOI.Nonlinear.Node(MOI.Nonlinear.NODE_CALL_MULTIVARIATE, id, parent_index))
+    for i in length(x.args):-1:1
+        push!(stack, (length(expr.nodes), x.args[i]))
+    end
+    return
+end
+
+function _parse_vcat_expression(
+    stack::Vector{Tuple{Int,Any}},
+    data::MOI.Nonlinear.Model,
+    expr::MOI.Nonlinear.Expression,
+    x::Expr,
+    parent_index::Int,
+)
+    @assert Meta.isexpr(x, :vcat)
+    id = get(data.operators.multivariate_operator_to_id, :vcat, nothing)
+    push!(expr.nodes, MOI.Nonlinear.Node(MOI.Nonlinear.NODE_CALL_MULTIVARIATE, id, parent_index))
+    for i in length(x.args):-1:1
+        push!(stack, (length(expr.nodes), x.args[i]))
+    end
+    return
 end
