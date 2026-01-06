@@ -22,7 +22,7 @@ function runtests()
 end
 
 function test_objective_dot_univariate()
-    model = ArrayDiff.model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex(1)
     ArrayDiff.set_objective(model, :(dot([$x], [$x])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
@@ -41,9 +41,9 @@ function test_objective_dot_univariate()
 end
 
 function test_objective_dot_univariate_and_scalar_mult()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex(1)
-    Nonlinear.set_objective(model, :(2*(dot([$x], [$x]))))
+    ArrayDiff.set_objective(model, :(2*(dot([$x], [$x]))))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
@@ -60,10 +60,10 @@ function test_objective_dot_univariate_and_scalar_mult()
 end
 
 function test_objective_dot_bivariate()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    Nonlinear.set_objective(
+    ArrayDiff.set_objective(
         model,
         :(dot([$x, $y] - [1, 2], -[1, 2] + [$x, $y])),
     )
@@ -84,12 +84,12 @@ function test_objective_dot_bivariate()
 end
 
 function test_objective_hcat_scalars()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
     x3 = MOI.VariableIndex(3)
     x4 = MOI.VariableIndex(4)
-    Nonlinear.set_objective(model, :(dot([$x1 $x3], [$x2 $x4])))
+    ArrayDiff.set_objective(model, :(dot([$x1 $x3], [$x2 $x4])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
@@ -109,12 +109,12 @@ function test_objective_hcat_scalars()
 end
 
 function test_objective_hcat_vectors()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
     x3 = MOI.VariableIndex(3)
     x4 = MOI.VariableIndex(4)
-    Nonlinear.set_objective(
+    ArrayDiff.set_objective(
         model,
         :(dot(hcat([$x1], [$x3]), hcat([$x2], [$x4]))),
     )
@@ -137,10 +137,10 @@ function test_objective_hcat_vectors()
 end
 
 function test_objective_dot_bivariate_on_rows()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    Nonlinear.set_objective(model, :(dot([$x $y] - [1 2], -[1 2] + [$x $y])))
+    ArrayDiff.set_objective(model, :(dot([$x $y] - [1 2], -[1 2] + [$x $y])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
@@ -159,9 +159,9 @@ function test_objective_dot_bivariate_on_rows()
 end
 
 function test_objective_norm_univariate()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex(1)
-    Nonlinear.set_objective(model, :(norm([$x])))
+    ArrayDiff.set_objective(model, :(norm([$x])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
@@ -178,10 +178,10 @@ function test_objective_norm_univariate()
 end
 
 function test_objective_norm_bivariate()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    Nonlinear.set_objective(model, :(norm([$x, $y])))
+    ArrayDiff.set_objective(model, :(norm([$x, $y])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
@@ -203,10 +203,10 @@ function test_objective_norm_bivariate()
 end
 
 function test_objective_norm_of_row_vector()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
-    Nonlinear.set_objective(model, :(norm([$x1 $x2])))
+    ArrayDiff.set_objective(model, :(norm([$x1 $x2])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
@@ -224,12 +224,12 @@ function test_objective_norm_of_row_vector()
 end
 
 function test_objective_norm_of_vcat_vector()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
     x3 = MOI.VariableIndex(3)
     x4 = MOI.VariableIndex(4)
-    Nonlinear.set_objective(model, :(norm(vcat($x1, $x3))))
+    ArrayDiff.set_objective(model, :(norm(vcat($x1, $x3))))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
@@ -249,12 +249,12 @@ function test_objective_norm_of_vcat_vector()
 end
 
 function test_objective_norm_of_vcat_matrix()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
     x3 = MOI.VariableIndex(3)
     x4 = MOI.VariableIndex(4)
-    Nonlinear.set_objective(model, :(norm(vcat([$x1 $x3], [$x2 $x4]))))
+    ArrayDiff.set_objective(model, :(norm(vcat([$x1 $x3], [$x2 $x4]))))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
@@ -279,10 +279,10 @@ function test_objective_norm_of_vcat_matrix()
 end
 
 function test_objective_norm_of_row()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
-    Nonlinear.set_objective(model, :(norm(row($x1, $x2))))
+    ArrayDiff.set_objective(model, :(norm(row($x1, $x2))))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
@@ -300,12 +300,12 @@ function test_objective_norm_of_row()
 end
 
 function test_objective_norm_of_matrix()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
     x3 = MOI.VariableIndex(3)
     x4 = MOI.VariableIndex(4)
-    Nonlinear.set_objective(model, :(norm([$x1 $x2; $x3 $x4])))
+    ArrayDiff.set_objective(model, :(norm([$x1 $x2; $x3 $x4])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
@@ -330,12 +330,12 @@ function test_objective_norm_of_matrix()
 end
 
 function test_objective_norm_of_matrix_with_sum()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
     x3 = MOI.VariableIndex(3)
     x4 = MOI.VariableIndex(4)
-    Nonlinear.set_objective(model, :(norm([$x1 $x2; $x3 $x4] - [1 1; 1 1])))
+    ArrayDiff.set_objective(model, :(norm([$x1 $x2; $x3 $x4] - [1 1; 1 1])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes

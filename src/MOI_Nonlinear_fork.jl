@@ -5,7 +5,7 @@ function set_objective(model::MOI.Nonlinear.Model, obj)
     return
 end
 
-function model()
+function Model()
     model = MOI.Nonlinear.Model()
     append!(model.operators.multivariate_operators, [
         :vect,
@@ -16,11 +16,11 @@ function model()
         :sum,
         :row,
     ])
-    return moel
+    return model
 end
 
 function parse_expression(data::MOI.Nonlinear.Model, input)
-    expr = Expression()
+    expr = MOI.Nonlinear.Expression()
     parse_expression(data, expr, input, -1)
     return expr
 end
