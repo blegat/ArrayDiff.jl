@@ -357,12 +357,12 @@ function test_objective_norm_of_matrix_with_sum()
 end
 
 function test_objective_norm_of_product_of_matrices()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
     x3 = MOI.VariableIndex(3)
     x4 = MOI.VariableIndex(4)
-    Nonlinear.set_objective(model, :(norm([$x1 $x2; $x3 $x4] * [1 0; 0 1])))
+    ArrayDiff.set_objective(model, :(norm([$x1 $x2; $x3 $x4] * [1 0; 0 1])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
@@ -389,12 +389,12 @@ function test_objective_norm_of_product_of_matrices()
 end
 
 function test_objective_norm_of_product_of_matrices_with_sum()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
     x3 = MOI.VariableIndex(3)
     x4 = MOI.VariableIndex(4)
-    Nonlinear.set_objective(
+    ArrayDiff.set_objective(
         model,
         :(norm(([$x1 $x2; $x3 $x4] + [1 1; 1 1]) * [1 0; 0 1])),
     )
@@ -499,12 +499,12 @@ function test_objective_norm_of_product_of_matrices_with_sum()
 end
 
 function test_objective_norm_of_mtx_vector_product()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
     x3 = MOI.VariableIndex(3)
     x4 = MOI.VariableIndex(4)
-    Nonlinear.set_objective(model, :(norm(([$x1 $x2; $x3 $x4] * [1; 1]))))
+    ArrayDiff.set_objective(model, :(norm([$x1 $x2; $x3 $x4] * [1; 1])))
     evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
