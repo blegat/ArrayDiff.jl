@@ -10,6 +10,7 @@ import ForwardDiff
 import MathOptInterface as MOI
 const Nonlinear = MOI.Nonlinear
 import SparseArrays
+import OrderedCollections: OrderedDict
 
 """
     Mode() <: AbstractAutomaticDifferentiation
@@ -57,5 +58,7 @@ include("utils.jl")
 include("reverse_mode.jl")
 include("forward_over_reverse.jl")
 include("mathoptinterface_api.jl")
+
+include("MOI_Nonlinear_fork.jl")
 
 end  # module
