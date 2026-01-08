@@ -1,17 +1,116 @@
 # Inspired by MathOptInterface/src/Nonlinear/parse_expression.jl
 
+const DEFAULT_MULTIVARIATE_OPERATORS = [
+    :+,
+    :-,
+    :*,
+    :^,
+    :/,
+    :ifelse,
+    :atan,
+    :min,
+    :max,
+    :vect,
+    :dot,
+    :hcat,
+    :vcat,
+    :norm,
+    :sum,
+    :row,
+]
+
+struct OperatorRegistry
+    # NODE_CALL_UNIVARIATE
+    univariate_operators::Vector{Symbol}
+    univariate_operator_to_id::Dict{Symbol,Int}
+    univariate_user_operator_start::Int
+    registered_univariate_operators::Vector{MOI.Nonlinear._UnivariateOperator}
+    # NODE_CALL_MULTIVARIATE
+    multivariate_operators::Vector{Symbol}
+    multivariate_operator_to_id::Dict{Symbol,Int}
+    multivariate_user_operator_start::Int
+    registered_multivariate_operators::Vector{
+        MOI.Nonlinear._MultivariateOperator,
+    }
+    # NODE_LOGIC
+    logic_operators::Vector{Symbol}
+    logic_operator_to_id::Dict{Symbol,Int}
+    # NODE_COMPARISON
+    comparison_operators::Vector{Symbol}
+    comparison_operator_to_id::Dict{Symbol,Int}
+    function OperatorRegistry()
+        univariate_operators = copy(DEFAULT_UNIVARIATE_OPERATORS)
+        multivariate_operators = copy(DEFAULT_MULTIVARIATE_OPERATORS)
+        logic_operators = [:&&, :||]
+        comparison_operators = [:<=, :(==), :>=, :<, :>]
+        return new(
+            # NODE_CALL_UNIVARIATE
+            univariate_operators,
+            Dict{Symbol,Int}(
+                op => i for (i, op) in enumerate(univariate_operators)
+            ),
+            length(univariate_operators),
+            _UnivariateOperator[],
+            # NODE_CALL
+            multivariate_operators,
+            Dict{Symbol,Int}(
+                op => i for (i, op) in enumerate(multivariate_operators)
+            ),
+            length(multivariate_operators),
+            _MultivariateOperator[],
+            # NODE_LOGIC
+            logic_operators,
+            Dict{Symbol,Int}(op => i for (i, op) in enumerate(logic_operators)),
+            # NODE_COMPARISON
+            comparison_operators,
+            Dict{Symbol,Int}(
+                op => i for (i, op) in enumerate(comparison_operators)
+            ),
+        )
+    end
+end
+
+"""
+    Model()
+
+The core datastructure for representing a nonlinear optimization problem.
+
+It has the following fields:
+ * `objective::Union{Nothing,Expression}` : holds the nonlinear objective
+   function, if one exists, otherwise `nothing`.
+ * `expressions::Vector{Expression}` : a vector of expressions in the model.
+ * `constraints::OrderedDict{ConstraintIndex,Constraint}` : a map from
+   [`ConstraintIndex`](@ref) to the corresponding [`Constraint`](@ref). An
+   `OrderedDict` is used instead of a `Vector` to support constraint deletion.
+ * `parameters::Vector{Float64}` : holds the current values of the parameters.
+ * `operators::OperatorRegistry` : stores the operators used in the model.
+"""
+mutable struct Model
+    objective::Union{Nothing,MOI.Nonlinear.Expression}
+    expressions::Vector{MOI.Nonlinear.Expression}
+    constraints::OrderedDict{
+        MOI.Nonlinear.ConstraintIndex,
+        MOI.Nonlinear.Constraint,
+    }
+    parameters::Vector{Float64}
+    operators::OperatorRegistry
+    # This is a private field, used only to increment the ConstraintIndex.
+    last_constraint_index::Int64
+    function Model()
+        model = MOI.Nonlinear.Model()
+        ops = [:vect, :dot, :hcat, :vcat, :norm, :sum, :row]
+        start = length(model.operators.multivariate_operators)
+        append!(model.operators.multivariate_operators, ops)
+        for (i, op) in enumerate(ops)
+            model.operators.multivariate_operator_to_id[op] = start + i
+        end
+        return model
+    end
+end
+
 function set_objective(model::MOI.Nonlinear.Model, obj)
     model.objective = parse_expression(model, obj)
     return
-end
-
-function Model()
-    model = MOI.Nonlinear.Model()
-    append!(
-        model.operators.multivariate_operators,
-        [:vect, :dot, :hcat, :vcat, :norm, :sum, :row],
-    )
-    return model
 end
 
 function parse_expression(data::MOI.Nonlinear.Model, input)

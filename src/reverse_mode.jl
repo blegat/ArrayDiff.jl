@@ -457,8 +457,8 @@ function _reverse_eval(f::_SubexpressionStorage)
         children_indices = SparseArrays.nzrange(f.adj, k)
         if node.type == MOI.Nonlinear.NODE_CALL_MULTIVARIATE
             if node.index in
-               eachindex(MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS)
-                op = MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS[node.index]
+               eachindex(DEFAULT_MULTIVARIATE_OPERATORS)
+                op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
                 if op == :*
                     if f.sizes.ndims[k] != 0
                         # Node `k` is not scalar, so we do matrix multiplication
