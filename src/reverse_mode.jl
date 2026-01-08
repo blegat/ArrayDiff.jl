@@ -430,9 +430,8 @@ function _reverse_eval(f::_SubexpressionStorage)
         node = f.nodes[k]
         children_indices = SparseArrays.nzrange(f.adj, k)
         if node.type == MOI.Nonlinear.NODE_CALL_MULTIVARIATE
-            if node.index in
-               eachindex(MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS)
-                op = MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS[node.index]
+            if node.index in eachindex(DEFAULT_MULTIVARIATE_OPERATORS)
+                op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
                 if op == :vect
                     @assert _eachindex(f.sizes, k) ==
                             eachindex(children_indices)

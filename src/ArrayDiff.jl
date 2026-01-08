@@ -10,6 +10,7 @@ import ForwardDiff
 import MathOptInterface as MOI
 const Nonlinear = MOI.Nonlinear
 import SparseArrays
+import OrderedCollections: OrderedDict
 
 """
     Mode() <: AbstractAutomaticDifferentiation
