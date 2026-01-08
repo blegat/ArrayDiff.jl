@@ -22,8 +22,8 @@ Supported operators:
 - [x] `hcat`
 - [x] `vcat`
 - [x] `norm`
-- [ ] Matrix-Vector product
-- [ ] Matrix-Matrix product
+- [x] Matrix-Vector product
+- [x] Matrix-Matrix product
 - [ ] Broadcasting scalar operator
 
 Supported levels of AD:

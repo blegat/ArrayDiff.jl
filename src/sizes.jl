@@ -235,11 +235,7 @@ function _infer_sizes(
                     return !iszero(sizes.ndims[children_arr[i]])
                 end
                 if !isnothing(first_matrix)
-                    last_matrix = findfirst(children_indices) do i
-                        return !iszero(sizes.ndims[children_arr[i]])
-                    end
-                    if sizes.ndims[last_matrix] == 0 ||
-                       sizes.ndims[first_matrix] == 0
+                    if sizes.ndims[children_arr[first(children_indices)]] == 0
                         _add_size!(sizes, k, (1, 1))
                         continue
                     else
@@ -247,14 +243,21 @@ function _infer_sizes(
                             sizes,
                             k,
                             (
-                                _size(sizes, first_matrix, 1),
                                 _size(
                                     sizes,
-                                    last_matrix,
-                                    sizes.ndims[last_matrix],
+                                    children_arr[first(children_indices)],
+                                    1,
+                                ),
+                                _size(
+                                    sizes,
+                                    children_arr[last(children_indices)],
+                                    sizes.ndims[children_arr[last(
+                                        children_indices,
+                                    )],],
                                 ),
                             ),
                         )
+                        continue
                     end
                 end
             elseif op == :^ || op == :/
