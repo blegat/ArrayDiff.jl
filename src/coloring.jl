@@ -22,7 +22,7 @@ end
         edgelist,
         num_total_var,
         algo::SparseMatrixColorings.GreedyColoringAlgorithm,
-        seen_idx = IndexedSet(0),
+        seen_idx = MOI.Nonlinear.Coloring.IndexedSet(0),
     )
 
 `edgelist` contains the nonzeros in the Hessian, *including* nonzeros on the
@@ -36,7 +36,7 @@ function _hessian_color_preprocess(
     edgelist,
     num_total_var,
     algo::SparseMatrixColorings.GreedyColoringAlgorithm,
-    seen_idx = IndexedSet(0),
+    seen_idx = MOI.Nonlinear.Coloring.IndexedSet(0),
 )
     resize!(seen_idx, num_total_var)
     I, J = Int[], Int[]
@@ -192,10 +192,8 @@ function _recover_from_matmat!(
     tree_result = result.result
     color = SparseMatrixColorings.column_colors(tree_result)
     N = length(result.local_indices)
-    S = tree_result.ag.S
     # Compute number of off-diagonal nonzeros from the length of V
     # V contains N diagonal elements + nnz_offdiag off-diagonal elements
-    nnz_offdiag = length(V) - N
     @assert length(stored_values) >= N
 
     # Recover diagonal elements
