@@ -6,7 +6,6 @@
 
 module ArrayDiff
 
-import LinearAlgebra as LA
 import SparseArrays
 import SparseMatrixColorings as SMC
 import ForwardDiff
