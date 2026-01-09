@@ -1,7 +1,7 @@
 name = "ArrayDiff"
 uuid = "c45fa1ca-6901-44ac-ae5b-5513a4852d50"
-authors = ["Benoît Legat <benoit.legat@gmail.com>"]
 version = "0.1.0"
+authors = ["Benoît Legat <benoit.legat@gmail.com>"]
 
 [deps]
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
@@ -9,6 +9,7 @@ ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 NaNMath = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+SparseMatrixColorings = "0a514795-09f3-496d-8182-132a7b665d35"
 
 [compat]
 DataStructures = "0.18, 0.19"
@@ -16,4 +17,5 @@ ForwardDiff = "1"
 MathOptInterface = "1.40"
 NaNMath = "1"
 SparseArrays = "1.10"
+SparseMatrixColorings = "0.4"
 julia = "1.10"

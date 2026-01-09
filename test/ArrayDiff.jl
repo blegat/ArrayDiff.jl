@@ -8,7 +8,6 @@ import MathOptInterface as MOI
 const Nonlinear = MOI.Nonlinear
 
 import ArrayDiff
-const Coloring = ArrayDiff.Coloring
 
 function runtests()
     for name in names(@__MODULE__; all = true)
