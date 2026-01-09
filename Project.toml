@@ -1,7 +1,7 @@
 name = "ArrayDiff"
 uuid = "c45fa1ca-6901-44ac-ae5b-5513a4852d50"
-authors = ["Benoît Legat <benoit.legat@gmail.com>"]
 version = "0.1.0"
+authors = ["Benoît Legat <benoit.legat@gmail.com>"]
 
 [deps]
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"

@@ -63,7 +63,7 @@ function _subexpression_and_linearity(
     linearity
 end
 
-struct _FunctionStorage{R<:SparseMatrixColorings.AbstractColoringResult}
+struct _FunctionStorage{R<:SMC.AbstractColoringResult}
     expr::_SubexpressionStorage
     grad_sparsity::Vector{Int}
     # Nonzero pattern of Hessian matrix
@@ -80,7 +80,7 @@ struct _FunctionStorage{R<:SparseMatrixColorings.AbstractColoringResult}
         coloring_storage::MOI.Nonlinear.ReverseAD.Coloring.IndexedSet,
         coloring_algorithm::Union{
             Nothing,
-            SparseMatrixColorings.GreedyColoringAlgorithm,
+            SMC.GreedyColoringAlgorithm,
         },
         subexpressions::Vector{_SubexpressionStorage},
         dependent_subexpressions,
@@ -141,7 +141,7 @@ end
     NLPEvaluator(
         model::Nonlinear.Model,
         ordered_variables::Vector{MOI.VariableIndex},
-        coloring_algorithm::SparseMatrixColorings.AbstractColoringAlgorithm = SparseMatrixColorings.GreedyColoringAlgorithm(; decompression=:substitution),
+        coloring_algorithm::SMC.AbstractColoringAlgorithm = SMC.GreedyColoringAlgorithm(; decompression=:substitution),
     )
 
 Return an `NLPEvaluator` object that implements the `MOI.AbstractNLPEvaluator`
@@ -152,7 +152,7 @@ interface.
 """
 mutable struct NLPEvaluator{
     R,
-    C<:SparseMatrixColorings.GreedyColoringAlgorithm,
+    C<:SMC.GreedyColoringAlgorithm,
 } <: MOI.AbstractNLPEvaluator
     data::Nonlinear.Model
     ordered_variables::Vector{MOI.VariableIndex}
@@ -193,18 +193,18 @@ mutable struct NLPEvaluator{
     function NLPEvaluator(
         data::Nonlinear.Model,
         ordered_variables::Vector{MOI.VariableIndex},
-        coloring_algorithm::SparseMatrixColorings.GreedyColoringAlgorithm = SparseMatrixColorings.GreedyColoringAlgorithm(;
+        coloring_algorithm::SMC.GreedyColoringAlgorithm = SMC.GreedyColoringAlgorithm(;
             decompression = :substitution,
         ),
     )
-        problem = SparseMatrixColorings.ColoringProblem(;
+        problem = SMC.ColoringProblem(;
             structure = :symmetric,
             partition = :column,
         )
         C = typeof(coloring_algorithm)
         R = Base.promote_op(
-            SparseMatrixColorings.coloring,
-            SparseArrays.SparseMatrixCSC{Bool,Int},
+            SMC.coloring,
+            SMC.SparsityPatternCSC{Int},
             typeof(problem),
             C,
         )

@@ -481,7 +481,7 @@ end
 function test_coloring_end_to_end_hessian_coloring_and_recovery()
     # Test the new coloring API through the compatibility layer
     coloring_algorithm =
-        ArrayDiff.SparseMatrixColorings.GreedyColoringAlgorithm(;
+        ArrayDiff.SMC.GreedyColoringAlgorithm(;
             decompression = :substitution,
         )
     I, J, rinfo = ArrayDiff._hessian_color_preprocess(

@@ -6,25 +6,26 @@
 
 module ArrayDiff
 
+import LinearAlgebra as LA
+import SparseArrays
+import SparseMatrixColorings as SMC
 import ForwardDiff
 import MathOptInterface as MOI
 const Nonlinear = MOI.Nonlinear
-import SparseArrays
-import SparseMatrixColorings
 
 """
-    Mode(coloring_algorithm::SparseMatrixColorings.GreedyColoringAlgorithm) <: AbstractAutomaticDifferentiation
+    Mode(coloring_algorithm::SMC.GreedyColoringAlgorithm) <: AbstractAutomaticDifferentiation
 
 Fork of `MOI.Nonlinear.SparseReverseMode` to add array support.
 """
-struct Mode{C<:SparseMatrixColorings.GreedyColoringAlgorithm} <:
+struct Mode{C<:SMC.GreedyColoringAlgorithm} <:
        MOI.Nonlinear.AbstractAutomaticDifferentiation
     coloring_algorithm::C
 end
 
 function Mode()
     return Mode(
-        SparseMatrixColorings.GreedyColoringAlgorithm(;
+        SMC.GreedyColoringAlgorithm(;
             decompression = :substitution,
         ),
     )

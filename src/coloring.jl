@@ -6,13 +6,13 @@
 
 """
     struct ColoringResult
-        result::SparseMatrixColorings.TreeSetColoringResult
+        result::SMC.TreeSetColoringResult
         local_indices::Vector{Int}  # map from local to global indices
     end
 
 Wrapper around TreeSetColoringResult that also stores local_indices mapping.
 """
-struct ColoringResult{R<:SparseMatrixColorings.AbstractColoringResult}
+struct ColoringResult{R<:SMC.AbstractColoringResult}
     result::R
     local_indices::Vector{Int}  # map from local to global indices
 end
@@ -21,7 +21,7 @@ end
     _hessian_color_preprocess(
         edgelist,
         num_total_var,
-        algo::SparseMatrixColorings.GreedyColoringAlgorithm,
+        algo::SMC.GreedyColoringAlgorithm,
         seen_idx = MOI.Nonlinear.Coloring.IndexedSet(0),
     )
 
@@ -35,7 +35,7 @@ SparseMatrixColorings.
 function _hessian_color_preprocess(
     edgelist,
     num_total_var,
-    algo::SparseMatrixColorings.GreedyColoringAlgorithm,
+    algo::SMC.GreedyColoringAlgorithm,
     seen_idx = MOI.Nonlinear.Coloring.IndexedSet(0),
 )
     resize!(seen_idx, num_total_var)
@@ -45,6 +45,10 @@ function _hessian_color_preprocess(
         push!(seen_idx, j)
         push!(I, i)
         push!(J, j)
+        if i != j
+            push!(I, j)
+            push!(J, i)
+        end
     end
     local_indices = sort!(collect(seen_idx))
     empty!(seen_idx)
@@ -56,12 +60,12 @@ function _hessian_color_preprocess(
         # The I and J vectors are already empty, which is correct
         # For the result, we'll create a minimal valid structure with a diagonal element
         # Note: This case should rarely occur in practice
-        S = SparseArrays.spdiagm(0 => [true])
-        problem = SparseMatrixColorings.ColoringProblem(;
+        S = SMC.SparsityPatternCSC(SparseArrays.spdiagm(0 => [true]))
+        problem = SMC.ColoringProblem(;
             structure = :symmetric,
             partition = :column,
         )
-        tree_result = SparseMatrixColorings.coloring(S, problem, algo)
+        tree_result = SMC.coloring(S, problem, algo)
         result = ColoringResult(tree_result, Int[])
         return I, J, result
     end
@@ -78,19 +82,16 @@ function _hessian_color_preprocess(
 
     # Create sparsity pattern matrix
     n = length(local_indices)
-    S = SparseArrays.spzeros(Bool, n, n)
-    for k in eachindex(I)
-        i, j = I[k], J[k]
-        S[i, j] = true
-        S[j, i] = true  # symmetric
-    end
+    S = SMC.SparsityPatternCSC(
+        SparseArrays.sparse(I, J, trues(length(I)), n, n, &)
+    )
 
-    # Perform coloring using SparseMatrixColorings
-    problem = SparseMatrixColorings.ColoringProblem(;
+    # Perform coloring using SMC
+    problem = SMC.ColoringProblem(;
         structure = :symmetric,
         partition = :column,
     )
-    tree_result = SparseMatrixColorings.coloring(S, problem, algo)
+    tree_result = SMC.coloring(S, problem, algo)
 
     # Reconstruct I and J from the tree structure (matching original _indirect_recover_structure)
     # First add all diagonal elements
@@ -148,7 +149,7 @@ Allocate a seed matrix for the coloring result.
 """
 function _seed_matrix(result::ColoringResult)
     n = length(result.local_indices)
-    ncolors = SparseMatrixColorings.ncolors(result.result)
+    ncolors = SMC.ncolors(result.result)
     return Matrix{Float64}(undef, n, ncolors)
 end
 
@@ -158,10 +159,10 @@ end
 Prepare the seed matrix R for Hessian computation.
 """
 function _prepare_seed_matrix!(R, result::ColoringResult)
-    color = SparseMatrixColorings.column_colors(result.result)
+    color = SMC.column_colors(result.result)
     N = length(result.local_indices)
     @assert N == size(R, 1)
-    @assert size(R, 2) == SparseMatrixColorings.ncolors(result.result)
+    @assert size(R, 2) == SMC.ncolors(result.result)
     fill!(R, 0.0)
     for i in 1:N
         if color[i] > 0
@@ -190,7 +191,7 @@ function _recover_from_matmat!(
     stored_values::AbstractVector{T},
 ) where {T}
     tree_result = result.result
-    color = SparseMatrixColorings.column_colors(tree_result)
+    color = SMC.column_colors(tree_result)
     N = length(result.local_indices)
     # Compute number of off-diagonal nonzeros from the length of V
     # V contains N diagonal elements + nnz_offdiag off-diagonal elements
