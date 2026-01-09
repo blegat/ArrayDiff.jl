@@ -60,7 +60,6 @@ import NaNMath:
     pow,
     sqrt
 
-include("indexed_set.jl")
 include("coloring.jl")
 include("graph_tools.jl")
 include("sizes.jl")
