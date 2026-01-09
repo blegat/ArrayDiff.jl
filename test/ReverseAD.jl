@@ -488,7 +488,7 @@ function test_coloring_end_to_end_hessian_coloring_and_recovery()
         Set([(1, 2)]),
         2,
         coloring_algorithm,
-        ArrayDiff.IndexedSet(0),
+        MOI.Nonlinear.ReverseAD.Coloring.IndexedSet(0),
     )
     R = ArrayDiff._seed_matrix(rinfo)
     ArrayDiff._prepare_seed_matrix!(R, rinfo)
@@ -559,7 +559,7 @@ function test_linearity()
         nodes = ArrayDiff._replace_moi_variables(expr.nodes, variables)
         ret = ArrayDiff._classify_linearity(nodes, adj, ArrayDiff.Linearity[])
         @test ret[1] == test_value
-        indexed_set = ArrayDiff.IndexedSet(100)
+        indexed_set = MOI.Nonlinear.ReverseAD.Coloring.IndexedSet(100)
         edge_list = ArrayDiff._compute_hessian_sparsity(
             nodes,
             adj,
