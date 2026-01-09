@@ -77,7 +77,7 @@ struct _FunctionStorage{R<:SparseMatrixColorings.AbstractColoringResult}
     function _FunctionStorage{R}(
         expr::_SubexpressionStorage,
         num_variables,
-        coloring_storage::IndexedSet,
+        coloring_storage::MOI.Nonlinear.ReverseAD.Coloring.IndexedSet,
         coloring_algorithm::Union{
             Nothing,
             SparseMatrixColorings.GreedyColoringAlgorithm,

@@ -45,7 +45,7 @@ function MOI.initialize(
     d.last_x = fill(NaN, N)
     d.want_hess = :Hess in requested_features
     want_hess_storage = (:HessVec in requested_features) || d.want_hess
-    coloring_storage = IndexedSet(N)
+    coloring_storage = MOI.Nonlinear.ReverseAD.Coloring.IndexedSet(N)
     max_expr_length = 0
     max_expr_with_sub_length = 0
     #
