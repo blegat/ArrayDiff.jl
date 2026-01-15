@@ -366,7 +366,7 @@ function _forward_eval(
                     operators.multivariate_operators[node.index],
                     f_input,
                 )
-                Nonlinear.eval_multivariate_gradient(
+                eval_multivariate_gradient(
                     operators,
                     operators.multivariate_operators[node.index],
                     ∇f,
@@ -391,7 +391,7 @@ function _forward_eval(
                     @j f.forward_storage[k] = -val
                 end
             else
-                ret_f, ret_f′ = Nonlinear.eval_univariate_function_and_gradient(
+                ret_f, ret_f′ = eval_univariate_function_and_gradient(
                     operators,
                     node.index,
                     f.forward_storage[child_idx],
@@ -406,7 +406,7 @@ function _forward_eval(
             for r in 2:length(children_idx)
                 lhs = children_arr[children_idx[r-1]]
                 rhs = children_arr[children_idx[r]]
-                result &= Nonlinear.eval_comparison_function(
+                result &= eval_comparison_function(
                     operators,
                     operators.comparison_operators[node.index],
                     f.forward_storage[lhs],
@@ -420,7 +420,7 @@ function _forward_eval(
             children_idx = SparseArrays.nzrange(f.adj, k)
             lhs = children_arr[children_idx[1]]
             rhs = children_arr[children_idx[2]]
-            f.forward_storage[k] = Nonlinear.eval_logic_function(
+            f.forward_storage[k] = eval_logic_function(
                 operators,
                 operators.logic_operators[node.index],
                 f.forward_storage[lhs] == 1,

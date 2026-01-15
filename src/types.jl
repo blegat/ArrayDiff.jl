@@ -146,7 +146,7 @@ interface.
     Before using, you must initialize the evaluator using `MOI.initialize`.
 """
 mutable struct NLPEvaluator <: MOI.AbstractNLPEvaluator
-    data::Nonlinear.Model
+    data::Model
     ordered_variables::Vector{MOI.VariableIndex}
 
     objective::Union{Nothing,_FunctionStorage}
@@ -182,7 +182,7 @@ mutable struct NLPEvaluator <: MOI.AbstractNLPEvaluator
     max_chunk::Int # chunk size for which we've allocated storage
 
     function NLPEvaluator(
-        data::Nonlinear.Model,
+        data::Model,
         ordered_variables::Vector{MOI.VariableIndex},
     )
         return new(data, ordered_variables)
