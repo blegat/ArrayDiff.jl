@@ -12,6 +12,8 @@ const Nonlinear = MOI.Nonlinear
 import SparseArrays
 import OrderedCollections: OrderedDict
 
+include("MOI_Nonlinear_fork.jl")
+
 """
     Mode() <: AbstractAutomaticDifferentiation
 
