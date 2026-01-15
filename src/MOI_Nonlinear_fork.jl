@@ -39,7 +39,7 @@ struct OperatorRegistry
     comparison_operators::Vector{Symbol}
     comparison_operator_to_id::Dict{Symbol,Int}
     function OperatorRegistry()
-        univariate_operators = copy(DEFAULT_UNIVARIATE_OPERATORS)
+        univariate_operators = copy(MOI.Nonlinear.DEFAULT_UNIVARIATE_OPERATORS)
         multivariate_operators = copy(DEFAULT_MULTIVARIATE_OPERATORS)
         logic_operators = [:&&, :||]
         comparison_operators = [:<=, :(==), :>=, :<, :>]
@@ -97,34 +97,230 @@ mutable struct Model
     # This is a private field, used only to increment the ConstraintIndex.
     last_constraint_index::Int64
     function Model()
-        model = MOI.Nonlinear.Model()
-        ops = [:vect, :dot, :hcat, :vcat, :norm, :sum, :row]
-        start = length(model.operators.multivariate_operators)
-        append!(model.operators.multivariate_operators, ops)
-        for (i, op) in enumerate(ops)
-            model.operators.multivariate_operator_to_id[op] = start + i
-        end
+        model = new(
+            nothing,
+            MOI.Nonlinear.Expression[],
+            OrderedDict{
+                MOI.Nonlinear.ConstraintIndex,
+                MOI.Nonlinear.Constraint,
+            }(),
+            Float64[],
+            OperatorRegistry(),
+            0,
+        )
         return model
     end
 end
 
-function set_objective(model::MOI.Nonlinear.Model, obj)
+_bound(s::MOI.LessThan) = MOI.NLPBoundsPair(-Inf, s.upper)
+_bound(s::MOI.GreaterThan) = MOI.NLPBoundsPair(s.lower, Inf)
+_bound(s::MOI.EqualTo) = MOI.NLPBoundsPair(s.value, s.value)
+_bound(s::MOI.Interval) = MOI.NLPBoundsPair(s.lower, s.upper)
+
+mutable struct Evaluator{B} <: MOI.AbstractNLPEvaluator
+    # The internal datastructure.
+    model::Model
+    # The abstract-differentiation backend
+    backend::B
+    # ordered_constraints is needed because `OrderedDict` doesn't support
+    # looking up a key by the linear index.
+    ordered_constraints::Vector{MOI.Nonlinear.ConstraintIndex}
+    # Storage for the NLPBlockDual, so that we can query the dual of individual
+    # constraints without needing to query the full vector each time.
+    constraint_dual::Vector{Float64}
+    # Timers
+    initialize_timer::Float64
+    eval_objective_timer::Float64
+    eval_constraint_timer::Float64
+    eval_objective_gradient_timer::Float64
+    eval_constraint_gradient_timer::Float64
+    eval_constraint_jacobian_timer::Float64
+    eval_hessian_objective_timer::Float64
+    eval_hessian_constraint_timer::Float64
+    eval_hessian_lagrangian_timer::Float64
+
+    function Evaluator(
+        model::Model,
+        backend::B = nothing,
+    ) where {B<:Union{Nothing,MOI.AbstractNLPEvaluator}}
+        return new{B}(
+            model,
+            backend,
+            MOI.ConstraintIndex[],
+            Float64[],
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )
+    end
+end
+
+"""
+    MOI.NLPBlockData(evaluator::Evaluator)
+
+Create an [`MOI.NLPBlockData`](@ref) object from an [`Evaluator`](@ref)
+object.
+"""
+function MOI.NLPBlockData(evaluator::Evaluator)
+    return MOI.NLPBlockData(
+        [_bound(c.set) for (_, c) in evaluator.model.constraints],
+        evaluator,
+        evaluator.model.objective !== nothing,
+    )
+end
+
+"""
+    ExprGraphOnly() <: AbstractAutomaticDifferentiation
+
+The default implementation of `AbstractAutomaticDifferentiation`. The only
+supported feature is `:ExprGraph`.
+"""
+struct ExprGraphOnly <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
+
+function Evaluator(model::Model, ::ExprGraphOnly, ::Vector{MOI.VariableIndex})
+    return Evaluator(model)
+end
+
+"""
+    SparseReverseMode() <: AbstractAutomaticDifferentiation
+
+An implementation of `AbstractAutomaticDifferentiation` that uses sparse
+reverse-mode automatic differentiation to compute derivatives. Supports all
+features in the MOI nonlinear interface.
+"""
+struct SparseReverseMode <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
+
+function Evaluator(
+    model::Model,
+    ::SparseReverseMode,
+    ordered_variables::Vector{MOI.VariableIndex},
+)
+    return Evaluator(model, ReverseAD.NLPEvaluator(model, ordered_variables))
+end
+
+"""
+    SymbolicMode() <: AbstractAutomaticDifferentiation
+
+A type for setting as the value of the `MOI.AutomaticDifferentiationBackend()`
+attribute to enable symbolic automatic differentiation.
+"""
+struct SymbolicMode <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
+
+function Evaluator(
+    model::Model,
+    ::SymbolicMode,
+    ordered_variables::Vector{MOI.VariableIndex},
+)
+    return Evaluator(model, SymbolicAD.Evaluator(model, ordered_variables))
+end
+
+function set_objective(model::Model, obj)
     model.objective = parse_expression(model, obj)
     return
 end
 
-function parse_expression(data::MOI.Nonlinear.Model, input)
+function set_objective(model::Model, ::Nothing)
+    model.objective = nothing
+    return
+end
+
+function _parse_multivariate_expression(
+    stack::Vector{Tuple{Int,Any}},
+    data::Model,
+    expr::MOI.Nonlinear.Expression,
+    x::Expr,
+    parent_index::Int,
+)
+    @assert Meta.isexpr(x, :call)
+    id = get(data.operators.multivariate_operator_to_id, x.args[1], nothing)
+    if id === nothing
+        if haskey(data.operators.univariate_operator_to_id, x.args[1])
+            # It may also be a unary variate operator with splatting.
+            _parse_univariate_expression(stack, data, expr, x, parent_index)
+        elseif x.args[1] in data.operators.comparison_operators
+            # Or it may be a binary (in)equality operator.
+            _parse_inequality_expression(stack, data, expr, x, parent_index)
+        else
+            throw(MOI.UnsupportedNonlinearOperator(x.args[1]))
+        end
+        return
+    end
+    push!(
+        expr.nodes,
+        MOI.Nonlinear.Node(
+            MOI.Nonlinear.NODE_CALL_MULTIVARIATE,
+            id,
+            parent_index,
+        ),
+    )
+    for i in length(x.args):-1:2
+        push!(stack, (length(expr.nodes), x.args[i]))
+    end
+    return
+end
+
+function parse_expression(
+    ::Model,
+    expr::MOI.Nonlinear.Expression,
+    x::MOI.VariableIndex,
+    parent_index::Int,
+)
+    push!(
+        expr.nodes,
+        MOI.Nonlinear.Node(
+            MOI.Nonlinear.NODE_MOI_VARIABLE,
+            x.value,
+            parent_index,
+        ),
+    )
+    return
+end
+
+function parse_expression(data::Model, input)
     expr = MOI.Nonlinear.Expression()
     parse_expression(data, expr, input, -1)
     return expr
 end
 
-function parse_expression(data, expr, item, parent)
-    return MOI.Nonlinear.parse_expression(data, expr, item, parent)
+function parse_expression(
+    ::Model,
+    expr::MOI.Nonlinear.Expression,
+    x::Real,
+    parent_index::Int,
+)
+    push!(expr.values, convert(Float64, x)::Float64)
+    push!(
+        expr.nodes,
+        MOI.Nonlinear.Node(
+            MOI.Nonlinear.NODE_VALUE,
+            length(expr.values),
+            parent_index,
+        ),
+    )
+    return
 end
 
 function parse_expression(
-    data::MOI.Nonlinear.Model,
+    ::Model,
+    expr::MOI.Nonlinear.Expression,
+    x::MOI.Nonlinear.ParameterIndex,
+    parent_index::Int,
+)
+    push!(
+        expr.nodes,
+        MOI.Nonlinear.Node(MOI.Nonlinear.NODE_PARAMETER, x.value, parent_index),
+    )
+    return
+end
+
+function parse_expression(
+    data::Model,
     expr::MOI.Nonlinear.Expression,
     x::Expr,
     parent_index::Int,
