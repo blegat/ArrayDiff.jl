@@ -82,51 +82,6 @@ function MOI.NLPBlockData(evaluator::Evaluator)
     )
 end
 
-"""
-    ExprGraphOnly() <: AbstractAutomaticDifferentiation
-
-The default implementation of `AbstractAutomaticDifferentiation`. The only
-supported feature is `:ExprGraph`.
-"""
-struct ExprGraphOnly <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
-
-function Evaluator(model::Model, ::ExprGraphOnly, ::Vector{MOI.VariableIndex})
-    return Evaluator(model)
-end
-
-"""
-    SparseReverseMode() <: AbstractAutomaticDifferentiation
-
-An implementation of `AbstractAutomaticDifferentiation` that uses sparse
-reverse-mode automatic differentiation to compute derivatives. Supports all
-features in the MOI nonlinear interface.
-"""
-struct SparseReverseMode <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
-
-function Evaluator(
-    model::Model,
-    ::SparseReverseMode,
-    ordered_variables::Vector{MOI.VariableIndex},
-)
-    return Evaluator(model, ReverseAD.NLPEvaluator(model, ordered_variables))
-end
-
-"""
-    SymbolicMode() <: AbstractAutomaticDifferentiation
-
-A type for setting as the value of the `MOI.AutomaticDifferentiationBackend()`
-attribute to enable symbolic automatic differentiation.
-"""
-struct SymbolicMode <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
-
-function Evaluator(
-    model::Model,
-    ::SymbolicMode,
-    ordered_variables::Vector{MOI.VariableIndex},
-)
-    return Evaluator(model, SymbolicAD.Evaluator(model, ordered_variables))
-end
-
 function set_objective(model::Model, obj)
     model.objective = parse_expression(model, obj)
     return
@@ -654,27 +609,6 @@ end
 
 function add_constraint(
     model::Model,
-    v::Vector{MOI.VariableIndex},
-    set::MOI.AbstractVectorSet,
-)
-    return add_constraint(model, VectorOfVariables(v), set)
-end
-
-"""
-    add_constraints(model::ModelLike, funcs::Vector{F}, sets::Vector{S})::Vector{ConstraintIndex{F,S}} where {F,S}
-
-Add the set of constraints specified by each function-set pair in `funcs` and `sets`. `F` and `S` should be concrete types.
-This call is equivalent to `add_constraint.(model, funcs, sets)` but may be more efficient.
-"""
-function add_constraints end
-
-# default fallback
-function add_constraints(model::Model, funcs, sets)
-    return add_constraint.(model, funcs, sets)
-end
-
-function add_constraint(
-    model::Model,
     func,
     set::Union{
         MOI.GreaterThan{Float64},
@@ -806,27 +740,6 @@ end
 function add_parameter(model::Model, value::Float64)
     push!(model.parameters, value)
     return MOI.Nonlinear.ParameterIndex(length(model.parameters))
-end
-
-function Base.getindex(model::Model, p::Nonlinear.ParameterIndex)
-    return model.parameters[p.value]
-end
-
-function Base.setindex!(model::Model, value::Real, p::Nonlinear.ParameterIndex)
-    return model.parameters[p.value] = convert(Float64, value)::Float64
-end
-
-function delete(model::Model, c::Nonlinear.ConstraintIndex)
-    delete!(model.constraints, c)
-    return
-end
-
-function Base.getindex(model::Model, index::Nonlinear.ConstraintIndex)
-    return model.constraints[index]
-end
-
-function MOI.is_valid(model::Model, index::Nonlinear.ConstraintIndex)
-    return haskey(model.constraints, index)
 end
 
 function add_expression(model::Model, expr)
