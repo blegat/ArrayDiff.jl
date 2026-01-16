@@ -19,99 +19,6 @@ const DEFAULT_MULTIVARIATE_OPERATORS = [
     :row,
 ]
 
-struct OperatorRegistry
-    # NODE_CALL_UNIVARIATE
-    univariate_operators::Vector{Symbol}
-    univariate_operator_to_id::Dict{Symbol,Int}
-    univariate_user_operator_start::Int
-    registered_univariate_operators::Vector{MOI.Nonlinear._UnivariateOperator}
-    # NODE_CALL_MULTIVARIATE
-    multivariate_operators::Vector{Symbol}
-    multivariate_operator_to_id::Dict{Symbol,Int}
-    multivariate_user_operator_start::Int
-    registered_multivariate_operators::Vector{
-        MOI.Nonlinear._MultivariateOperator,
-    }
-    # NODE_LOGIC
-    logic_operators::Vector{Symbol}
-    logic_operator_to_id::Dict{Symbol,Int}
-    # NODE_COMPARISON
-    comparison_operators::Vector{Symbol}
-    comparison_operator_to_id::Dict{Symbol,Int}
-    function OperatorRegistry()
-        univariate_operators = copy(MOI.Nonlinear.DEFAULT_UNIVARIATE_OPERATORS)
-        multivariate_operators = copy(DEFAULT_MULTIVARIATE_OPERATORS)
-        logic_operators = [:&&, :||]
-        comparison_operators = [:<=, :(==), :>=, :<, :>]
-        return new(
-            # NODE_CALL_UNIVARIATE
-            univariate_operators,
-            Dict{Symbol,Int}(
-                op => i for (i, op) in enumerate(univariate_operators)
-            ),
-            length(univariate_operators),
-            MOI.Nonlinear._UnivariateOperator[],
-            # NODE_CALL
-            multivariate_operators,
-            Dict{Symbol,Int}(
-                op => i for (i, op) in enumerate(multivariate_operators)
-            ),
-            length(multivariate_operators),
-            MOI.Nonlinear._MultivariateOperator[],
-            # NODE_LOGIC
-            logic_operators,
-            Dict{Symbol,Int}(op => i for (i, op) in enumerate(logic_operators)),
-            # NODE_COMPARISON
-            comparison_operators,
-            Dict{Symbol,Int}(
-                op => i for (i, op) in enumerate(comparison_operators)
-            ),
-        )
-    end
-end
-
-"""
-    Model()
-
-The core datastructure for representing a nonlinear optimization problem.
-
-It has the following fields:
- * `objective::Union{Nothing,Expression}` : holds the nonlinear objective
-   function, if one exists, otherwise `nothing`.
- * `expressions::Vector{Expression}` : a vector of expressions in the model.
- * `constraints::OrderedDict{ConstraintIndex,Constraint}` : a map from
-   [`ConstraintIndex`](@ref) to the corresponding [`Constraint`](@ref). An
-   `OrderedDict` is used instead of a `Vector` to support constraint deletion.
- * `parameters::Vector{Float64}` : holds the current values of the parameters.
- * `operators::OperatorRegistry` : stores the operators used in the model.
-"""
-mutable struct Model
-    objective::Union{Nothing,MOI.Nonlinear.Expression}
-    expressions::Vector{MOI.Nonlinear.Expression}
-    constraints::OrderedDict{
-        MOI.Nonlinear.ConstraintIndex,
-        MOI.Nonlinear.Constraint,
-    }
-    parameters::Vector{Float64}
-    operators::OperatorRegistry
-    # This is a private field, used only to increment the ConstraintIndex.
-    last_constraint_index::Int64
-    function Model()
-        model = new(
-            nothing,
-            MOI.Nonlinear.Expression[],
-            OrderedDict{
-                MOI.Nonlinear.ConstraintIndex,
-                MOI.Nonlinear.Constraint,
-            }(),
-            Float64[],
-            OperatorRegistry(),
-            0,
-        )
-        return model
-    end
-end
-
 _bound(s::MOI.LessThan) = MOI.NLPBoundsPair(-Inf, s.upper)
 _bound(s::MOI.GreaterThan) = MOI.NLPBoundsPair(s.lower, Inf)
 _bound(s::MOI.EqualTo) = MOI.NLPBoundsPair(s.value, s.value)
@@ -451,10 +358,6 @@ function MOI.eval_objective_gradient(evaluator::Evaluator, g, x)
     MOI.eval_objective_gradient(evaluator.backend, g, x)
     evaluator.eval_objective_gradient_timer += time() - start
     return
-end
-
-function MOI.hessian_lagrangian_structure(evaluator::Evaluator)
-    return MOI.hessian_lagrangian_structure(evaluator.backend)
 end
 
 function _parse_expression(stack, data, expr, x, parent_index)
@@ -882,11 +785,6 @@ function MOI.eval_hessian_lagrangian_product(
     return
 end
 
-function add_expression(model::Model, expr)
-    push!(model.expressions, parse_expression(model, expr))
-    return Nonlinear.ExpressionIndex(length(model.expressions))
-end
-
 function eval_univariate_hessian(
     registry::OperatorRegistry,
     id::Integer,
@@ -1100,16 +998,4 @@ function features_available(evaluator::Evaluator)
         push!(features, :ExprGraph)
     end
     return features
-end
-
-function MOI.features_available(d::NLPEvaluator)
-    # Check if we are missing any hessians for user-defined operators, in which
-    # case we need to disable :Hess and :HessVec.
-    d.disable_2ndorder =
-        any(_no_hessian, d.data.operators.registered_univariate_operators) ||
-        any(_no_hessian, d.data.operators.registered_multivariate_operators)
-    if d.disable_2ndorder
-        return [:Grad, :Jac, :JacVec]
-    end
-    return [:Grad, :Jac, :JacVec, :Hess, :HessVec]
 end

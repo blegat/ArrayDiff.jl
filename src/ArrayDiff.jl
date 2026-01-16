@@ -12,22 +12,7 @@ const Nonlinear = MOI.Nonlinear
 import SparseArrays
 import OrderedCollections: OrderedDict
 
-include("MOI_Nonlinear_fork.jl")
-
-"""
-    Mode() <: AbstractAutomaticDifferentiation
-
-Fork of `MOI.Nonlinear.SparseReverseMode` to add array support.
-"""
 struct Mode <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
-
-function Evaluator(
-    model::Model,
-    ::Mode,
-    ordered_variables::Vector{MOI.VariableIndex},
-)
-    return Evaluator(model, NLPEvaluator(model, ordered_variables))
-end
 
 # Override basic math functions to return NaN instead of throwing errors.
 # This is what NLP solvers expect, and sometimes the results aren't needed
@@ -57,7 +42,20 @@ include("utils.jl")
 include("reverse_mode.jl")
 include("forward_over_reverse.jl")
 include("mathoptinterface_api.jl")
-
 include("MOI_Nonlinear_fork.jl")
+
+"""
+    Mode() <: AbstractAutomaticDifferentiation
+
+Fork of `MOI.Nonlinear.SparseReverseMode` to add array support.
+"""
+
+function Evaluator(
+    model::ArrayDiff.Model,
+    ::Mode,
+    ordered_variables::Vector{MOI.VariableIndex},
+)
+    return Evaluator(model, NLPEvaluator(model, ordered_variables))
+end
 
 end  # module
