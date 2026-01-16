@@ -29,9 +29,9 @@ end
 
 function test_objective_quadratic_univariate()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :($x^2 + 1))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :($x^2 + 1))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.eval_objective(evaluator, [1.2]) == 1.2^2 + 1
     g = [NaN]
@@ -59,10 +59,10 @@ end
 
 function test_objective_and_constraints_quadratic_univariate()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :($x^2 + 1))
-    Nonlinear.add_constraint(model, :($x^2), MOI.LessThan(2.0))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :($x^2 + 1))
+    ArrayDiff.add_constraint(model, :($x^2), MOI.LessThan(2.0))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.eval_objective(evaluator, [1.2]) == 1.2^2 + 1
     g = [NaN]
@@ -96,9 +96,9 @@ end
 function test_objective_quadratic_multivariate()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :($x^2 + $x * $y + $y^2))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :($x^2 + $x * $y + $y^2))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.eval_objective(evaluator, [1.2, 2.3]) == 1.2^2 + 1.2 * 2.3 + 2.3^2
     g = [NaN, NaN]
@@ -130,12 +130,12 @@ end
 function test_objective_quadratic_multivariate_subexpressions()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    model = Nonlinear.Model()
-    ex = Nonlinear.add_expression(model, :($x^2))
-    ey = Nonlinear.add_expression(model, :($y^2))
-    exy = Nonlinear.add_expression(model, :($ex + $x * $y))
-    Nonlinear.set_objective(model, :($exy + $ey))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    model = ArrayDiff.Model()
+    ex = ArrayDiff.add_expression(model, :($x^2))
+    ey = ArrayDiff.add_expression(model, :($y^2))
+    exy = ArrayDiff.add_expression(model, :($ex + $x * $y))
+    ArrayDiff.set_objective(model, :($exy + $ey))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     val = [1.2, 2.3]
     @test MOI.eval_objective(evaluator, val) == 1.2^2 + 1.2 * 2.3 + 2.3^2
@@ -175,9 +175,9 @@ end
 function test_objective_ifelse_comparison()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :(ifelse(1 <= $x <= 2, $x^2, $y^2)))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(ifelse(1 <= $x <= 2, $x^2, $y^2)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.eval_objective(evaluator, [1.2, 2.3]) == 1.2^2
     @test MOI.eval_objective(evaluator, [2.2, 2.3]) == 2.3^2
@@ -192,9 +192,9 @@ end
 function test_objective_ifelse_logic()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :(ifelse(1 <= $x && $x <= 2, $x^2, $y^2)))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(ifelse(1 <= $x && $x <= 2, $x^2, $y^2)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.eval_objective(evaluator, [1.2, 2.3]) == 1.2^2
     @test MOI.eval_objective(evaluator, [2.2, 2.3]) == 2.3^2
@@ -208,10 +208,10 @@ end
 
 function test_objective_parameter()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    p = Nonlinear.add_parameter(model, 1.2)
-    Nonlinear.set_objective(model, :($p * $x))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    model = ArrayDiff.Model()
+    p = ArrayDiff.add_parameter(model, 1.2)
+    ArrayDiff.set_objective(model, :($p * $x))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.eval_objective(evaluator, [1.3]) == 1.2 * 1.3
     g = [NaN]
@@ -221,13 +221,13 @@ function test_objective_parameter()
 end
 
 function test_objective_subexpression()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex(1)
     input = :($x^2 + 1)
-    expr = Nonlinear.add_expression(model, input)
-    expr_2 = Nonlinear.add_expression(model, :($expr^2))
-    Nonlinear.set_objective(model, :($expr_2^2))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    expr = ArrayDiff.add_expression(model, input)
+    expr_2 = ArrayDiff.add_expression(model, :($expr^2))
+    ArrayDiff.set_objective(model, :($expr_2^2))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad])
     @test MOI.eval_objective(evaluator, [1.3]) == ((1.3^2 + 1)^2)^2
     g = [NaN]
@@ -238,9 +238,9 @@ end
 
 function test_constraint_quadratic_univariate()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    Nonlinear.add_constraint(model, :($x^2), MOI.LessThan(2.0))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    model = ArrayDiff.Model()
+    ArrayDiff.add_constraint(model, :($x^2), MOI.LessThan(2.0))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     g = [NaN]
     x_val = [1.2]
@@ -264,9 +264,9 @@ end
 function test_constraint_quadratic_multivariate()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    model = Nonlinear.Model()
-    Nonlinear.add_constraint(model, :($x^2 + $x * $y + $y^2), MOI.LessThan(2.0))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    model = ArrayDiff.Model()
+    ArrayDiff.add_constraint(model, :($x^2 + $x * $y + $y^2), MOI.LessThan(2.0))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     g = [NaN]
     x_val = [1.2, 2.3]
@@ -287,12 +287,12 @@ end
 function test_constraint_quadratic_multivariate_subexpressions()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    model = Nonlinear.Model()
-    ex = Nonlinear.add_expression(model, :($x^2))
-    ey = Nonlinear.add_expression(model, :($y^2))
-    exy = Nonlinear.add_expression(model, :($ex + $x * $y))
-    Nonlinear.add_constraint(model, :($exy + $ey), MOI.LessThan(2.0))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    model = ArrayDiff.Model()
+    ex = ArrayDiff.add_expression(model, :($x^2))
+    ey = ArrayDiff.add_expression(model, :($y^2))
+    exy = ArrayDiff.add_expression(model, :($ex + $x * $y))
+    ArrayDiff.add_constraint(model, :($exy + $ey), MOI.LessThan(2.0))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     g = [NaN]
     x_val = [1.2, 2.3]
@@ -336,11 +336,11 @@ function test_hessian_sparsity_registered_function()
         H[2, 2] = 2
         return
     end
-    model = Nonlinear.Model()
-    Nonlinear.register_operator(model, :f, 2, f, ∇f, ∇²f)
-    Nonlinear.set_objective(model, :(f($x, $z) + $y^2))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y, z])
-    @test :Hess in MOI.features_available(evaluator)
+    model = ArrayDiff.Model()
+    ArrayDiff.register_operator(model, :f, 2, f, ∇f, ∇²f)
+    ArrayDiff.set_objective(model, :(f($x, $z) + $y^2))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y, z])
+    @test :Hess in ArrayDiff.features_available(evaluator)
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.hessian_lagrangian_structure(evaluator) ==
           [(1, 1), (2, 2), (3, 3), (3, 1)]
@@ -366,11 +366,11 @@ function test_hessian_sparsity_registered_rosenbrock()
         H[2, 2] = 200.0
         return
     end
-    model = Nonlinear.Model()
-    Nonlinear.register_operator(model, :rosenbrock, 2, f, ∇f, ∇²f)
-    Nonlinear.set_objective(model, :(rosenbrock($x, $y)))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
-    @test :Hess in MOI.features_available(evaluator)
+    model = ArrayDiff.Model()
+    ArrayDiff.register_operator(model, :rosenbrock, 2, f, ∇f, ∇²f)
+    ArrayDiff.set_objective(model, :(rosenbrock($x, $y)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    @test :Hess in ArrayDiff.features_available(evaluator)
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.hessian_lagrangian_structure(evaluator) ==
           [(1, 1), (2, 2), (2, 1)]
@@ -396,10 +396,10 @@ function test_hessian_registered_error()
         H[2, 2] = 200.0
         return
     end
-    model = Nonlinear.Model()
-    Nonlinear.register_operator(model, :rosenbrock, 2, f, ∇f, ∇²f)
-    Nonlinear.set_objective(model, :(rosenbrock($x, $y)))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    model = ArrayDiff.Model()
+    ArrayDiff.register_operator(model, :rosenbrock, 2, f, ∇f, ∇²f)
+    ArrayDiff.set_objective(model, :(rosenbrock($x, $y)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     H = fill(NaN, 3)
     @test_throws(
@@ -494,9 +494,9 @@ end
 function test_derivatives()
     a = MOI.VariableIndex(1)
     b = MOI.VariableIndex(2)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :(sin($a^2) + cos($b * 4) / 5 - 2.0))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [a, b])
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(sin($a^2) + cos($b * 4) / 5 - 2.0))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [a, b])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     x = [2.0, 3.0]
     @test MOI.eval_objective(evaluator, x) ==
@@ -516,13 +516,13 @@ function test_derivatives()
 end
 
 function test_NLPBlockData()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex(1)
-    Nonlinear.add_constraint(model, :($x - 1), MOI.LessThan(0.0))
-    Nonlinear.add_constraint(model, :($x - 2), MOI.GreaterThan(0.0))
-    Nonlinear.add_constraint(model, :($x - 3), MOI.EqualTo(0.0))
-    Nonlinear.add_constraint(model, :($x), MOI.Interval(4.0, 5.0))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    ArrayDiff.add_constraint(model, :($x - 1), MOI.LessThan(0.0))
+    ArrayDiff.add_constraint(model, :($x - 2), MOI.GreaterThan(0.0))
+    ArrayDiff.add_constraint(model, :($x - 3), MOI.EqualTo(0.0))
+    ArrayDiff.add_constraint(model, :($x), MOI.Interval(4.0, 5.0))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     block = MOI.NLPBlockData(evaluator)
     @test block.constraint_bounds == [
         MOI.NLPBoundsPair(-Inf, 0.0),
@@ -540,8 +540,8 @@ function test_linearity()
     z = MOI.VariableIndex(3)
     variables = Dict(x => 1, y => 2, z => 3)
     function _test_linearity(input, test_value, IJ = [], indices = [])
-        model = Nonlinear.Model()
-        ex = Nonlinear.add_expression(model, input)
+        model = ArrayDiff.Model()
+        ex = ArrayDiff.add_expression(model, input)
         expr = model[ex]
         adj = Nonlinear.adjacency_matrix(expr.nodes)
         nodes = ArrayDiff._replace_moi_variables(expr.nodes, variables)
@@ -631,10 +631,10 @@ end
 
 function test_linearity_no_hess()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    ex = Nonlinear.add_expression(model, :($x + 1))
-    Nonlinear.set_objective(model, ex)
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    model = ArrayDiff.Model()
+    ex = ArrayDiff.add_expression(model, :($x + 1))
+    ArrayDiff.set_objective(model, ex)
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac])
     # We initialized without the need for the hessian so
     # the linearity shouldn't be computed.
@@ -647,9 +647,9 @@ function test_dual_forward()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
     function _test_dual_forward(input, x_input, test_value)
-        model = Nonlinear.Model()
-        Nonlinear.set_objective(model, input)
-        evaluator = Nonlinear.Evaluator(
+        model = ArrayDiff.Model()
+        ArrayDiff.set_objective(model, input)
+        evaluator = ArrayDiff.Evaluator(
             model,
             ArrayDiff.Mode(),
             MOI.VariableIndex[x, y],
@@ -687,18 +687,18 @@ function test_gradient_registered_function()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
     z = MOI.VariableIndex(3)
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     f(x, y) = (1 / 3) * y^3 - 2x^2
     function ∇f(g, x, y)
         g[1] = -4x
         g[2] = y^2
         return
     end
-    Nonlinear.register_operator(model, :Φ, 2, f, ∇f)
-    Nonlinear.register_operator(model, :c, 1, cos, x -> -sin(x), x -> -cos(x))
-    Nonlinear.set_objective(model, :(Φ($y, $x - 1) * c($z)))
+    ArrayDiff.register_operator(model, :Φ, 2, f, ∇f)
+    ArrayDiff.register_operator(model, :c, 1, cos, x -> -sin(x), x -> -cos(x))
+    ArrayDiff.set_objective(model, :(Φ($y, $x - 1) * c($z)))
     evaluator =
-        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x, y, z])
+        ArrayDiff.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x, y, z])
     MOI.initialize(evaluator, [:Grad])
     ∇f = fill(NaN, 3)
     x_input = [2.0, 3.0, 4.0]
@@ -714,13 +714,13 @@ end
 
 function test_gradient_jump_855()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(
         model,
         :(ifelse($x <= 3.0, ($x - 2.0)^2, 2 * log($x - 2.0) + 1.0)),
     )
     evaluator =
-        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
+        ArrayDiff.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
     MOI.initialize(evaluator, [:Grad])
     ∇f = fill(NaN, 1)
     MOI.eval_objective_gradient(evaluator, ∇f, [-1.0])
@@ -732,10 +732,10 @@ end
 
 function test_gradient_abs()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :(abs($x)))
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(abs($x)))
     evaluator =
-        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
+        ArrayDiff.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
     MOI.initialize(evaluator, [:Grad])
     ∇f = fill(NaN, 1)
     MOI.eval_objective_gradient(evaluator, ∇f, [2.0])
@@ -748,10 +748,10 @@ end
 function test_gradient_trig()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :(sin($x^2) + cos($y * 4) / 5 - 2.0))
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(sin($x^2) + cos($y * 4) / 5 - 2.0))
     evaluator =
-        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x, y])
+        ArrayDiff.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x, y])
     MOI.initialize(evaluator, [:Grad])
     ∇f = fill(NaN, 2)
     MOI.eval_objective_gradient(evaluator, ∇f, [2.0, 3.0])
@@ -761,10 +761,10 @@ end
 
 function test_gradient_logical()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :($x > 0.5 && $x < 0.9))
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :($x > 0.5 && $x < 0.9))
     evaluator =
-        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
+        ArrayDiff.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
     MOI.initialize(evaluator, [:Grad])
     @test MOI.eval_objective(evaluator, [1.5]) == 0.0
     ∇f = fill(NaN, 1)
@@ -775,10 +775,10 @@ end
 
 function test_gradient_ifelse()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :(ifelse($x >= 0.5 || $x < 0.1, $x, 5)))
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(ifelse($x >= 0.5 || $x < 0.1, $x, 5)))
     evaluator =
-        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
+        ArrayDiff.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
     MOI.initialize(evaluator, [:Grad])
     @test MOI.eval_objective(evaluator, [1.5]) == 1.5
     ∇f = fill(NaN, 1)
@@ -795,10 +795,10 @@ end
 
 function test_gradient_sqrt_nan()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :(sqrt($x)))
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(sqrt($x)))
     evaluator =
-        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
+        ArrayDiff.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
     MOI.initialize(evaluator, [:Grad])
     @test isnan(MOI.eval_objective(evaluator, [-1.5]))
     ∇f = fill(Inf, 1)
@@ -811,10 +811,10 @@ function test_gradient_variable_power()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
     z = MOI.VariableIndex(3)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :((1 / $x)^$y - $z))
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :((1 / $x)^$y - $z))
     evaluator =
-        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x, y, z])
+        ArrayDiff.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x, y, z])
     MOI.initialize(evaluator, [:Grad])
     x_input = [2.5, 3.5, 1.0]
     @test MOI.eval_objective(evaluator, x_input) == (1 / 2.5)^3.5 - 1.0
@@ -830,11 +830,11 @@ end
 
 function test_single_parameter()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    p = Nonlinear.add_parameter(model, 105.2)
-    Nonlinear.set_objective(model, :($p))
+    model = ArrayDiff.Model()
+    p = ArrayDiff.add_parameter(model, 105.2)
+    ArrayDiff.set_objective(model, :($p))
     evaluator =
-        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
+        ArrayDiff.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x])
     MOI.initialize(evaluator, [:Grad])
     @test MOI.eval_objective(evaluator, [-0.1]) == 105.2
     return
@@ -843,12 +843,12 @@ end
 function test_gradient_nested_subexpressions()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    model = Nonlinear.Model()
-    ex1 = Nonlinear.add_expression(model, :(sin($x^2) + cos($y * 4) / 5 - 2.0))
-    ex2 = Nonlinear.add_expression(model, :($ex1))
-    Nonlinear.set_objective(model, ex2)
+    model = ArrayDiff.Model()
+    ex1 = ArrayDiff.add_expression(model, :(sin($x^2) + cos($y * 4) / 5 - 2.0))
+    ex2 = ArrayDiff.add_expression(model, :($ex1))
+    ArrayDiff.set_objective(model, ex2)
     evaluator =
-        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x, y])
+        ArrayDiff.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x, y])
     MOI.initialize(evaluator, [:Grad])
     ∇f = fill(NaN, 2)
     MOI.eval_objective_gradient(evaluator, ∇f, [2.0, 3.0])
@@ -859,10 +859,10 @@ end
 function test_gradient_view()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :(($x - 1)^2 + 4 * ($y - $x^2)^2))
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(($x - 1)^2 + 4 * ($y - $x^2)^2))
     evaluator =
-        Nonlinear.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x, y])
+        ArrayDiff.Evaluator(model, ArrayDiff.Mode(), MOI.VariableIndex[x, y])
     MOI.initialize(evaluator, [:Grad])
     X_input = [0.0; 1.0; 2.0; 3.0]
     for idx in [1:2, 3:4, [1, 3], 4:-2:2]
@@ -902,10 +902,10 @@ function test_odd_chunks_Hessian_products()
 end
 
 function _test_odd_chunks_Hessian_products(N)
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex.(1:N)
-    Nonlinear.set_objective(model, Expr(:call, :*, x...))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), x)
+    ArrayDiff.set_objective(model, Expr(:call, :*, x...))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), x)
     MOI.initialize(evaluator, [:Hess])
     hessian_sparsity = MOI.hessian_lagrangian_structure(evaluator)
     V = zeros(length(hessian_sparsity))
@@ -929,13 +929,13 @@ function _dense_jacobian(jacobian_sparsity, V, m, n)
 end
 
 function test_jacobians_and_jacvec()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex.(1:3)
     a, b, c = x
-    Nonlinear.set_objective(model, :($a * $b + $c^2))
-    Nonlinear.add_constraint(model, :($c * $b), MOI.LessThan(1.0))
-    Nonlinear.add_constraint(model, :($a^2 / 2), MOI.LessThan(1.0))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), x)
+    ArrayDiff.set_objective(model, :($a * $b + $c^2))
+    ArrayDiff.add_constraint(model, :($c * $b), MOI.LessThan(1.0))
+    ArrayDiff.add_constraint(model, :($a^2 / 2), MOI.LessThan(1.0))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), x)
     MOI.initialize(evaluator, [:Jac, :JacVec])
     values = [1.0, 2.0, 3.0] # For a, b, c.
     jacobian_sparsity = MOI.jacobian_structure(evaluator)
@@ -960,14 +960,14 @@ function test_jacobians_and_jacvec()
 end
 
 function test_jacobians_and_jacvec_with_subexpressions()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex.(1:3)
     a, b, c = x
-    bc = Nonlinear.add_expression(model, :($b * $c))
-    Nonlinear.set_objective(model, :($a * $b + $c^2))
-    Nonlinear.add_constraint(model, :($bc), MOI.LessThan(1.0))
-    Nonlinear.add_constraint(model, :($a^2 / 2), MOI.LessThan(1.0))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), x)
+    bc = ArrayDiff.add_expression(model, :($b * $c))
+    ArrayDiff.set_objective(model, :($a * $b + $c^2))
+    ArrayDiff.add_constraint(model, :($bc), MOI.LessThan(1.0))
+    ArrayDiff.add_constraint(model, :($a^2 / 2), MOI.LessThan(1.0))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), x)
     MOI.initialize(evaluator, [:Jac, :JacVec])
     values = [1.0, 2.0, 3.0] # For a, b, c.
     jacobian_sparsity = MOI.jacobian_structure(evaluator)
@@ -993,9 +993,9 @@ end
 
 function test_pow_complex_result()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :(ifelse($x > 0, $x^1.5, -(-$x)^1.5)))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(ifelse($x > 0, $x^1.5, -(-$x)^1.5)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     x = [-2.0]
     @test MOI.eval_objective(evaluator, x) ≈ -(2^1.5)
@@ -1012,10 +1012,10 @@ end
 function test_constraint_gradient()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    model = Nonlinear.Model()
-    Nonlinear.add_constraint(model, :($x^2 + $x * $y + $y^2), MOI.LessThan(2.0))
-    Nonlinear.add_constraint(model, :(cos($y)), MOI.LessThan(2.0))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    model = ArrayDiff.Model()
+    ArrayDiff.add_constraint(model, :($x^2 + $x * $y + $y^2), MOI.LessThan(2.0))
+    ArrayDiff.add_constraint(model, :(cos($y)), MOI.LessThan(2.0))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac])
     @test MOI.constraint_gradient_structure(evaluator, 1) == [1, 2]
     @test MOI.constraint_gradient_structure(evaluator, 2) == [2]
@@ -1032,9 +1032,9 @@ end
 
 function test_hessian_length()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :(log($x)))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(log($x)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Hess])
     H = Float64[]
     got, want = 0, 1
@@ -1050,9 +1050,9 @@ end
 
 function test_jacobian_length()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    Nonlinear.add_constraint(model, :(sin($x)), MOI.LessThan(0.5))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    model = ArrayDiff.Model()
+    ArrayDiff.add_constraint(model, :(sin($x)), MOI.LessThan(0.5))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Jac])
     J = Float64[]
     @test_throws BoundsError MOI.eval_constraint_jacobian(evaluator, J, [1.0])
@@ -1061,10 +1061,10 @@ end
 
 function test_timers()
     x = MOI.VariableIndex(1)
-    model = Nonlinear.Model()
-    Nonlinear.set_objective(model, :(log($x)))
-    Nonlinear.add_constraint(model, :(sin($x)), MOI.LessThan(0.5))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(log($x)))
+    ArrayDiff.add_constraint(model, :(sin($x)), MOI.LessThan(0.5))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     y = [1.2]
     g = [NaN]
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
@@ -1101,10 +1101,10 @@ function test_timers()
 end
 
 function test_varying_length_x()
-    model = MOI.Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex(1)
-    MOI.Nonlinear.set_objective(model, :(sin($x)))
-    evaluator = MOI.Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    ArrayDiff.set_objective(model, :(sin($x)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, Symbol[:Jac])
     ∇f = [NaN]
     MOI.eval_objective_gradient(evaluator, ∇f, [1.0, 2.0])
@@ -1116,12 +1116,12 @@ end
 function test_univariate_operator_with_no_second_order()
     f(x::Float64) = x^2
     df(x::Float64) = 2 * x
-    model = MOI.Nonlinear.Model()
-    MOI.Nonlinear.register_operator(model, :op_f, 1, f, df)
+    model = ArrayDiff.Model()
+    ArrayDiff.register_operator(model, :op_f, 1, f, df)
     x = MOI.VariableIndex(1)
-    MOI.Nonlinear.add_constraint(model, :(op_f($x)), MOI.LessThan(2.0))
-    evaluator = MOI.Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
-    @test !(:Hess in MOI.features_available(evaluator))
+    ArrayDiff.add_constraint(model, :(op_f($x)), MOI.LessThan(2.0))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
+    @test !(:Hess in ArrayDiff.features_available(evaluator))
     MOI.initialize(evaluator, [:Grad, :Jac])
     J = zeros(length(MOI.jacobian_structure(evaluator)))
     MOI.eval_constraint_jacobian(evaluator, J, [2.0])
@@ -1130,9 +1130,9 @@ function test_univariate_operator_with_no_second_order()
 end
 
 function test_no_objective()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex(1)
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad])
     @test_throws(
         ErrorException("No nonlinear objective."),
@@ -1147,10 +1147,10 @@ function test_no_objective()
 end
 
 function test_x_power_1()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex(1)
-    MOI.Nonlinear.set_objective(model, :($x^1))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    ArrayDiff.set_objective(model, :($x^1))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Hess])
     @test MOI.eval_objective(evaluator, [2.0]) ≈ 2.0
     H = [NaN]
@@ -1160,11 +1160,11 @@ function test_x_power_1()
 end
 
 function test_variable_first_node_in_tape()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex(1)
-    expr = MOI.Nonlinear.add_expression(model, :($x))
-    MOI.Nonlinear.set_objective(model, :(sin($expr)))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    expr = ArrayDiff.add_expression(model, :($x))
+    ArrayDiff.set_objective(model, :(sin($expr)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     H = [NaN]
     MOI.eval_hessian_lagrangian(evaluator, H, [2.0], 1.5, [])
@@ -1173,12 +1173,12 @@ function test_variable_first_node_in_tape()
 end
 
 function test_subexpression_first_node_in_tape()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex(1)
-    expr = MOI.Nonlinear.add_expression(model, :($x))
-    expr2 = MOI.Nonlinear.add_expression(model, :($expr))
-    MOI.Nonlinear.set_objective(model, :(sin($expr2)))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    expr = ArrayDiff.add_expression(model, :($x))
+    expr2 = ArrayDiff.add_expression(model, :($expr))
+    ArrayDiff.set_objective(model, :(sin($expr2)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     H = [NaN]
     MOI.eval_hessian_lagrangian(evaluator, H, [2.0], 1.5, [])
@@ -1187,11 +1187,11 @@ function test_subexpression_first_node_in_tape()
 end
 
 function test_parameter_in_hessian()
-    model = Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex(1)
-    p = MOI.Nonlinear.add_parameter(model, 3.0)
-    MOI.Nonlinear.set_objective(model, :(sin($x + $p)))
-    evaluator = Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    p = ArrayDiff.add_parameter(model, 3.0)
+    ArrayDiff.set_objective(model, :(sin($x + $p)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     H = [NaN]
     MOI.eval_hessian_lagrangian(evaluator, H, [2.0], 1.5, [])
@@ -1213,9 +1213,9 @@ end
 function test_classify_linearity_ifelse()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    model = MOI.Nonlinear.Model()
-    MOI.Nonlinear.set_objective(model, :(ifelse($y, $x, 1)))
-    evaluator = MOI.Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(ifelse($y, $x, 1)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.eval_objective(evaluator, [1.2, 1.0]) == 1.2
     @test MOI.eval_objective(evaluator, [1.2, 0.0]) == 1.0
@@ -1226,9 +1226,9 @@ end
 function test_classify_linearity_logic()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    model = MOI.Nonlinear.Model()
-    MOI.Nonlinear.set_objective(model, :($x && $y))
-    evaluator = MOI.Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :($x && $y))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.eval_objective(evaluator, [1.0, 1.0]) == 1.0
     @test MOI.eval_objective(evaluator, [0.0, 1.0]) == 0.0
@@ -1241,11 +1241,11 @@ end
 function test_hessian_sparsity_with_subexpressions()
     x = MOI.VariableIndex(1)
     y = MOI.VariableIndex(2)
-    model = MOI.Nonlinear.Model()
-    expr = MOI.Nonlinear.add_expression(model, :($x * $y))
-    expr2 = MOI.Nonlinear.add_expression(model, :($expr))
-    MOI.Nonlinear.set_objective(model, :(sin($expr2)))
-    evaluator = MOI.Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    model = ArrayDiff.Model()
+    expr = ArrayDiff.add_expression(model, :($x * $y))
+    expr2 = ArrayDiff.add_expression(model, :($expr))
+    ArrayDiff.set_objective(model, :(sin($expr2)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     MOI.hessian_lagrangian_structure(evaluator)
     return
@@ -1253,14 +1253,14 @@ end
 
 function test_toposort_subexpressions()
     x = MOI.VariableIndex(1)
-    model = MOI.Nonlinear.Model()
-    a = MOI.Nonlinear.add_expression(model, :($x))
-    b = MOI.Nonlinear.add_expression(model, :($x))
-    c = MOI.Nonlinear.add_expression(model, :($a + $b))
-    d = MOI.Nonlinear.add_expression(model, :($c + $b))
-    MOI.Nonlinear.add_constraint(model, :($d), MOI.LessThan(1.0))
-    MOI.Nonlinear.add_constraint(model, :($c), MOI.LessThan(1.0))
-    evaluator = MOI.Nonlinear.Evaluator(model, ArrayDiff.Mode(), [x])
+    model = ArrayDiff.Model()
+    a = ArrayDiff.add_expression(model, :($x))
+    b = ArrayDiff.add_expression(model, :($x))
+    c = ArrayDiff.add_expression(model, :($a + $b))
+    d = ArrayDiff.add_expression(model, :($c + $b))
+    ArrayDiff.add_constraint(model, :($d), MOI.LessThan(1.0))
+    ArrayDiff.add_constraint(model, :($c), MOI.LessThan(1.0))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     g = [NaN, NaN]
     MOI.eval_constraint(evaluator, g, [2.0])
@@ -1269,20 +1269,20 @@ function test_toposort_subexpressions()
 end
 
 function test_eval_user_defined_operator_ForwardDiff_gradient!()
-    model = MOI.Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex.(1:4)
-    p = MOI.Nonlinear.add_parameter(model, 2.0)
-    ex = MOI.Nonlinear.add_expression(model, :($p * $(x[1])))
+    p = ArrayDiff.add_parameter(model, 2.0)
+    ex = ArrayDiff.add_expression(model, :($p * $(x[1])))
     ψ(x) = sin(x)
     t(x, y) = x + 3y
-    MOI.Nonlinear.register_operator(model, :ψ, 1, ψ)
-    MOI.Nonlinear.register_operator(model, :t, 2, t)
-    MOI.Nonlinear.add_constraint(
+    ArrayDiff.register_operator(model, :ψ, 1, ψ)
+    ArrayDiff.register_operator(model, :t, 2, t)
+    ArrayDiff.add_constraint(
         model,
         :($ex^3 + sin($(x[2])) / ψ($(x[2])) + t($(x[3]), $(x[4]))),
         MOI.LessThan(0.0),
     )
-    d = MOI.Nonlinear.Evaluator(model, ArrayDiff.Mode(), x)
+    d = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), x)
     MOI.initialize(d, [:Jac])
     X = [1.1, 1.2, 1.3, 1.4]
     g = [NaN]
@@ -1296,10 +1296,10 @@ function test_eval_user_defined_operator_ForwardDiff_gradient!()
 end
 
 function test_eval_user_defined_operator_type_mismatch()
-    model = MOI.Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex.(1:4)
-    p = MOI.Nonlinear.add_parameter(model, 2.0)
-    ex = MOI.Nonlinear.add_expression(model, :($p * $(x[1])))
+    p = ArrayDiff.add_parameter(model, 2.0)
+    ex = ArrayDiff.add_expression(model, :($p * $(x[1])))
     ψ(x) = sin(x)
     t(x, y) = x + 3y
     function ∇t(ret, x, y)
@@ -1307,14 +1307,14 @@ function test_eval_user_defined_operator_type_mismatch()
         ret[2] = 3 // 1 # These are intentionally the wrong type
         return
     end
-    MOI.Nonlinear.register_operator(model, :ψ, 1, ψ, cos)
-    MOI.Nonlinear.register_operator(model, :t, 2, t, ∇t)
-    MOI.Nonlinear.add_constraint(
+    ArrayDiff.register_operator(model, :ψ, 1, ψ, cos)
+    ArrayDiff.register_operator(model, :t, 2, t, ∇t)
+    ArrayDiff.add_constraint(
         model,
         :($ex^3 + sin($(x[2])) / ψ($(x[2])) + t($(x[3]), $(x[4]))),
         MOI.LessThan(0.0),
     )
-    d = MOI.Nonlinear.Evaluator(model, ArrayDiff.Mode(), x)
+    d = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), x)
     MOI.initialize(d, [:Jac])
     X = [1.1, 1.2, 1.3, 1.4]
     g = [NaN]
@@ -1342,15 +1342,15 @@ function test_generate_hessian_slice_inner()
 end
 
 function test_hessian_reinterpret_unsafe()
-    model = MOI.Nonlinear.Model()
+    model = ArrayDiff.Model()
     x = MOI.VariableIndex.(1:5)
-    MOI.Nonlinear.add_constraint(
+    ArrayDiff.add_constraint(
         model,
         :(($(x[1]) + $(x[2])) * $(x[3])),
         MOI.EqualTo(0.0),
     )
-    MOI.Nonlinear.add_constraint(model, :($(x[4]) * $(x[5])), MOI.EqualTo(1.0))
-    evaluator = MOI.Nonlinear.Evaluator(model, ArrayDiff.Mode(), x)
+    ArrayDiff.add_constraint(model, :($(x[4]) * $(x[5])), MOI.EqualTo(1.0))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), x)
     MOI.initialize(evaluator, [:Hess])
     H_s = MOI.hessian_lagrangian_structure(evaluator)
     H = zeros(length(H_s))
