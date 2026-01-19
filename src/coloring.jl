@@ -67,7 +67,7 @@ function _hessian_color_preprocess(
         )
         tree_result = SMC.coloring(S, problem, algo)
         result = ColoringResult(tree_result, Int[])
-        return I, J, result
+        return ones(length(local_indices)), I, J, result
     end
 
     global_to_local_idx = seen_idx.nzidx # steal for storage
@@ -93,53 +93,15 @@ function _hessian_color_preprocess(
     )
     tree_result = SMC.coloring(S, problem, algo)
 
-    # Reconstruct I and J from the tree structure (matching original _indirect_recover_structure)
-    # First add all diagonal elements
-    N = length(local_indices)
-
-    # Count off-diagonal elements from tree structure
-    (; reverse_bfs_orders, tree_edge_indices, nt) = tree_result
-    nnz_offdiag = 0
-    for tree_idx in 1:nt
-        first = tree_edge_indices[tree_idx]
-        last = tree_edge_indices[tree_idx+1] - 1
-        nnz_offdiag += (last - first + 1)
-    end
-
-    I_new = Vector{Int}(undef, N + nnz_offdiag)
-    J_new = Vector{Int}(undef, N + nnz_offdiag)
-    k = 0
-
-    # Add all diagonal elements
-    for i in 1:N
-        k += 1
-        I_new[k] = local_indices[i]
-        J_new[k] = local_indices[i]
-    end
-
-    # Then add off-diagonal elements from the tree structure
-    for tree_idx in 1:nt
-        first = tree_edge_indices[tree_idx]
-        last = tree_edge_indices[tree_idx+1] - 1
-        for pos in first:last
-            (i_local, j_local) = reverse_bfs_orders[pos]
-            # Convert from local to global indices and normalize (lower triangle)
-            i_global = local_indices[i_local]
-            j_global = local_indices[j_local]
-            if j_global > i_global
-                i_global, j_global = j_global, i_global
-            end
-            k += 1
-            I_new[k] = i_global
-            J_new[k] = j_global
-        end
-    end
-
-    @assert k == length(I_new)
-
     # Wrap result with local_indices
     result = ColoringResult(tree_result, local_indices)
-    return I_new, J_new, result
+
+    # SparseMatrixColorings assumes that `I` and `J` are CSC-ordered
+    B = SMC.compress(S, tree_result)
+    C = SMC.decompress(B, tree_result)
+    I_sorted, J_sorted = SparseArrays.findnz(C)
+
+    return C.colptr, I_sorted, J_sorted, result
 end
 
 """
@@ -174,6 +136,7 @@ end
 
 """
     _recover_from_matmat!(
+        colptr::AbstractVector,
         V::AbstractVector{T},
         R::AbstractMatrix{T},
         result::ColoringResult,
@@ -185,59 +148,20 @@ R is the result of H*R_seed where R_seed is the seed matrix.
 `stored_values` is a temporary vector.
 """
 function _recover_from_matmat!(
+    colptr::AbstractVector,
     V::AbstractVector{T},
     R::AbstractMatrix{T},
     result::ColoringResult,
     stored_values::AbstractVector{T},
 ) where {T}
     tree_result = result.result
-    color = SMC.column_colors(tree_result)
     N = length(result.local_indices)
-    # Compute number of off-diagonal nonzeros from the length of V
-    # V contains N diagonal elements + nnz_offdiag off-diagonal elements
-    @assert length(stored_values) >= N
-
-    # Recover diagonal elements
-    k = 0
-    for i in 1:N
-        k += 1
-        if color[i] > 0
-            V[k] = R[i, color[i]]
-        else
-            V[k] = zero(T)
-        end
-    end
-
-    # Recover off-diagonal elements using tree structure
-    (; reverse_bfs_orders, tree_edge_indices, nt) = tree_result
-    fill!(stored_values, zero(T))
-
-    for tree_idx in 1:nt
-        first = tree_edge_indices[tree_idx]
-        last = tree_edge_indices[tree_idx+1] - 1
-
-        # Reset stored_values for vertices in this tree
-        for pos in first:last
-            (vertex, _) = reverse_bfs_orders[pos]
-            stored_values[vertex] = zero(T)
-        end
-        (_, root) = reverse_bfs_orders[last]
-        stored_values[root] = zero(T)
-
-        # Recover edge values
-        for pos in first:last
-            (i, j) = reverse_bfs_orders[pos]
-            if color[j] > 0
-                value = R[i, color[j]] - stored_values[i]
-            else
-                value = zero(T)
-            end
-            stored_values[j] += value
-            k += 1
-            V[k] = value
-        end
-    end
-
-    @assert k == length(V)
+    S = _SparseMatrixValuesCSC(
+        N,
+        N,
+        colptr,
+        V,
+    )
+    SMC.decompress!(S, R, tree_result)
     return
 end
