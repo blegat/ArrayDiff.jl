@@ -53,23 +53,6 @@ function _hessian_color_preprocess(
     local_indices = sort!(collect(seen_idx))
     empty!(seen_idx)
 
-    # Handle empty case (no edges in Hessian)
-    if isempty(local_indices)
-        # Return empty structure - no variables to color
-        # We still need to return a valid ColoringResult, but with empty local_indices
-        # The I and J vectors are already empty, which is correct
-        # For the result, we'll create a minimal valid structure with a diagonal element
-        # Note: This case should rarely occur in practice
-        S = SMC.SparsityPatternCSC(SparseArrays.spdiagm(0 => [true]))
-        problem = SMC.ColoringProblem(;
-            structure = :symmetric,
-            partition = :column,
-        )
-        tree_result = SMC.coloring(S, problem, algo)
-        result = ColoringResult(tree_result, Int[])
-        return I, J, result
-    end
-
     global_to_local_idx = seen_idx.nzidx # steal for storage
     for k in eachindex(local_indices)
         global_to_local_idx[local_indices[k]] = k
@@ -91,6 +74,7 @@ function _hessian_color_preprocess(
         structure = :symmetric,
         partition = :column,
     )
+    display(S)
     tree_result = SMC.coloring(S, problem, algo)
 
     # Reconstruct I and J from the tree structure (matching original _indirect_recover_structure)
