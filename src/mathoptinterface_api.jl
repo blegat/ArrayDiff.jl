@@ -19,7 +19,10 @@ function MOI.features_available(d::NLPEvaluator)
     return [:Grad, :Jac, :JacVec, :Hess, :HessVec]
 end
 
-function MOI.initialize(d::NLPEvaluator, requested_features::Vector{Symbol})
+function MOI.initialize(
+    d::NLPEvaluator{R},
+    requested_features::Vector{Symbol},
+) where {R}
     # Check that we support the features requested by the user.
     available_features = MOI.features_available(d)
     for feature in requested_features
@@ -38,11 +41,11 @@ function MOI.initialize(d::NLPEvaluator, requested_features::Vector{Symbol})
     d.objective = nothing
     d.user_output_buffer = zeros(largest_user_input_dimension)
     d.jac_storage = zeros(max(N, largest_user_input_dimension))
-    d.constraints = _FunctionStorage[]
+    d.constraints = _FunctionStorage{R}[]
     d.last_x = fill(NaN, N)
     d.want_hess = :Hess in requested_features
     want_hess_storage = (:HessVec in requested_features) || d.want_hess
-    coloring_storage = Coloring.IndexedSet(N)
+    coloring_storage = MOI.Nonlinear.ReverseAD.Coloring.IndexedSet(N)
     max_expr_length = 0
     max_expr_with_sub_length = 0
     #
@@ -111,11 +114,11 @@ function MOI.initialize(d::NLPEvaluator, requested_features::Vector{Symbol})
             shared_partials_storage_ϵ,
             d,
         )
-        objective = _FunctionStorage(
+        objective = _FunctionStorage{R}(
             subexpr,
             N,
             coloring_storage,
-            d.want_hess,
+            d.want_hess ? d.coloring_algorithm : nothing,
             d.subexpressions,
             individual_order[1],
             subexpression_edgelist,
@@ -137,11 +140,11 @@ function MOI.initialize(d::NLPEvaluator, requested_features::Vector{Symbol})
         )
         push!(
             d.constraints,
-            _FunctionStorage(
+            _FunctionStorage{R}(
                 subexpr,
                 N,
                 coloring_storage,
-                d.want_hess,
+                d.want_hess ? d.coloring_algorithm : nothing,
                 d.subexpressions,
                 individual_order[idx],
                 subexpression_edgelist,

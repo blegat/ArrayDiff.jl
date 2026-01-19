@@ -14,7 +14,6 @@ import MathOptInterface as MOI
 const Nonlinear = MOI.Nonlinear
 
 import ArrayDiff
-const Coloring = ArrayDiff.Coloring
 
 function runtests()
     for name in names(@__MODULE__; all = true)
@@ -414,79 +413,92 @@ struct _ColoringGraph
     edges::Vector{Tuple{Int,Int}}
 end
 
-function to_adjlist(graph::_ColoringGraph)
-    I = [i for (i, _) in graph.edges]
-    J = [j for (_, j) in graph.edges]
-    return Coloring.UndirectedGraph(I, J, graph.num_vertices)
-end
+# Tests for internal Coloring submodule removed - now using SparseMatrixColorings
+# The coloring functionality is tested indirectly through the Hessian evaluation tests
 
-function test_coloring_edge_free_graph()
-    graph = _ColoringGraph(10, [])
-    _, numcolors = Coloring.acyclic_coloring(to_adjlist(graph))
-    @test numcolors == 1
-    return
-end
+# function to_adjlist(graph::_ColoringGraph)
+#     I = [i for (i, _) in graph.edges]
+#     J = [j for (_, j) in graph.edges]
+#     return Coloring.UndirectedGraph(I, J, graph.num_vertices)
+# end
 
-function test_coloring_one_edge_graph()
-    graph = _ColoringGraph(10, [(2, 4)])
-    color, numcolors = Coloring.acyclic_coloring(to_adjlist(graph))
-    @test numcolors == 2
-    @test color[2] != color[4]
-    return
-end
+# function test_coloring_edge_free_graph()
+#     graph = _ColoringGraph(10, [])
+#     _, numcolors = Coloring.acyclic_coloring(to_adjlist(graph))
+#     @test numcolors == 1
+#     return
+# end
 
-function test_coloring_two_edge_graph()
-    graph = _ColoringGraph(10, [(2, 4), (2, 3)])
-    color, numcolors = Coloring.acyclic_coloring(to_adjlist(graph))
-    @test numcolors == 2
-    @test color[3] == color[4]
-    return
-end
+# function test_coloring_one_edge_graph()
+#     graph = _ColoringGraph(10, [(2, 4)])
+#     color, numcolors = Coloring.acyclic_coloring(to_adjlist(graph))
+#     @test numcolors == 2
+#     @test color[2] != color[4]
+#     return
+# end
 
-function test_coloring_three_edge_graph()
-    graph = _ColoringGraph(10, [(2, 4), (2, 3), (3, 4)])
-    color, numcolors = Coloring.acyclic_coloring(to_adjlist(graph))
-    @test numcolors == 3
-    # TODO: What is this testing?
-    Coloring.recovery_preprocess(to_adjlist(graph), color, numcolors, Int[])
-    return
-end
+# function test_coloring_two_edge_graph()
+#     graph = _ColoringGraph(10, [(2, 4), (2, 3)])
+#     color, numcolors = Coloring.acyclic_coloring(to_adjlist(graph))
+#     @test numcolors == 2
+#     @test color[3] == color[4]
+#     return
+# end
 
-function test_coloring_two_edge_three_vertex_graph()
-    graph = _ColoringGraph(3, [(1, 3), (2, 3)])
-    _, numcolors = Coloring.acyclic_coloring(to_adjlist(graph))
-    @test numcolors == 2
-    return
-end
+# function test_coloring_three_edge_graph()
+#     graph = _ColoringGraph(10, [(2, 4), (2, 3), (3, 4)])
+#     color, numcolors = Coloring.acyclic_coloring(to_adjlist(graph))
+#     @test numcolors == 3
+#     # TODO: What is this testing?
+#     Coloring.recovery_preprocess(to_adjlist(graph), color, numcolors, Int[])
+#     return
+# end
 
-function test_coloring_four_edge_four_vertex_graph()
-    graph = _ColoringGraph(4, [(1, 2), (2, 3), (3, 4), (4, 1)])
-    _, numcolors = Coloring.acyclic_coloring(to_adjlist(graph))
-    @test numcolors == 3
-    return
-end
+# function test_coloring_two_edge_three_vertex_graph()
+#     graph = _ColoringGraph(3, [(1, 3), (2, 3)])
+#     _, numcolors = Coloring.acyclic_coloring(to_adjlist(graph))
+#     @test numcolors == 2
+#     return
+# end
 
-function test_coloring_topological_sort()
-    # graph = _ColoringGraph(6, [(1, 2), (1, 3), (1, 6), (2, 4), (2, 5)])
-    vec = [3, 6, 2, 1, 4, 5, 1, 2, 2, 1]
-    offset = [1, 4, 7, 8, 9, 10, 11]
-    v = Coloring.reverse_topological_sort_by_dfs(vec, offset, 6, zeros(Int, 6))
-    @test v[1] == [3, 6, 4, 5, 2, 1]
-    @test v[2] == [0, 1, 1, 2, 2, 1]
-    return
-end
+# function test_coloring_four_edge_four_vertex_graph()
+#     graph = _ColoringGraph(4, [(1, 2), (2, 3), (3, 4), (4, 1)])
+#     _, numcolors = Coloring.acyclic_coloring(to_adjlist(graph))
+#     @test numcolors == 3
+#     return
+# end
+
+# function test_coloring_topological_sort()
+#     # graph = _ColoringGraph(6, [(1, 2), (1, 3), (1, 6), (2, 4), (2, 5)])
+#     vec = [3, 6, 2, 1, 4, 5, 1, 2, 2, 1]
+#     offset = [1, 4, 7, 8, 9, 10, 11]
+#     v = Coloring.reverse_topological_sort_by_dfs(vec, offset, 6, zeros(Int, 6))
+#     @test v[1] == [3, 6, 4, 5, 2, 1]
+#     @test v[2] == [0, 1, 1, 2, 2, 1]
+#     return
+# end
 
 function test_coloring_end_to_end_hessian_coloring_and_recovery()
-    I, J, rinfo = Coloring.hessian_color_preprocess(Set([(1, 2)]), 2)
-    R = Coloring.seed_matrix(rinfo)
-    Coloring.prepare_seed_matrix!(R, rinfo)
+    # Test the new coloring API through the compatibility layer
+    coloring_algorithm =
+        ArrayDiff.SMC.GreedyColoringAlgorithm(;
+            decompression = :substitution,
+        )
+    I, J, rinfo = ArrayDiff._hessian_color_preprocess(
+        Set([(1, 2)]),
+        2,
+        coloring_algorithm,
+        MOI.Nonlinear.ReverseAD.Coloring.IndexedSet(0),
+    )
+    R = ArrayDiff._seed_matrix(rinfo)
+    ArrayDiff._prepare_seed_matrix!(R, rinfo)
     @test I == [1, 2, 2]
     @test J == [1, 2, 1]
     @test R == [1.0 0.0; 0.0 1.0]
     hess = [3.4 2.1; 2.1 1.3]
     matmat = hess * R
     V = zeros(3)
-    Coloring.recover_from_matmat!(V, matmat, rinfo, zeros(3))
+    ArrayDiff._recover_from_matmat!(V, matmat, rinfo, zeros(3))
     @test V == [3.4, 1.3, 2.1]
     return
 end
@@ -547,7 +559,7 @@ function test_linearity()
         nodes = ArrayDiff._replace_moi_variables(expr.nodes, variables)
         ret = ArrayDiff._classify_linearity(nodes, adj, ArrayDiff.Linearity[])
         @test ret[1] == test_value
-        indexed_set = Coloring.IndexedSet(100)
+        indexed_set = MOI.Nonlinear.ReverseAD.Coloring.IndexedSet(100)
         edge_list = ArrayDiff._compute_hessian_sparsity(
             nodes,
             adj,
