@@ -67,6 +67,7 @@ struct _FunctionStorage{R<:SMC.AbstractColoringResult}
     expr::_SubexpressionStorage
     grad_sparsity::Vector{Int}
     # Nonzero pattern of Hessian matrix
+    hess_colptr::Vector{Int}
     hess_I::Vector{Int}
     hess_J::Vector{Int}
     rinfo::Union{Nothing,ColoringResult{R}}
@@ -107,7 +108,7 @@ struct _FunctionStorage{R<:SMC.AbstractColoringResult}
                 subexpression_edgelist,
                 subexpression_variables,
             )
-            hess_I, hess_J, rinfo = _hessian_color_preprocess(
+            hess_colptr, hess_I, hess_J, rinfo = _hessian_color_preprocess(
                 edgelist,
                 num_variables,
                 coloring_algorithm,
@@ -117,6 +118,7 @@ struct _FunctionStorage{R<:SMC.AbstractColoringResult}
             return new{R}(
                 expr,
                 grad_sparsity,
+                hess_colptr,
                 hess_I,
                 hess_J,
                 rinfo,

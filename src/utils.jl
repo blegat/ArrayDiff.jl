@@ -203,3 +203,13 @@ function _reinterpret_unsafe(::Type{T}, x::Vector{R}) where {T,R}
     p = reinterpret(Ptr{T}, pointer(x))
     return _UnsafeVectorView(0, div(len, sizeof(T)), p)
 end
+
+struct _SparseMatrixValuesCSC{Tv,Ti<:Integer,CT<:AbstractVector{Ti},VT<:AbstractVector{Tv}} <: SparseArrays.AbstractSparseMatrixCSC{Tv,Ti}
+    m::Int          # Number of rows
+    n::Int          # Number of columns
+    colptr::CT      # Column i is in colptr[i]:(colptr[i+1]-1)
+    nzval::VT       # Stored values, typically nonzeros
+end
+
+Base.size(A::_SparseMatrixValuesCSC) = (A.m, A.n)
+SparseArrays.nonzeros(A::_SparseMatrixValuesCSC) = A.nzval

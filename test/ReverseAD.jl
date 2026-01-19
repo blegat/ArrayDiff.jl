@@ -484,7 +484,7 @@ function test_coloring_end_to_end_hessian_coloring_and_recovery()
         ArrayDiff.SMC.GreedyColoringAlgorithm(;
             decompression = :substitution,
         )
-    I, J, rinfo = ArrayDiff._hessian_color_preprocess(
+    colptr, I, J, rinfo = ArrayDiff._hessian_color_preprocess(
         Set([(1, 2)]),
         2,
         coloring_algorithm,
@@ -498,7 +498,7 @@ function test_coloring_end_to_end_hessian_coloring_and_recovery()
     hess = [3.4 2.1; 2.1 1.3]
     matmat = hess * R
     V = zeros(3)
-    ArrayDiff._recover_from_matmat!(V, matmat, rinfo, zeros(3))
+    ArrayDiff._recover_from_matmat!(colptr, V, matmat, rinfo, zeros(3))
     @test V == [3.4, 1.3, 2.1]
     return
 end
