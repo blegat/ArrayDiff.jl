@@ -9,11 +9,6 @@ Experimental addition of array support to `MOI.Nonlinear.ReverseAD`
 > [!WARNING]
 > This code is still very much experimental
 
-You need to use the following branch of [MathOptInterface](https://github.com/jump-dev/MathOptInterface.jl)
-```julia
-Pkg.add(PackageSpec(name="MathOptInterface", rev="bl/arraydiff"))
-```
-
 Supported operators:
 
 - [x] `vect`, e.g, `[1, 2]`.
