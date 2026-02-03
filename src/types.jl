@@ -133,6 +133,162 @@ struct _FunctionStorage
     end
 end
 
+struct OperatorRegistry
+    # NODE_CALL_UNIVARIATE
+    univariate_operators::Vector{Symbol}
+    univariate_operator_to_id::Dict{Symbol,Int}
+    univariate_user_operator_start::Int
+    registered_univariate_operators::Vector{MOI.Nonlinear._UnivariateOperator}
+    # NODE_CALL_MULTIVARIATE
+    multivariate_operators::Vector{Symbol}
+    multivariate_operator_to_id::Dict{Symbol,Int}
+    multivariate_user_operator_start::Int
+    registered_multivariate_operators::Vector{
+        MOI.Nonlinear._MultivariateOperator,
+    }
+    # NODE_LOGIC
+    logic_operators::Vector{Symbol}
+    logic_operator_to_id::Dict{Symbol,Int}
+    # NODE_COMPARISON
+    comparison_operators::Vector{Symbol}
+    comparison_operator_to_id::Dict{Symbol,Int}
+    function OperatorRegistry()
+        univariate_operators = copy(MOI.Nonlinear.DEFAULT_UNIVARIATE_OPERATORS)
+        multivariate_operators = copy(DEFAULT_MULTIVARIATE_OPERATORS)
+        logic_operators = [:&&, :||]
+        comparison_operators = [:<=, :(==), :>=, :<, :>]
+        return new(
+            # NODE_CALL_UNIVARIATE
+            univariate_operators,
+            Dict{Symbol,Int}(
+                op => i for (i, op) in enumerate(univariate_operators)
+            ),
+            length(univariate_operators),
+            MOI.Nonlinear._UnivariateOperator[],
+            # NODE_CALL
+            multivariate_operators,
+            Dict{Symbol,Int}(
+                op => i for (i, op) in enumerate(multivariate_operators)
+            ),
+            length(multivariate_operators),
+            MOI.Nonlinear._MultivariateOperator[],
+            # NODE_LOGIC
+            logic_operators,
+            Dict{Symbol,Int}(op => i for (i, op) in enumerate(logic_operators)),
+            # NODE_COMPARISON
+            comparison_operators,
+            Dict{Symbol,Int}(
+                op => i for (i, op) in enumerate(comparison_operators)
+            ),
+        )
+    end
+end
+
+"""
+    Model()
+
+The core datastructure for representing a nonlinear optimization problem.
+
+It has the following fields:
+ * `objective::Union{Nothing,Expression}` : holds the nonlinear objective
+   function, if one exists, otherwise `nothing`.
+ * `expressions::Vector{Expression}` : a vector of expressions in the model.
+ * `constraints::OrderedDict{ConstraintIndex,Constraint}` : a map from
+   [`ConstraintIndex`](@ref) to the corresponding [`Constraint`](@ref). An
+   `OrderedDict` is used instead of a `Vector` to support constraint deletion.
+ * `parameters::Vector{Float64}` : holds the current values of the parameters.
+ * `operators::OperatorRegistry` : stores the operators used in the model.
+"""
+mutable struct Model
+    objective::Union{Nothing,MOI.Nonlinear.Expression}
+    expressions::Vector{MOI.Nonlinear.Expression}
+    constraints::OrderedDict{
+        MOI.Nonlinear.ConstraintIndex,
+        MOI.Nonlinear.Constraint,
+    }
+    parameters::Vector{Float64}
+    operators::OperatorRegistry
+    # This is a private field, used only to increment the ConstraintIndex.
+    last_constraint_index::Int64
+    function Model()
+        model = new(
+            nothing,
+            MOI.Nonlinear.Expression[],
+            OrderedDict{
+                MOI.Nonlinear.ConstraintIndex,
+                MOI.Nonlinear.Constraint,
+            }(),
+            Float64[],
+            OperatorRegistry(),
+            0,
+        )
+        return model
+    end
+end
+
+mutable struct Evaluator{B} <: MOI.AbstractNLPEvaluator
+    # The internal datastructure.
+    model::Model
+    # The abstract-differentiation backend
+    backend::B
+    # ordered_constraints is needed because `OrderedDict` doesn't support
+    # looking up a key by the linear index.
+    ordered_constraints::Vector{MOI.Nonlinear.ConstraintIndex}
+    # Storage for the NLPBlockDual, so that we can query the dual of individual
+    # constraints without needing to query the full vector each time.
+    constraint_dual::Vector{Float64}
+    # Timers
+    initialize_timer::Float64
+    eval_objective_timer::Float64
+    eval_constraint_timer::Float64
+    eval_objective_gradient_timer::Float64
+    eval_constraint_gradient_timer::Float64
+    eval_constraint_jacobian_timer::Float64
+    eval_hessian_objective_timer::Float64
+    eval_hessian_constraint_timer::Float64
+    eval_hessian_lagrangian_timer::Float64
+
+    function Evaluator(
+        model::Model,
+        backend::B = nothing,
+    ) where {B<:Union{Nothing,MOI.AbstractNLPEvaluator}}
+        return new{B}(
+            model,
+            backend,
+            MOI.ConstraintIndex[],
+            Float64[],
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )
+    end
+end
+
+"""
+    MOI.NLPBlockData(evaluator::Evaluator)
+
+Create an [`MOI.NLPBlockData`](@ref) object from an [`Evaluator`](@ref)
+object.
+"""
+function MOI.NLPBlockData(evaluator::Evaluator)
+    return MOI.NLPBlockData(
+        [_bound(c.set) for (_, c) in evaluator.model.constraints],
+        evaluator,
+        evaluator.model.objective !== nothing,
+    )
+end
+
+_bound(s::MOI.LessThan) = MOI.NLPBoundsPair(-Inf, s.upper)
+_bound(s::MOI.GreaterThan) = MOI.NLPBoundsPair(s.lower, Inf)
+_bound(s::MOI.EqualTo) = MOI.NLPBoundsPair(s.value, s.value)
+_bound(s::MOI.Interval) = MOI.NLPBoundsPair(s.lower, s.upper)
+
 """
     NLPEvaluator(
         model::Nonlinear.Model,
@@ -146,7 +302,7 @@ interface.
     Before using, you must initialize the evaluator using `MOI.initialize`.
 """
 mutable struct NLPEvaluator <: MOI.AbstractNLPEvaluator
-    data::Nonlinear.Model
+    data::Model
     ordered_variables::Vector{MOI.VariableIndex}
 
     objective::Union{Nothing,_FunctionStorage}
@@ -182,7 +338,7 @@ mutable struct NLPEvaluator <: MOI.AbstractNLPEvaluator
     max_chunk::Int # chunk size for which we've allocated storage
 
     function NLPEvaluator(
-        data::Nonlinear.Model,
+        data::Model,
         ordered_variables::Vector{MOI.VariableIndex},
     )
         return new(data, ordered_variables)

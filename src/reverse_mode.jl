@@ -29,6 +29,10 @@ single pass through the tree by iterating forwards through the vector of stored
 nodes.
 """
 function _reverse_mode(d::NLPEvaluator, x)
+    # Because the operators are checked with `Int` and not `Symbol`
+    # if we get a model that didn't add our new operators but had user-defined
+    # operators, we will think that these are one of our new operators
+    @assert :vect in d.data.operators.multivariate_operators
     if d.last_x == x
         # Fail fast if the primal solution has not changed since last call.
         return
@@ -357,12 +361,12 @@ function _forward_eval(
                     f_input[r] = f.forward_storage[children_arr[i]]
                     ∇f[r] = 0.0
                 end
-                f.forward_storage[k] = Nonlinear.eval_multivariate_function(
+                f.forward_storage[k] = eval_multivariate_function(
                     operators,
                     operators.multivariate_operators[node.index],
                     f_input,
                 )
-                Nonlinear.eval_multivariate_gradient(
+                eval_multivariate_gradient(
                     operators,
                     operators.multivariate_operators[node.index],
                     ∇f,
@@ -387,7 +391,7 @@ function _forward_eval(
                     @j f.forward_storage[k] = -val
                 end
             else
-                ret_f, ret_f′ = Nonlinear.eval_univariate_function_and_gradient(
+                ret_f, ret_f′ = eval_univariate_function_and_gradient(
                     operators,
                     node.index,
                     f.forward_storage[child_idx],
@@ -402,7 +406,7 @@ function _forward_eval(
             for r in 2:length(children_idx)
                 lhs = children_arr[children_idx[r-1]]
                 rhs = children_arr[children_idx[r]]
-                result &= Nonlinear.eval_comparison_function(
+                result &= eval_comparison_function(
                     operators,
                     operators.comparison_operators[node.index],
                     f.forward_storage[lhs],
@@ -416,7 +420,7 @@ function _forward_eval(
             children_idx = SparseArrays.nzrange(f.adj, k)
             lhs = children_arr[children_idx[1]]
             rhs = children_arr[children_idx[2]]
-            f.forward_storage[k] = Nonlinear.eval_logic_function(
+            f.forward_storage[k] = eval_logic_function(
                 operators,
                 operators.logic_operators[node.index],
                 f.forward_storage[lhs] == 1,
@@ -452,9 +456,8 @@ function _reverse_eval(f::_SubexpressionStorage)
         node = f.nodes[k]
         children_indices = SparseArrays.nzrange(f.adj, k)
         if node.type == MOI.Nonlinear.NODE_CALL_MULTIVARIATE
-            if node.index in
-               eachindex(MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS)
-                op = MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS[node.index]
+            if node.index in eachindex(DEFAULT_MULTIVARIATE_OPERATORS)
+                op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
                 if op == :*
                     if f.sizes.ndims[k] != 0
                         # Node `k` is not scalar, so we do matrix multiplication

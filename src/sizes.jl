@@ -163,14 +163,11 @@ function _infer_sizes(
         children_indices = SparseArrays.nzrange(adj, k)
         N = length(children_indices)
         if node.type == Nonlinear.NODE_CALL_MULTIVARIATE
-            if !(
-                node.index in
-                eachindex(MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS)
-            )
+            if !(node.index in eachindex(DEFAULT_MULTIVARIATE_OPERATORS))
                 # TODO user-defined operators
                 continue
             end
-            op = MOI.Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS[node.index]
+            op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
             if op == :vect
                 _assert_scalar_children(
                     sizes,
