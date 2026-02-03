@@ -87,11 +87,6 @@ function set_objective(model::Model, obj)
     return
 end
 
-function set_objective(model::Model, ::Nothing)
-    model.objective = nothing
-    return
-end
-
 function _parse_multivariate_expression(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
