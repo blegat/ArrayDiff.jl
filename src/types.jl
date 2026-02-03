@@ -226,6 +226,69 @@ mutable struct Model
     end
 end
 
+mutable struct Evaluator{B} <: MOI.AbstractNLPEvaluator
+    # The internal datastructure.
+    model::Model
+    # The abstract-differentiation backend
+    backend::B
+    # ordered_constraints is needed because `OrderedDict` doesn't support
+    # looking up a key by the linear index.
+    ordered_constraints::Vector{MOI.Nonlinear.ConstraintIndex}
+    # Storage for the NLPBlockDual, so that we can query the dual of individual
+    # constraints without needing to query the full vector each time.
+    constraint_dual::Vector{Float64}
+    # Timers
+    initialize_timer::Float64
+    eval_objective_timer::Float64
+    eval_constraint_timer::Float64
+    eval_objective_gradient_timer::Float64
+    eval_constraint_gradient_timer::Float64
+    eval_constraint_jacobian_timer::Float64
+    eval_hessian_objective_timer::Float64
+    eval_hessian_constraint_timer::Float64
+    eval_hessian_lagrangian_timer::Float64
+
+    function Evaluator(
+        model::Model,
+        backend::B = nothing,
+    ) where {B<:Union{Nothing,MOI.AbstractNLPEvaluator}}
+        return new{B}(
+            model,
+            backend,
+            MOI.ConstraintIndex[],
+            Float64[],
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )
+    end
+end
+
+"""
+    MOI.NLPBlockData(evaluator::Evaluator)
+
+Create an [`MOI.NLPBlockData`](@ref) object from an [`Evaluator`](@ref)
+object.
+"""
+function MOI.NLPBlockData(evaluator::Evaluator)
+    return MOI.NLPBlockData(
+        [_bound(c.set) for (_, c) in evaluator.model.constraints],
+        evaluator,
+        evaluator.model.objective !== nothing,
+    )
+end
+
+_bound(s::MOI.LessThan) = MOI.NLPBoundsPair(-Inf, s.upper)
+_bound(s::MOI.GreaterThan) = MOI.NLPBoundsPair(s.lower, Inf)
+_bound(s::MOI.EqualTo) = MOI.NLPBoundsPair(s.value, s.value)
+_bound(s::MOI.Interval) = MOI.NLPBoundsPair(s.lower, s.upper)
+
 """
     NLPEvaluator(
         model::Nonlinear.Model,

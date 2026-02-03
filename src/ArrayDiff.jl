@@ -42,7 +42,10 @@ include("utils.jl")
 include("reverse_mode.jl")
 include("forward_over_reverse.jl")
 include("mathoptinterface_api.jl")
-include("MOI_Nonlinear_fork.jl")
+include("operators.jl")
+include("model.jl")
+include("parse.jl")
+include("evaluator.jl")
 
 """
     Mode() <: AbstractAutomaticDifferentiation
