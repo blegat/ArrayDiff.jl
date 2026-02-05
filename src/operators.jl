@@ -177,6 +177,76 @@ function eval_multivariate_hessian(
     return true
 end
 
+function _validate_register_assumptions(
+    f::Function,
+    name::Symbol,
+    dimension::Integer,
+)
+    # Assumption 1: check that `f` can be called with `Float64` arguments.
+    y = 0.0
+    try
+        if dimension == 1
+            y = f(0.0)
+        else
+            y = f(zeros(dimension)...)
+        end
+    catch
+        # We hit some other error, perhaps we called a function like log(-1).
+        # Ignore for now, and hope that a useful error is shown to the user
+        # during the solve.
+    end
+    if !(y isa Real)
+        error(
+            "Expected return type of `Float64` from the user-defined " *
+            "function :$(name), but got `$(typeof(y))`.",
+        )
+    end
+    # Assumption 2: check that `f` can be differentiated using `ForwardDiff`.
+    try
+        if dimension == 1
+            ForwardDiff.derivative(f, 0.0)
+        else
+            ForwardDiff.gradient(x -> f(x...), zeros(dimension))
+        end
+    catch err
+        if err isa MethodError
+            error(
+                "Unable to register the function :$name.\n\n" *
+                _FORWARD_DIFF_METHOD_ERROR_HELPER,
+            )
+        end
+        # We hit some other error, perhaps we called a function like log(-1).
+        # Ignore for now, and hope that a useful error is shown to the user
+        # during the solve.
+    end
+    return
+end
+
+function _checked_derivative(f::F, op::Symbol) where {F}
+    return function (x)
+        try
+            return ForwardDiff.derivative(f, x)
+        catch err
+            _intercept_ForwardDiff_MethodError(err, op)
+        end
+    end
+end
+
+"""
+    check_return_type(::Type{T}, ret::S) where {T,S}
+
+Overload this method for new types `S` to throw an informative error if a
+user-defined function returns the type `S` instead of `T`.
+"""
+check_return_type(::Type{T}, ret::T) where {T} = nothing
+
+function check_return_type(::Type{T}, ret) where {T}
+    return error(
+        "Expected return type of $T from a user-defined function, but got " *
+        "$(typeof(ret)).",
+    )
+end
+
 struct _UnivariateOperator{F,F′,F′′}
     f::F
     f′::F′
@@ -188,6 +258,26 @@ struct _UnivariateOperator{F,F′,F′′}
     )
         return new{typeof(f),typeof(f′),typeof(f′′)}(f, f′, f′′)
     end
+end
+
+function _UnivariateOperator(op::Symbol, f::Function)
+    _validate_register_assumptions(f, op, 1)
+    f′ = _checked_derivative(f, op)
+    return _UnivariateOperator(op, f, f′)
+end
+
+function _UnivariateOperator(op::Symbol, f::Function, f′::Function)
+    try
+        _validate_register_assumptions(f′, op, 1)
+        f′′ = _checked_derivative(f′, op)
+        return _UnivariateOperator(f, f′, f′′)
+    catch
+        return _UnivariateOperator(f, f′, nothing)
+    end
+end
+
+function _UnivariateOperator(::Symbol, f::Function, f′::Function, f′′::Function)
+    return _UnivariateOperator(f, f′, f′′)
 end
 
 function eval_univariate_function(operator::_UnivariateOperator, x::T) where {T}
@@ -212,7 +302,6 @@ function eval_univariate_function_and_gradient(
     operator::_UnivariateOperator,
     x::T,
 ) where {T}
-    println("Evaluating univariate function and gradient for operator and x=$x")
     ret_f = eval_univariate_function(operator, x)
     ret_f′ = eval_univariate_gradient(operator, x)
     return ret_f, ret_f′
@@ -223,14 +312,11 @@ function eval_univariate_function_and_gradient(
     id::Integer,
     x::T,
 ) where {T}
-    println("Evaluating univariate function and gradient for id $id and x=$x")
     if id <= registry.univariate_user_operator_start
-        println("Hey")
         return _eval_univariate(id, x)::Tuple{T,T}
     end
     offset = id - registry.univariate_user_operator_start
     operator = registry.registered_univariate_operators[offset]
-    println("Hi")
     return eval_univariate_function_and_gradient(operator, x)
 end
 

@@ -4,7 +4,7 @@
 # Use of this source code is governed by an MIT-style license that can be found
 # in the LICENSE.md file or at https://opensource.org/licenses/MIT.
 
-_no_hessian(op::MOI.Nonlinear._UnivariateOperator) = op.f′′ === nothing
+_no_hessian(op::_UnivariateOperator) = op.f′′ === nothing
 _no_hessian(op::MOI.Nonlinear._MultivariateOperator) = op.∇²f === nothing
 
 function MOI.features_available(d::NLPEvaluator)

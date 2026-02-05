@@ -53,7 +53,7 @@ function register_operator(
         elseif haskey(registry.multivariate_operator_to_id, op)
             error("Operator $op is already registered.")
         end
-        operator = Nonlinear._UnivariateOperator(op, f...)
+        operator = _UnivariateOperator(op, f...)
         push!(registry.univariate_operators, op)
         push!(registry.registered_univariate_operators, operator)
         registry.univariate_operator_to_id[op] =

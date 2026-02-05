@@ -138,7 +138,7 @@ struct OperatorRegistry
     univariate_operators::Vector{Symbol}
     univariate_operator_to_id::Dict{Symbol,Int}
     univariate_user_operator_start::Int
-    registered_univariate_operators::Vector{MOI.Nonlinear._UnivariateOperator}
+    registered_univariate_operators::Vector{_UnivariateOperator}
     # NODE_CALL_MULTIVARIATE
     multivariate_operators::Vector{Symbol}
     multivariate_operator_to_id::Dict{Symbol,Int}
@@ -164,7 +164,7 @@ struct OperatorRegistry
                 op => i for (i, op) in enumerate(univariate_operators)
             ),
             length(univariate_operators),
-            MOI.Nonlinear._UnivariateOperator[],
+            _UnivariateOperator[],
             # NODE_CALL
             multivariate_operators,
             Dict{Symbol,Int}(
