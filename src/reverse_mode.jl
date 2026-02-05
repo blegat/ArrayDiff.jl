@@ -391,7 +391,6 @@ function _forward_eval(
                     @j f.forward_storage[k] = -val
                 end
             else
-                println("Using univariate operator id $(node.index)")
                 ret_f, ret_f′ = eval_univariate_function_and_gradient(
                     operators,
                     node.index,

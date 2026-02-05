@@ -1,7 +1,7 @@
 name = "ArrayDiff"
 uuid = "c45fa1ca-6901-44ac-ae5b-5513a4852d50"
-authors = ["Sophie Lequeu <slequeu@hotmail.com>", "Benoît Legat <benoit.legat@gmail.com>"]
 version = "0.1.0"
+authors = ["Sophie Lequeu <slequeu@hotmail.com>", "Benoît Legat <benoit.legat@gmail.com>"]
 
 [deps]
 Calculus = "49dc2e85-a5d0-5ad3-a950-438e2897f1b9"
@@ -11,6 +11,7 @@ MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 NaNMath = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 
 [compat]
 Calculus = "0.5.2"
@@ -19,4 +20,5 @@ ForwardDiff = "1"
 MathOptInterface = "1.40"
 NaNMath = "1"
 SparseArrays = "1.10"
+SpecialFunctions = "2.6.1"
 julia = "1.10"

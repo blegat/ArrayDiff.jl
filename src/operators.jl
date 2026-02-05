@@ -42,7 +42,6 @@ function _generate_eval_univariate()
 end
 
 @eval @inline function _eval_univariate(id, x::T) where {T}
-    println("Sophie")
     $(_generate_eval_univariate())
     return error("Invalid id for univariate operator: $id")
 end
