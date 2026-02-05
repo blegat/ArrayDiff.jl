@@ -34,6 +34,19 @@ function eval_logic_function(
     end
 end
 
+function _generate_eval_univariate()
+    exprs = map(Nonlinear.DEFAULT_UNIVARIATE_OPERATORS) do op
+        return :(return (value_deriv_and_second($op, x)[1], value_deriv_and_second($op, x)[2]))
+    end
+    return Nonlinear._create_binary_switch(1:length(exprs), exprs)
+end
+
+@eval @inline function _eval_univariate(id, x::T) where {T}
+    println("Sophie")
+    $(_generate_eval_univariate())
+    return error("Invalid id for univariate operator: $id")
+end
+
 function eval_multivariate_function(
     registry::OperatorRegistry,
     op::Symbol,
@@ -165,17 +178,61 @@ function eval_multivariate_hessian(
     return true
 end
 
+struct _UnivariateOperator{F,F′,F′′}
+    f::F
+    f′::F′
+    f′′::F′′
+    function _UnivariateOperator(
+        f::Function,
+        f′::Function,
+        f′′::Union{Nothing,Function} = nothing,
+    )
+        return new{typeof(f),typeof(f′),typeof(f′′)}(f, f′, f′′)
+    end
+end
+
+function eval_univariate_function(operator::_UnivariateOperator, x::T) where {T}
+    ret = operator.f(x)
+    check_return_type(T, ret)
+    return ret::T
+end
+
+function eval_univariate_gradient(operator::_UnivariateOperator, x::T) where {T}
+    ret = operator.f′(x)
+    check_return_type(T, ret)
+    return ret::T
+end
+
+function eval_univariate_hessian(operator::_UnivariateOperator, x::T) where {T}
+    ret = operator.f′′(x)
+    check_return_type(T, ret)
+    return ret::T
+end
+
+function eval_univariate_function_and_gradient(
+    operator::_UnivariateOperator,
+    x::T,
+) where {T}
+    println("Evaluating univariate function and gradient for operator and x=$x")
+    ret_f = eval_univariate_function(operator, x)
+    ret_f′ = eval_univariate_gradient(operator, x)
+    return ret_f, ret_f′
+end
+
 function eval_univariate_function_and_gradient(
     registry::OperatorRegistry,
     id::Integer,
     x::T,
 ) where {T}
+    println("Evaluating univariate function and gradient for id $id and x=$x")
     if id <= registry.univariate_user_operator_start
-        return Nonlinear._eval_univariate(id, x)::Tuple{T,T}
+        println("Hey")
+        return _eval_univariate(id, x)::Tuple{T,T}
     end
     offset = id - registry.univariate_user_operator_start
     operator = registry.registered_univariate_operators[offset]
-    return Nonlinear.eval_univariate_function_and_gradient(operator, x)
+    println("Hi")
+    return eval_univariate_function_and_gradient(operator, x)
 end
 
 function eval_multivariate_gradient(

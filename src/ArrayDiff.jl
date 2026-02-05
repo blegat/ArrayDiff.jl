@@ -46,6 +46,7 @@ include("operators.jl")
 include("model.jl")
 include("parse.jl")
 include("evaluator.jl")
+include("univariate_expressions.jl")
 
 """
     Mode() <: AbstractAutomaticDifferentiation
