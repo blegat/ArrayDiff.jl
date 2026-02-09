@@ -36,17 +36,17 @@ import NaNMath:
 include("Coloring/Coloring.jl")
 include("graph_tools.jl")
 include("sizes.jl")
+include("univariate_expressions.jl")
+include("operators.jl")
 include("types.jl")
 include("utils.jl")
 
 include("reverse_mode.jl")
 include("forward_over_reverse.jl")
 include("mathoptinterface_api.jl")
-include("operators.jl")
 include("model.jl")
 include("parse.jl")
 include("evaluator.jl")
-include("univariate_expressions.jl")
 
 """
     Mode() <: AbstractAutomaticDifferentiation
