@@ -28,7 +28,7 @@ function _validate_register_assumptions(
     # Assumption 1: check that `f` can be called with `Float64` arguments.
     y = 0.0
     try
-        if dimension == 1
+        if dimension == 0
             y = f(0.0)
         else
             y = f(zeros(dimension)...)
@@ -46,7 +46,7 @@ function _validate_register_assumptions(
     end
     # Assumption 2: check that `f` can be differentiated using `ForwardDiff`.
     try
-        if dimension == 1
+        if dimension == 0
             ForwardDiff.derivative(f, 0.0)
         else
             ForwardDiff.gradient(x -> f(x...), zeros(dimension))
@@ -104,14 +104,14 @@ struct _UnivariateOperator{F,F′,F′′}
 end
 
 function _UnivariateOperator(op::Symbol, f::Function)
-    _validate_register_assumptions(f, op, 1)
+    _validate_register_assumptions(f, op, 0)
     f′ = _checked_derivative(f, op)
     return _UnivariateOperator(op, f, f′)
 end
 
 function _UnivariateOperator(op::Symbol, f::Function, f′::Function)
     try
-        _validate_register_assumptions(f′, op, 1)
+        _validate_register_assumptions(f′, op, 0)
         f′′ = _checked_derivative(f′, op)
         return _UnivariateOperator(f, f′, f′′)
     catch
