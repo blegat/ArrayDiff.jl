@@ -529,6 +529,25 @@ function test_objective_norm_of_mtx_vector_product()
     return
 end
 
+function test_objective_univariate_operator()
+    model = ArrayDiff.Model()
+    x = MOI.VariableIndex(1)
+    ArrayDiff.set_objective(model, :(sin($x)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
+    MOI.initialize(evaluator, [:Grad])
+    sizes = evaluator.backend.objective.expr.sizes
+    @test sizes.ndims == [0, 0]
+    @test sizes.size_offset == [0, 0]
+    @test sizes.size == []
+    @test sizes.storage_offset == [0, 1, 2]
+    x = [pi / 4]
+    @test MOI.eval_objective(evaluator, x) ≈ sqrt(2) / 2
+    g = ones(1)
+    MOI.eval_objective_gradient(evaluator, g, x)
+    @test g[1] ≈ cos(pi / 4)
+    return
+end
+
 end  # module
 
 TestArrayDiff.runtests()
