@@ -23,20 +23,18 @@ const DEFAULT_MULTIVARIATE_OPERATORS = [
 function _validate_register_assumptions(
     f::Function,
     name::Symbol,
-    dimension::Integer,
+    nb_args::Integer,
 )
     # Assumption 1: check that `f` can be called with `Float64` arguments.
-    y = 0.0
-    try
-        if dimension == 0
-            y = f(0.0)
-        else
-            y = f(zeros(dimension)...)
-        end
-    catch
-        # We hit some other error, perhaps we called a function like log(-1).
-        # Ignore for now, and hope that a useful error is shown to the user
-        # during the solve.
+    arg = nb_args == 1 ? 0.0 : zeros(nb_args)
+    if hasmethod(f, Tuple{typeof(arg)})
+        y = f(arg)
+    else
+        error(
+            "Unable to register the function :$name.\n\n" *
+            "The function must be able to be called with $nb_args Float64 " *
+            "arguments, but no method was found for this.",
+        )
     end
     if !(y isa Real)
         error(
@@ -46,10 +44,10 @@ function _validate_register_assumptions(
     end
     # Assumption 2: check that `f` can be differentiated using `ForwardDiff`.
     try
-        if dimension == 0
+        if nb_args == 1
             ForwardDiff.derivative(f, 0.0)
         else
-            ForwardDiff.gradient(x -> f(x...), zeros(dimension))
+            ForwardDiff.gradient(x -> f(x...), zeros(nb_args))
         end
     catch err
         if err isa MethodError
@@ -104,14 +102,14 @@ struct _UnivariateOperator{F,F′,F′′}
 end
 
 function _UnivariateOperator(op::Symbol, f::Function)
-    _validate_register_assumptions(f, op, 0)
+    _validate_register_assumptions(f, op, 1)
     f′ = _checked_derivative(f, op)
     return _UnivariateOperator(op, f, f′)
 end
 
 function _UnivariateOperator(op::Symbol, f::Function, f′::Function)
     try
-        _validate_register_assumptions(f′, op, 0)
+        _validate_register_assumptions(f′, op, 1)
         f′′ = _checked_derivative(f′, op)
         return _UnivariateOperator(f, f′, f′′)
     catch
