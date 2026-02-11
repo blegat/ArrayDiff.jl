@@ -154,3 +154,30 @@ function eval_univariate_hessian(
     operator = registry.registered_univariate_operators[offset]
     return eval_univariate_hessian(operator, x)
 end
+
+"""
+    adjacency_matrix(nodes::Vector{Node})
+
+Compute the sparse adjacency matrix describing the parent-child relationships in
+`nodes`.
+
+The element `(i, j)` is `true` if there is an edge *from* `node[j]` to
+`node[i]`. Since we get a column-oriented matrix, this gives us a fast way to
+look up the edges leaving any node (that is, the children).
+"""
+function adjacency_matrix(nodes::Vector{Node})
+    N = length(nodes)
+    I, J = Vector{Int}(undef, N), Vector{Int}(undef, N)
+    numnz = 0
+    for (i, node) in enumerate(nodes)
+        if node.parent < 0
+            continue
+        end
+        numnz += 1
+        I[numnz] = i
+        J[numnz] = node.parent
+    end
+    resize!(I, numnz)
+    resize!(J, numnz)
+    return SparseArrays.sparse(I, J, ones(Bool, numnz), N, N)
+end

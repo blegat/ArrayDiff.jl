@@ -4,6 +4,69 @@
 # Use of this source code is governed by an MIT-style license that can be found
 # in the LICENSE.md file or at https://opensource.org/licenses/MIT.
 
+
+"""
+    NodeType
+
+An enum describing the possible node types. Each [`Node`](@ref) has a `.index`
+field, which should be interpreted as follows:
+
+ * `NODE_CALL_MULTIVARIATE`: the index into `operators.multivariate_operators`
+ * `NODE_CALL_UNIVARIATE`: the index into `operators.univariate_operators`
+ * `NODE_LOGIC`: the index into `operators.logic_operators`
+ * `NODE_COMPARISON`: the index into `operators.comparison_operators`
+ * `NODE_MOI_VARIABLE`: the value of `MOI.VariableIndex(index)` in the user's
+   space of the model.
+ * `NODE_VARIABLE`: the 1-based index of the internal vector
+ * `NODE_VALUE`: the index into the `.values` field of `Expression`
+ * `NODE_PARAMETER`: the index into `data.parameters`
+ * `NODE_SUBEXPRESSION`:  the index into `data.expressions`
+"""
+@enum(
+    NodeType,
+    # Index into multivariate operators
+    NODE_CALL_MULTIVARIATE,
+    # Index into univariate operators
+    NODE_CALL_UNIVARIATE,
+    # Index into logic operators
+    NODE_LOGIC,
+    # Index into comparison operators
+    NODE_COMPARISON,
+    # Index is the value of `MOI.VariableIndex`. This is from the original
+    # model, and is not consecutive.
+    NODE_MOI_VARIABLE,
+    # Index of the internal, consecutive, and ordered `MOI.VariableIndex`.
+    NODE_VARIABLE,
+    # Index is into the list of constants
+    NODE_VALUE,
+    # Index is into the list of parameters
+    NODE_PARAMETER,
+    # Index is into the list of subexpressions
+    NODE_SUBEXPRESSION,
+)
+
+@enum(Linearity, CONSTANT, LINEAR, PIECEWISE_LINEAR, NONLINEAR)
+
+"""
+    struct Node
+        type::NodeType
+        index::Int
+        parent::Int
+    end
+
+A single node in a nonlinear expression tree. Used by
+[`Expression`](@ref).
+
+See the MathOptInterface documentation for information on how the nodes and
+values form an expression tree.
+"""
+struct Node
+    type::NodeType
+    index::Int
+    parent::Int
+    broadcasted::Bool
+end
+
 """
     _replace_moi_variables(
         nodes::Vector{Nonlinear.Node},
@@ -15,16 +78,17 @@ Return a new `Vector{Nonlinear.Node}` where all occurences of
 ordered.
 """
 function _replace_moi_variables(
-    nodes::Vector{Nonlinear.Node},
+    nodes::Vector{Node},
     moi_index_to_consecutive_index::Dict{MOI.VariableIndex,Int},
 )
-    new_nodes = Vector{Nonlinear.Node}(undef, length(nodes))
+    new_nodes = Vector{Node}(undef, length(nodes))
     for (i, node) in enumerate(nodes)
-        if node.type == Nonlinear.NODE_MOI_VARIABLE
-            new_nodes[i] = Nonlinear.Node(
-                Nonlinear.NODE_VARIABLE,
+        if node.type == NODE_MOI_VARIABLE
+            new_nodes[i] = Node(
+                NODE_VARIABLE,
                 moi_index_to_consecutive_index[MOI.VariableIndex(node.index)],
                 node.parent,
+                false,
             )
         else
             new_nodes[i] = node
@@ -33,11 +97,9 @@ function _replace_moi_variables(
     return new_nodes
 end
 
-@enum(Linearity, CONSTANT, LINEAR, PIECEWISE_LINEAR, NONLINEAR)
-
 """
     _classify_linearity(
-        nodes::Vector{Nonlinear.Node},
+        nodes::Vector{Node},
         adj::SparseArrays.SparseMatrixCSC,
         subexpression_linearity::Vector{Linearity},
     )
@@ -46,7 +108,7 @@ Classify the nodes in a tree as constant, linear, or nonlinear with respect to
 the input.
 """
 function _classify_linearity(
-    nodes::Vector{Nonlinear.Node},
+    nodes::Vector{Node},
     adj::SparseArrays.SparseMatrixCSC,
     subexpression_linearity::Vector{Linearity},
 )
@@ -160,14 +222,14 @@ which variable indices are present).
 """
 function _compute_gradient_sparsity!(
     indices::Coloring.IndexedSet,
-    nodes::Vector{Nonlinear.Node},
+    nodes::Vector{Node},
 )
     for node in nodes
-        if node.type == Nonlinear.NODE_VARIABLE
+        if node.type == NODE_VARIABLE
             push!(indices, node.index)
-        elseif node.type == Nonlinear.NODE_MOI_VARIABLE
+        elseif node.type == NODE_MOI_VARIABLE
             error(
-                "Internal error: Invalid to compute sparsity if Nonlinear.NODE_MOI_VARIABLE " *
+                "Internal error: Invalid to compute sparsity if NODE_MOI_VARIABLE " *
                 "nodes are present.",
             )
         end
@@ -204,7 +266,7 @@ depends nonlinearly on the value of the node, regardless of how the node itself
 depends on the input.
 """
 function _compute_hessian_sparsity(
-    nodes::Vector{Nonlinear.Node},
+    nodes::Vector{Node},
     adj,
     input_linearity::Vector{Linearity},
     indexedset::Coloring.IndexedSet,
@@ -336,9 +398,9 @@ end
 
 Returns the list of subexpressions which a given tape depends on directly
 """
-function _list_subexpressions(nodes::Vector{Nonlinear.Node})
+function _list_subexpressions(nodes::Vector{Node})
     indices = Set{Int}(
-        n.index for n in nodes if n.type == Nonlinear.NODE_SUBEXPRESSION
+        n.index for n in nodes if n.type == NODE_SUBEXPRESSION
     )
     return sort(collect(indices))
 end
@@ -376,7 +438,7 @@ as the uninitialized vector, or by explicitly computing the full
 """
 function _topological_sort(
     starts,
-    subexpressions::Vector{Vector{Nonlinear.Node}},
+    subexpressions::Vector{Vector{Node}},
     subexpression_dependency_graph::Vector{Vector{Int}} = Vector{Vector{Int}}(
         undef,
         length(subexpressions),
@@ -440,8 +502,8 @@ Returns two things:
 because we can't compute them in JuMP anyway.
 """
 function _order_subexpressions(
-    main_expressions::Vector{Vector{Nonlinear.Node}},
-    subexpressions::Vector{Vector{Nonlinear.Node}},
+    main_expressions::Vector{Vector{Node}},
+    subexpressions::Vector{Vector{Node}},
 )
     # The graph of node dependencies. Constructed lazily.
     subexpression_dependency_graph =

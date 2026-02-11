@@ -118,18 +118,18 @@ function _forward_eval(
         node = f.nodes[k]
         # Storage index if scalar
         j = last(_storage_range(f.sizes, k))
-        if node.type == Nonlinear.NODE_VARIABLE
+        if node.type == NODE_VARIABLE
             f.forward_storage[j] = x[node.index]
             # This should never happen, because we will have replaced these by now.
             # elseif node.type == Nonlinear.NODE_MOI_VARIABLE
             #     f.forward_storage[k] = x[node.index]
-        elseif node.type == Nonlinear.NODE_VALUE
+        elseif node.type == NODE_VALUE
             f.forward_storage[j] = f.const_values[node.index]
-        elseif node.type == Nonlinear.NODE_SUBEXPRESSION
+        elseif node.type == NODE_SUBEXPRESSION
             f.forward_storage[j] = d.subexpression_forward_values[node.index]
-        elseif node.type == Nonlinear.NODE_PARAMETER
+        elseif node.type == NODE_PARAMETER
             f.forward_storage[j] = d.data.parameters[node.index]
-        elseif node.type == Nonlinear.NODE_CALL_MULTIVARIATE
+        elseif node.type == NODE_CALL_MULTIVARIATE
             children_indices = SparseArrays.nzrange(f.adj, k)
             N = length(children_indices)
             # TODO(odow);
@@ -376,7 +376,7 @@ function _forward_eval(
                     f.partials_storage[children_arr[i]] = ∇f[r]
                 end
             end
-        elseif node.type == Nonlinear.NODE_CALL_UNIVARIATE
+        elseif node.type == NODE_CALL_UNIVARIATE
             child_idx = children_arr[f.adj.colptr[k]]
             if node.index == 1 # :+
                 for j in _eachindex(f.sizes, k)
@@ -399,7 +399,7 @@ function _forward_eval(
                 f.forward_storage[k] = ret_f
                 f.partials_storage[child_idx] = ret_f′
             end
-        elseif node.type == Nonlinear.NODE_COMPARISON
+        elseif node.type == NODE_COMPARISON
             children_idx = SparseArrays.nzrange(f.adj, k)
             result = true
             f.partials_storage[children_arr[children_idx[1]]] = zero(T)
@@ -416,7 +416,7 @@ function _forward_eval(
             end
             f.forward_storage[k] = result
         else
-            @assert node.type == Nonlinear.NODE_LOGIC
+            @assert node.type == NODE_LOGIC
             children_idx = SparseArrays.nzrange(f.adj, k)
             lhs = children_arr[children_idx[1]]
             rhs = children_arr[children_idx[2]]
@@ -455,7 +455,7 @@ function _reverse_eval(f::_SubexpressionStorage)
     for k in 1:length(f.nodes)
         node = f.nodes[k]
         children_indices = SparseArrays.nzrange(f.adj, k)
-        if node.type == MOI.Nonlinear.NODE_CALL_MULTIVARIATE
+        if node.type == NODE_CALL_MULTIVARIATE
             if node.index in eachindex(DEFAULT_MULTIVARIATE_OPERATORS)
                 op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
                 if op == :*
@@ -660,7 +660,7 @@ function _reverse_eval(f::_SubexpressionStorage)
                     continue
                 end
             end
-        elseif node.type != MOI.Nonlinear.NODE_CALL_UNIVARIATE
+        elseif node.type != NODE_CALL_UNIVARIATE
             continue
         end
         # Node `k` has same size as its children.
@@ -732,9 +732,9 @@ function _extract_reverse_pass_inner(
 ) where {T}
     @assert length(f.reverse_storage) >= _length(f.sizes)
     for (k, node) in enumerate(f.nodes)
-        if node.type == Nonlinear.NODE_VARIABLE
+        if node.type == NODE_VARIABLE
             output[node.index] += scale * @s f.reverse_storage[k]
-        elseif node.type == Nonlinear.NODE_SUBEXPRESSION
+        elseif node.type == NODE_SUBEXPRESSION
             subexpressions[node.index] += scale * @s f.reverse_storage[k]
         end
     end

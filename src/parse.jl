@@ -4,11 +4,19 @@
 function _parse_multivariate_expression(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
-    expr::MOI.Nonlinear.Expression,
+    expr::Expression,
     x::Expr,
     parent_index::Int,
 )
     @assert Meta.isexpr(x, :call)
+    broadcasted = false
+    # if first char of x is a dot, then it is broadcasted and we should look up the operator without the dot
+    if x.args[1] isa Symbol && startswith(string(x.args[1]), ".")
+        println("Found a broadcasted operator: ", x.args[1])
+        x = Expr(:call, Symbol(string(x.args[1])[2:end]), x.args[2:end]...)
+        broadcasted = true
+        println("Stripped the dot, now looking for operator: ", x.args[1])
+    end
     id = get(data.operators.multivariate_operator_to_id, x.args[1], nothing)
     if id === nothing
         if haskey(data.operators.univariate_operator_to_id, x.args[1])
@@ -24,10 +32,11 @@ function _parse_multivariate_expression(
     end
     push!(
         expr.nodes,
-        MOI.Nonlinear.Node(
-            MOI.Nonlinear.NODE_CALL_MULTIVARIATE,
+        Node(
+            NODE_CALL_MULTIVARIATE,
             id,
             parent_index,
+            broadcasted,
         ),
     )
     for i in length(x.args):-1:2
@@ -38,40 +47,44 @@ end
 
 function parse_expression(
     ::Model,
-    expr::MOI.Nonlinear.Expression,
+    expr::Expression,
     x::MOI.VariableIndex,
     parent_index::Int,
+    broadcasted::Bool = false,
 )
     push!(
         expr.nodes,
-        MOI.Nonlinear.Node(
-            MOI.Nonlinear.NODE_MOI_VARIABLE,
+        Node(
+            NODE_MOI_VARIABLE,
             x.value,
             parent_index,
+            broadcasted,
         ),
     )
     return
 end
 
 function parse_expression(data::Model, input)
-    expr = MOI.Nonlinear.Expression()
+    expr = Expression()
     parse_expression(data, expr, input, -1)
     return expr
 end
 
 function parse_expression(
     ::Model,
-    expr::MOI.Nonlinear.Expression,
+    expr::Expression,
     x::Real,
     parent_index::Int,
+    broadcasted::Bool = false,
 )
     push!(expr.values, convert(Float64, x)::Float64)
     push!(
         expr.nodes,
-        MOI.Nonlinear.Node(
-            MOI.Nonlinear.NODE_VALUE,
+        Node(
+            NODE_VALUE,
             length(expr.values),
             parent_index,
+            broadcasted,
         ),
     )
     return
@@ -79,20 +92,21 @@ end
 
 function parse_expression(
     ::Model,
-    expr::MOI.Nonlinear.Expression,
-    x::MOI.Nonlinear.ParameterIndex,
+    expr::Expression,
+    x::ParameterIndex,
     parent_index::Int,
+    broadcasted::Bool = false,
 )
     push!(
         expr.nodes,
-        MOI.Nonlinear.Node(MOI.Nonlinear.NODE_PARAMETER, x.value, parent_index),
+        Node(NODE_PARAMETER, x.value, parent_index, broadcasted),
     )
     return
 end
 
 function parse_expression(
     data::Model,
-    expr::MOI.Nonlinear.Expression,
+    expr::Expression,
     x::Expr,
     parent_index::Int,
 )
@@ -111,8 +125,8 @@ end
 
 function parse_expression(
     ::Model,
-    expr::Nonlinear.Expression,
-    x::Nonlinear.ExpressionIndex,
+    expr::Expression,
+    x::ExpressionIndex,
     parent_index::Int,
 )
     push!(
@@ -122,14 +136,33 @@ function parse_expression(
     return
 end
 
+function parse_expression(
+    ::Model,
+    expr::Expression,
+    x::MOI.VariableIndex,
+    parent_index::Int,
+    broadcasted::Bool = false,
+)
+    push!(expr.nodes, Node(NODE_MOI_VARIABLE, x.value, parent_index, broadcasted))
+    return
+end
+
 function _parse_univariate_expression(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
-    expr::MOI.Nonlinear.Expression,
+    expr::Expression,
     x::Expr,
     parent_index::Int,
 )
     @assert Meta.isexpr(x, :call, 2)
+    broadcasted = false
+    # if first char of x is a dot, then it is broadcasted and we should look up the operator without the dot
+    if x.args[1] isa Symbol && startswith(string(x.args[1]), ".")
+        println("Found a broadcasted operator: ", x.args[1])
+        x = Expr(:call, Symbol(string(x.args[1])[2:end]), x.args[2:end]...)
+        broadcasted = true
+        println("Stripped the dot, now looking for operator: ", x.args[1])
+    end
     id = get(data.operators.univariate_operator_to_id, x.args[1], nothing)
     if id === nothing
         # It may also be a multivariate operator like * with one argument.
@@ -141,10 +174,11 @@ function _parse_univariate_expression(
     end
     push!(
         expr.nodes,
-        MOI.Nonlinear.Node(
-            MOI.Nonlinear.NODE_CALL_UNIVARIATE,
+        Node(
+            NODE_CALL_UNIVARIATE,
             id,
             parent_index,
+            broadcasted,
         ),
     )
     push!(stack, (length(expr.nodes), x.args[2]))
@@ -154,14 +188,15 @@ end
 function _parse_logic_expression(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
-    expr::MOI.Nonlinear.Expression,
+    expr::Expression,
     x::Expr,
     parent_index::Int,
+    broadcasted::Bool=false,
 )
     id = data.operators.logic_operator_to_id[x.head]
     push!(
         expr.nodes,
-        MOI.Nonlinear.Node(MOI.Nonlinear.NODE_LOGIC, id, parent_index),
+        Node(NODE_LOGIC, id, parent_index, broadcasted),
     )
     parent_var = length(expr.nodes)
     push!(stack, (parent_var, x.args[2]))
@@ -207,7 +242,7 @@ end
 function _parse_comparison_expression(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
-    expr::Nonlinear.Expression,
+    expr::Expression,
     x::Expr,
     parent_index::Int,
 )
@@ -228,7 +263,7 @@ end
 function _parse_vect_expression(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
-    expr::MOI.Nonlinear.Expression,
+    expr::Expression,
     x::Expr,
     parent_index::Int,
 )
@@ -236,10 +271,11 @@ function _parse_vect_expression(
     id = get(data.operators.multivariate_operator_to_id, :vect, nothing)
     push!(
         expr.nodes,
-        MOI.Nonlinear.Node(
-            MOI.Nonlinear.NODE_CALL_MULTIVARIATE,
+        Node(
+            NODE_CALL_MULTIVARIATE,
             id,
             parent_index,
+            false,
         ),
     )
     for i in length(x.args):-1:1
@@ -251,7 +287,7 @@ end
 function _parse_row_expression(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
-    expr::MOI.Nonlinear.Expression,
+    expr::Expression,
     x::Expr,
     parent_index::Int,
 )
@@ -259,10 +295,11 @@ function _parse_row_expression(
     id = get(data.operators.multivariate_operator_to_id, :row, nothing)
     push!(
         expr.nodes,
-        MOI.Nonlinear.Node(
-            MOI.Nonlinear.NODE_CALL_MULTIVARIATE,
+        Node(
+            NODE_CALL_MULTIVARIATE,
             id,
             parent_index,
+            false,
         ),
     )
     for i in length(x.args):-1:1
@@ -274,7 +311,7 @@ end
 function _parse_hcat_expression(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
-    expr::MOI.Nonlinear.Expression,
+    expr::Expression,
     x::Expr,
     parent_index::Int,
 )
@@ -282,10 +319,11 @@ function _parse_hcat_expression(
     id = get(data.operators.multivariate_operator_to_id, :hcat, nothing)
     push!(
         expr.nodes,
-        MOI.Nonlinear.Node(
-            MOI.Nonlinear.NODE_CALL_MULTIVARIATE,
+        Node(
+            NODE_CALL_MULTIVARIATE,
             id,
             parent_index,
+            false,
         ),
     )
     for i in length(x.args):-1:1
@@ -297,7 +335,7 @@ end
 function _parse_vcat_expression(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
-    expr::MOI.Nonlinear.Expression,
+    expr::Expression,
     x::Expr,
     parent_index::Int,
 )
@@ -305,10 +343,11 @@ function _parse_vcat_expression(
     id = get(data.operators.multivariate_operator_to_id, :vcat, nothing)
     push!(
         expr.nodes,
-        MOI.Nonlinear.Node(
-            MOI.Nonlinear.NODE_CALL_MULTIVARIATE,
+        Node(
+            NODE_CALL_MULTIVARIATE,
             id,
             parent_index,
+            false,
         ),
     )
     for i in length(x.args):-1:1
@@ -320,14 +359,14 @@ end
 function _parse_inequality_expression(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
-    expr::Nonlinear.Expression,
+    expr::Expression,
     x::Expr,
     parent_index::Int,
 )
     operator_id = data.operators.comparison_operator_to_id[x.args[1]]
     push!(
         expr.nodes,
-        Nonlinear.Node(Nonlinear.NODE_COMPARISON, operator_id, parent_index),
+        Node(NODE_COMPARISON, operator_id, parent_index),
     )
     for i in length(x.args):-1:2
         push!(stack, (length(expr.nodes), x.args[i]))

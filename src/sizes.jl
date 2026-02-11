@@ -148,7 +148,7 @@ function _assert_scalar_children(sizes, children_arr, children_indices, op)
 end
 
 function _infer_sizes(
-    nodes::Vector{Nonlinear.Node},
+    nodes::Vector{Node},
     adj::SparseArrays.SparseMatrixCSC{Bool,Int},
 )
     sizes = Sizes(
@@ -162,7 +162,7 @@ function _infer_sizes(
         node = nodes[k]
         children_indices = SparseArrays.nzrange(adj, k)
         N = length(children_indices)
-        if node.type == Nonlinear.NODE_CALL_MULTIVARIATE
+        if node.type == NODE_CALL_MULTIVARIATE
             if !(node.index in eachindex(DEFAULT_MULTIVARIATE_OPERATORS))
                 # TODO user-defined operators
                 continue
@@ -277,7 +277,7 @@ function _infer_sizes(
                     op,
                 )
             end
-        elseif node.type == Nonlinear.NODE_CALL_UNIVARIATE
+        elseif node.type == NODE_CALL_UNIVARIATE
             if !(
                 node.index in
                 eachindex(MOI.Nonlinear.DEFAULT_UNIVARIATE_OPERATORS)
@@ -303,4 +303,38 @@ function _infer_sizes(
         sizes.storage_offset[k+1] = sizes.storage_offset[k] + _length(sizes, k)
     end
     return sizes
+end
+
+struct _SubexpressionStorage
+    nodes::Vector{Node}
+    adj::SparseArrays.SparseMatrixCSC{Bool,Int}
+    sizes::Sizes
+    const_values::Vector{Float64}
+    forward_storage::Vector{Float64}
+    partials_storage::Vector{Float64}
+    reverse_storage::Vector{Float64}
+    partials_storage_ϵ::Vector{Float64}
+    linearity::Linearity
+
+    function _SubexpressionStorage(
+        nodes::Vector{Node},
+        adj::SparseArrays.SparseMatrixCSC{Bool,Int},
+        const_values::Vector{Float64},
+        partials_storage_ϵ::Vector{Float64},
+        linearity::Linearity,
+    )
+        sizes = _infer_sizes(nodes, adj)
+        N = _length(sizes)
+        return new(
+            nodes,
+            adj,
+            _infer_sizes(nodes, adj),
+            const_values,
+            zeros(N),  # forward_storage,
+            zeros(N),  # partials_storage,
+            zeros(N),  # reverse_storage,
+            partials_storage_ϵ,
+            linearity,
+        )
+    end
 end
