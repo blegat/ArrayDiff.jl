@@ -227,7 +227,7 @@ mutable struct Evaluator{B} <: MOI.AbstractNLPEvaluator
     backend::B
     # ordered_constraints is needed because `OrderedDict` doesn't support
     # looking up a key by the linear index.
-    ordered_constraints::Vector{MOI.Nonlinear.ConstraintIndex}
+    ordered_constraints::Vector{ConstraintIndex}
     # Storage for the NLPBlockDual, so that we can query the dual of individual
     # constraints without needing to query the full vector each time.
     constraint_dual::Vector{Float64}

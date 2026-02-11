@@ -128,10 +128,11 @@ function parse_expression(
     expr::Expression,
     x::ExpressionIndex,
     parent_index::Int,
+    broadcasted::Bool = false,
 )
     push!(
         expr.nodes,
-        Nonlinear.Node(Nonlinear.NODE_SUBEXPRESSION, x.value, parent_index),
+        Node(NODE_SUBEXPRESSION, x.value, parent_index, broadcasted),
     )
     return
 end
@@ -245,6 +246,7 @@ function _parse_comparison_expression(
     expr::Expression,
     x::Expr,
     parent_index::Int,
+    broadcasted::Bool=false,
 )
     for k in 2:2:(length(x.args)-1)
         @assert x.args[k] == x.args[2] # don't handle a <= b >= c
@@ -252,7 +254,7 @@ function _parse_comparison_expression(
     operator_id = data.operators.comparison_operator_to_id[x.args[2]]
     push!(
         expr.nodes,
-        Nonlinear.Node(Nonlinear.NODE_COMPARISON, operator_id, parent_index),
+        Node(NODE_COMPARISON, operator_id, parent_index, broadcasted),
     )
     for i in length(x.args):-2:1
         push!(stack, (length(expr.nodes), x.args[i]))
@@ -362,11 +364,12 @@ function _parse_inequality_expression(
     expr::Expression,
     x::Expr,
     parent_index::Int,
+    broadcasted::Bool=false,
 )
     operator_id = data.operators.comparison_operator_to_id[x.args[1]]
     push!(
         expr.nodes,
-        Node(NODE_COMPARISON, operator_id, parent_index),
+        Node(NODE_COMPARISON, operator_id, parent_index, broadcasted),
     )
     for i in length(x.args):-1:2
         push!(stack, (length(expr.nodes), x.args[i]))

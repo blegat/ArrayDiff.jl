@@ -116,16 +116,16 @@ function _classify_linearity(
     children_arr = SparseArrays.rowvals(adj)
     for k in length(nodes):-1:1
         node = nodes[k]
-        if node.type == Nonlinear.NODE_VARIABLE
+        if node.type == NODE_VARIABLE
             linearity[k] = LINEAR
             continue
-        elseif node.type == Nonlinear.NODE_VALUE
+        elseif node.type == NODE_VALUE
             linearity[k] = CONSTANT
             continue
-        elseif node.type == Nonlinear.NODE_PARAMETER
+        elseif node.type == NODE_PARAMETER
             linearity[k] = CONSTANT
             continue
-        elseif node.type == Nonlinear.NODE_SUBEXPRESSION
+        elseif node.type == NODE_SUBEXPRESSION
             linearity[k] = subexpression_linearity[node.index]
             continue
         end
@@ -150,7 +150,7 @@ function _classify_linearity(
                 nothing,
             )
             if (
-                node.type == Nonlinear.NODE_CALL_MULTIVARIATE &&
+                node.type == NODE_CALL_MULTIVARIATE &&
                 op == :ifelse &&
                 linearity[children_arr[children_idx[2]]] == LINEAR &&
                 linearity[children_arr[children_idx[3]]] == LINEAR
@@ -165,7 +165,7 @@ function _classify_linearity(
         end
         # By this point, some children are constant and some are linear, so if
         # the operator is nonlinear, then we're nonlinear.
-        if node.type == Nonlinear.NODE_CALL_UNIVARIATE
+        if node.type == NODE_CALL_UNIVARIATE
             op =
                 get(Nonlinear.DEFAULT_UNIVARIATE_OPERATORS, node.index, nothing)
             if op == :+ || op == :-
@@ -173,7 +173,7 @@ function _classify_linearity(
             else
                 linearity[k] = NONLINEAR
             end
-        elseif node.type == Nonlinear.NODE_CALL_MULTIVARIATE
+        elseif node.type ==  NODE_CALL_MULTIVARIATE
             op = get(
                 Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS,
                 node.index,
@@ -201,10 +201,10 @@ function _classify_linearity(
             else  # User-defined functions
                 linearity[k] = NONLINEAR
             end
-        elseif node.type == Nonlinear.NODE_LOGIC
+        elseif node.type == NODE_LOGIC
             linearity[k] = NONLINEAR
         else
-            @assert node.type == Nonlinear.NODE_COMPARISON
+            @assert node.type == NODE_COMPARISON
             linearity[k] = NONLINEAR
         end
     end
@@ -282,7 +282,7 @@ function _compute_hessian_sparsity(
     stack = Int[]
     stack_ignore = Bool[]
     nonlinear_group = indexedset
-    if length(nodes) == 1 && nodes[1].type == Nonlinear.NODE_SUBEXPRESSION
+    if length(nodes) == 1 && nodes[1].type == NODE_SUBEXPRESSION
         # Subexpression comes in linearly, so append edge_list
         for ij in subexpression_edgelist[nodes[1].index]
             push!(edge_list, ij)
@@ -290,7 +290,7 @@ function _compute_hessian_sparsity(
     end
     for k in 2:length(nodes)
         nod = nodes[k]
-        @assert nod.type != Nonlinear.NODE_MOI_VARIABLE
+        @assert nod.type != NODE_MOI_VARIABLE
         if nonlinear_wrt_output[k]
             continue # already seen this node one way or another
         elseif input_linearity[k] == CONSTANT
@@ -299,12 +299,12 @@ function _compute_hessian_sparsity(
         @assert !nonlinear_wrt_output[nod.parent]
         # check if the parent depends nonlinearly on the value of this node
         par = nodes[nod.parent]
-        if par.type == Nonlinear.NODE_CALL_UNIVARIATE
+        if par.type == NODE_CALL_UNIVARIATE
             op = get(Nonlinear.DEFAULT_UNIVARIATE_OPERATORS, par.index, nothing)
             if op === nothing || (op != :+ && op != :-)
                 nonlinear_wrt_output[k] = true
             end
-        elseif par.type == Nonlinear.NODE_CALL_MULTIVARIATE
+        elseif par.type == NODE_CALL_MULTIVARIATE
             op = get(
                 Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS,
                 par.index,
@@ -336,7 +336,7 @@ function _compute_hessian_sparsity(
                 nonlinear_wrt_output[k] = true
             end
         end
-        if nod.type == Nonlinear.NODE_SUBEXPRESSION && !nonlinear_wrt_output[k]
+        if nod.type == NODE_SUBEXPRESSION && !nonlinear_wrt_output[k]
             # subexpression comes in linearly, so append edge_list
             for ij in subexpression_edgelist[nod.index]
                 push!(edge_list, ij)
@@ -358,8 +358,8 @@ function _compute_hessian_sparsity(
             r = pop!(stack)
             should_ignore = pop!(stack_ignore)
             nonlinear_wrt_output[r] = true
-            if nodes[r].type == Nonlinear.NODE_LOGIC ||
-               nodes[r].type == Nonlinear.NODE_COMPARISON
+            if nodes[r].type == NODE_LOGIC ||
+               nodes[r].type == NODE_COMPARISON
                 # don't count the nonlinear interactions inside
                 # logical conditions or comparisons
                 should_ignore = true
@@ -372,9 +372,9 @@ function _compute_hessian_sparsity(
             if should_ignore
                 continue
             end
-            if nodes[r].type == Nonlinear.NODE_VARIABLE
+            if nodes[r].type == NODE_VARIABLE
                 push!(nonlinear_group, nodes[r].index)
-            elseif nodes[r].type == Nonlinear.NODE_SUBEXPRESSION
+            elseif nodes[r].type == NODE_SUBEXPRESSION
                 # append all variables in subexpression
                 union!(nonlinear_group, subexpression_variables[nodes[r].index])
             end

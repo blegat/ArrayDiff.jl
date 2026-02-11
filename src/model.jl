@@ -18,22 +18,22 @@ function add_constraint(
 )
     f = parse_expression(model, func)
     model.last_constraint_index += 1
-    index = MOI.Nonlinear.ConstraintIndex(model.last_constraint_index)
-    model.constraints[index] = MOI.Nonlinear.Constraint(f, set)
+    index = ConstraintIndex(model.last_constraint_index)
+    model.constraints[index] = Constraint(f, set)
     return index
 end
 
 function add_parameter(model::Model, value::Float64)
     push!(model.parameters, value)
-    return MOI.Nonlinear.ParameterIndex(length(model.parameters))
+    return ParameterIndex(length(model.parameters))
 end
 
 function add_expression(model::Model, expr)
     push!(model.expressions, parse_expression(model, expr))
-    return Nonlinear.ExpressionIndex(length(model.expressions))
+    return ExpressionIndex(length(model.expressions))
 end
 
-function Base.getindex(model::Model, index::Nonlinear.ExpressionIndex)
+function Base.getindex(model::Model, index::ExpressionIndex)
     return model.expressions[index.value]
 end
 

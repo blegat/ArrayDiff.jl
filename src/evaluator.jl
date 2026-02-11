@@ -143,7 +143,7 @@ function eval_univariate_hessian(
     x::T,
 ) where {T}
     if id <= registry.univariate_user_operator_start
-        ret = Nonlinear._eval_univariate_2nd_deriv(id, x)
+        ret = _eval_univariate_2nd_deriv(id, x)
         if ret === nothing
             op = registry.univariate_operators[id]
             error("Hessian is not defined for operator $op")
