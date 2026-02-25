@@ -552,7 +552,6 @@ function test_linearity()
             nodes,
             adj,
             ret,
-            indexed_set,
             Set{Tuple{Int,Int}}[],
             Vector{Int}[],
         )
@@ -576,12 +575,7 @@ function test_linearity()
         [1, 2],
     )
     _test_linearity(:(3 * 4 * ($x + $y)), ArrayDiff.LINEAR)
-    _test_linearity(
-        :($z * $y),
-        ArrayDiff.NONLINEAR,
-        Set([(3, 2), (3, 3), (2, 2)]),
-        [2, 3],
-    )
+    _test_linearity(:($z * $y), ArrayDiff.NONLINEAR, Set([(3, 2)]), [2, 3])
     _test_linearity(:(3 + 4), ArrayDiff.CONSTANT)
     _test_linearity(:(sin(3) + $x), ArrayDiff.LINEAR)
     _test_linearity(
@@ -625,6 +619,12 @@ function test_linearity()
         ArrayDiff.NONLINEAR,
         Set([(1, 1)]),
         [1],
+    )
+    _test_linearity(
+        :(($x + $y)/$z),
+        ArrayDiff.NONLINEAR,
+        Set([(3, 3), (3, 2), (3, 1)]),
+        [1, 2, 3],
     )
     return
 end
@@ -1357,7 +1357,7 @@ function test_hessian_reinterpret_unsafe()
     x_v = ones(5)
     MOI.eval_hessian_lagrangian(evaluator, H, x_v, 0.0, [1.0, 1.0])
     @test count(isapprox.(H, 1.0; atol = 1e-8)) == 3
-    @test count(isapprox.(H, 0.0; atol = 1e-8)) == 6
+    @test count(isapprox.(H, 0.0; atol = 1e-8)) == 5
     @test sort(H_s[round.(Bool, H)]) == [(3, 1), (3, 2), (5, 4)]
     return
 end
