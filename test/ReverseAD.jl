@@ -622,7 +622,7 @@ function test_linearity()
     )
     _test_linearity(
         :(($x + $y)/$z),
-        ReverseAD.NONLINEAR,
+        ArrayDiff.NONLINEAR,
         Set([(3, 3), (3, 2), (3, 1)]),
         [1, 2, 3],
     )
