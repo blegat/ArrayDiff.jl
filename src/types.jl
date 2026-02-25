@@ -100,7 +100,6 @@ struct _FunctionStorage
                 expr.nodes,
                 expr.adj,
                 linearity,
-                coloring_storage,
                 subexpression_edgelist,
                 subexpression_variables,
             )
