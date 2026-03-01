@@ -159,7 +159,7 @@ function _forward_eval(
                 end
             elseif node.index == 3 # :*
                 # Node `k` is not scalar, so we do matrix multiplication
-                if f.sizes.ndims[k] != 0
+                if f.sizes.ndims[k] != 0 
                     @assert N == 2
                     idx1 = first(children_indices)
                     idx2 = last(children_indices)
@@ -175,9 +175,15 @@ function _forward_eval(
                         v2[j] = @j f.forward_storage[ix2]
                         @j f.partials_storage[ix1] = v2[j]
                     end
-                    v_prod = v1 * v2
-                    for j in _eachindex(f.sizes, k)
-                        @j f.forward_storage[k] = v_prod[j]
+                    if node.broadcasted
+                        for j in _eachindex(f.sizes, k)
+                            @j f.forward_storage[k] = v1[j] * v2[j]
+                        end
+                    else
+                        v_prod = v1 * v2
+                        for j in _eachindex(f.sizes, k)
+                            @j f.forward_storage[k] = v_prod[j]
+                        end
                     end
                     # Node `k` is scalar
                 else
@@ -460,7 +466,7 @@ function _reverse_eval(f::_SubexpressionStorage)
                 op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
                 if op == :*
                     if f.sizes.ndims[k] != 0
-                        # Node `k` is not scalar, so we do matrix multiplication
+                        # Node `k` is not scalar, so we do matrix multiplication or broadcasted multiplication
                         idx1 = first(children_indices)
                         idx2 = last(children_indices)
                         ix1 = children_arr[idx1]
@@ -477,13 +483,26 @@ function _reverse_eval(f::_SubexpressionStorage)
                         for j in _eachindex(f.sizes, k)
                             rev_parent[j] = @j f.reverse_storage[k]
                         end
-                        rev_v1 = rev_parent * v2'
-                        rev_v2 = v1' * rev_parent
-                        for j in _eachindex(f.sizes, ix1)
-                            @j f.reverse_storage[ix1] = rev_v1[j]
-                        end
-                        for j in _eachindex(f.sizes, ix2)
-                            @j f.reverse_storage[ix2] = rev_v2[j]
+                        if node.broadcasted
+                            rev_v1 = zeros(_size(f.sizes, ix1)...)
+                            rev_v2 = zeros(_size(f.sizes, ix2)...)
+                            for j in _eachindex(f.sizes, ix1)
+                                rev_v1[j] = rev_parent[j] * v2[j]
+                                @j f.reverse_storage[ix1] = rev_v1[j]
+                            end
+                            for j in _eachindex(f.sizes, ix2)
+                                rev_v2[j] = rev_parent[j] * v1[j]
+                                @j f.reverse_storage[ix2] = rev_v2[j]
+                            end
+                        else
+                            rev_v1 = rev_parent * v2'
+                            rev_v2 = v1' * rev_parent
+                            for j in _eachindex(f.sizes, ix1)
+                                @j f.reverse_storage[ix1] = rev_v1[j]
+                            end
+                            for j in _eachindex(f.sizes, ix2)
+                                @j f.reverse_storage[ix2] = rev_v2[j]
+                            end
                         end
                         continue
                     end

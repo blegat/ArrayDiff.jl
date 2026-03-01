@@ -239,24 +239,48 @@ function _infer_sizes(
                         _add_size!(sizes, k, (1, 1))
                         continue
                     else
-                        _add_size!(
-                            sizes,
-                            k,
-                            (
-                                _size(
-                                    sizes,
-                                    children_arr[first(children_indices)],
-                                    1,
+                        if node.broadcasted
+                            if sizes.ndims[children_arr[first(children_indices)]] == 1
+                                nb_cols = 1
+                            else
+                                nb_cols = _size(
+                                sizes,
+                                children_arr[first(children_indices)],
+                                1,
+                            ) 
+                            end 
+                            _add_size!(
+                                sizes,
+                                k,
+                                (
+                                    _size(
+                                        sizes,
+                                        children_arr[first(children_indices)],
+                                        1,
+                                    ),
+                                    nb_cols,
                                 ),
-                                _size(
-                                    sizes,
-                                    children_arr[last(children_indices)],
-                                    sizes.ndims[children_arr[last(
-                                        children_indices,
-                                    )],],
+                            )
+                        else
+                            _add_size!(
+                                sizes,
+                                k,
+                                (
+                                    _size(
+                                        sizes,
+                                        children_arr[first(children_indices)],
+                                        1,
+                                    ),
+                                    _size(
+                                        sizes,
+                                        children_arr[last(children_indices)],
+                                        sizes.ndims[children_arr[last(
+                                            children_indices,
+                                        )],],
+                                    ),
                                 ),
-                            ),
-                        )
+                            )
+                        end
                         continue
                     end
                 end
