@@ -204,7 +204,10 @@ end
 end
 
 function _generate_eval_univariate_2nd_deriv()
-    exprs = map(arg -> :(return value_deriv_and_second($(arg), x)[3]), Nonlinear.DEFAULT_UNIVARIATE_OPERATORS)
+    exprs = map(
+        arg -> :(return value_deriv_and_second($(arg), x)[3]),
+        Nonlinear.DEFAULT_UNIVARIATE_OPERATORS,
+    )
     return Nonlinear._create_binary_switch(1:length(exprs), exprs)
 end
 

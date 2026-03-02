@@ -579,13 +579,16 @@ function test_objective_broadcasted_matrix_product()
     x2 = MOI.VariableIndex(2)
     x3 = MOI.VariableIndex(3)
     x4 = MOI.VariableIndex(4)
-    ArrayDiff.set_objective(model, :(norm([$x1 $x2; $x3 $x4] .* [$x1 $x2; $x3 $x4])))
+    ArrayDiff.set_objective(
+        model,
+        :(norm([$x1 $x2; $x3 $x4] .* [$x1 $x2; $x3 $x4])),
+    )
     evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 2, 2, 2, 0, 0, 2, 0, 0, 2, 2, 0, 0, 2, 0, 0]
     @test sizes.size_offset ==
-        [0, 12, 10, 8, 0, 0, 6, 0, 0, 4, 2, 0, 0, 0, 0, 0]
+          [0, 12, 10, 8, 0, 0, 6, 0, 0, 4, 2, 0, 0, 0, 0, 0]
     @test sizes.size == [1, 2, 1, 2, 2, 2, 1, 2, 1, 2, 2, 2, 2, 2]
     @test sizes.storage_offset ==
           [0, 1, 5, 9, 11, 12, 13, 15, 16, 17, 21, 23, 24, 25, 27, 28, 29]
@@ -593,7 +596,8 @@ function test_objective_broadcasted_matrix_product()
     x2 = 2.0
     x3 = 3.0
     x4 = 4.0
-    @test MOI.eval_objective(evaluator, [x1, x2, x3, x4]) == sqrt(1.0^2 + 4.0^2 + 9.0^2 + 16.0^2)
+    @test MOI.eval_objective(evaluator, [x1, x2, x3, x4]) ==
+          sqrt(1.0^2 + 4.0^2 + 9.0^2 + 16.0^2)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3, x4])
     @test g == [

@@ -159,7 +159,7 @@ function _forward_eval(
                 end
             elseif node.index == 3 # :*
                 # Node `k` is not scalar, so we do matrix multiplication
-                if f.sizes.ndims[k] != 0 
+                if f.sizes.ndims[k] != 0
                     @assert N == 2
                     idx1 = first(children_indices)
                     idx2 = last(children_indices)

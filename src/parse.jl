@@ -15,7 +15,7 @@ function _parse_multivariate_expression(
         println("Found a broadcasted operator: ", x.args[1])
         x = Expr(:call, Symbol(string(x.args[1])[2:end]), x.args[2:end]...)
         broadcasted = true
-        println("Stripped the dot, now looking for operator: ", x.args[1])
+        println("Deleted the dot, now looking for operator: ", x.args[1])
     end
     id = get(data.operators.multivariate_operator_to_id, x.args[1], nothing)
     if id === nothing
@@ -32,12 +32,7 @@ function _parse_multivariate_expression(
     end
     push!(
         expr.nodes,
-        Node(
-            NODE_CALL_MULTIVARIATE,
-            id,
-            parent_index,
-            broadcasted,
-        ),
+        Node(NODE_CALL_MULTIVARIATE, id, parent_index, broadcasted),
     )
     for i in length(x.args):-1:2
         push!(stack, (length(expr.nodes), x.args[i]))
@@ -54,12 +49,7 @@ function parse_expression(
 )
     push!(
         expr.nodes,
-        Node(
-            NODE_MOI_VARIABLE,
-            x.value,
-            parent_index,
-            broadcasted,
-        ),
+        Node(NODE_MOI_VARIABLE, x.value, parent_index, broadcasted),
     )
     return
 end
@@ -80,12 +70,7 @@ function parse_expression(
     push!(expr.values, convert(Float64, x)::Float64)
     push!(
         expr.nodes,
-        Node(
-            NODE_VALUE,
-            length(expr.values),
-            parent_index,
-            broadcasted,
-        ),
+        Node(NODE_VALUE, length(expr.values), parent_index, broadcasted),
     )
     return
 end
@@ -97,10 +82,7 @@ function parse_expression(
     parent_index::Int,
     broadcasted::Bool = false,
 )
-    push!(
-        expr.nodes,
-        Node(NODE_PARAMETER, x.value, parent_index, broadcasted),
-    )
+    push!(expr.nodes, Node(NODE_PARAMETER, x.value, parent_index, broadcasted))
     return
 end
 
@@ -144,7 +126,10 @@ function parse_expression(
     parent_index::Int,
     broadcasted::Bool = false,
 )
-    push!(expr.nodes, Node(NODE_MOI_VARIABLE, x.value, parent_index, broadcasted))
+    push!(
+        expr.nodes,
+        Node(NODE_MOI_VARIABLE, x.value, parent_index, broadcasted),
+    )
     return
 end
 
@@ -162,7 +147,7 @@ function _parse_univariate_expression(
         println("Found a broadcasted operator: ", x.args[1])
         x = Expr(:call, Symbol(string(x.args[1])[2:end]), x.args[2:end]...)
         broadcasted = true
-        println("Stripped the dot, now looking for operator: ", x.args[1])
+        println("Deleted the dot, now looking for operator: ", x.args[1])
     end
     id = get(data.operators.univariate_operator_to_id, x.args[1], nothing)
     if id === nothing
@@ -173,15 +158,7 @@ function _parse_univariate_expression(
         end
         throw(MOI.UnsupportedNonlinearOperator(x.args[1]))
     end
-    push!(
-        expr.nodes,
-        Node(
-            NODE_CALL_UNIVARIATE,
-            id,
-            parent_index,
-            broadcasted,
-        ),
-    )
+    push!(expr.nodes, Node(NODE_CALL_UNIVARIATE, id, parent_index, broadcasted))
     push!(stack, (length(expr.nodes), x.args[2]))
     return
 end
@@ -192,13 +169,10 @@ function _parse_logic_expression(
     expr::Expression,
     x::Expr,
     parent_index::Int,
-    broadcasted::Bool=false,
+    broadcasted::Bool = false,
 )
     id = data.operators.logic_operator_to_id[x.head]
-    push!(
-        expr.nodes,
-        Node(NODE_LOGIC, id, parent_index, broadcasted),
-    )
+    push!(expr.nodes, Node(NODE_LOGIC, id, parent_index, broadcasted))
     parent_var = length(expr.nodes)
     push!(stack, (parent_var, x.args[2]))
     push!(stack, (parent_var, x.args[1]))
@@ -246,7 +220,7 @@ function _parse_comparison_expression(
     expr::Expression,
     x::Expr,
     parent_index::Int,
-    broadcasted::Bool=false,
+    broadcasted::Bool = false,
 )
     for k in 2:2:(length(x.args)-1)
         @assert x.args[k] == x.args[2] # don't handle a <= b >= c
@@ -271,15 +245,7 @@ function _parse_vect_expression(
 )
     @assert Meta.isexpr(x, :vect)
     id = get(data.operators.multivariate_operator_to_id, :vect, nothing)
-    push!(
-        expr.nodes,
-        Node(
-            NODE_CALL_MULTIVARIATE,
-            id,
-            parent_index,
-            false,
-        ),
-    )
+    push!(expr.nodes, Node(NODE_CALL_MULTIVARIATE, id, parent_index, false))
     for i in length(x.args):-1:1
         push!(stack, (length(expr.nodes), x.args[i]))
     end
@@ -295,15 +261,7 @@ function _parse_row_expression(
 )
     @assert Meta.isexpr(x, :row)
     id = get(data.operators.multivariate_operator_to_id, :row, nothing)
-    push!(
-        expr.nodes,
-        Node(
-            NODE_CALL_MULTIVARIATE,
-            id,
-            parent_index,
-            false,
-        ),
-    )
+    push!(expr.nodes, Node(NODE_CALL_MULTIVARIATE, id, parent_index, false))
     for i in length(x.args):-1:1
         push!(stack, (length(expr.nodes), x.args[i]))
     end
@@ -319,15 +277,7 @@ function _parse_hcat_expression(
 )
     @assert Meta.isexpr(x, :hcat)
     id = get(data.operators.multivariate_operator_to_id, :hcat, nothing)
-    push!(
-        expr.nodes,
-        Node(
-            NODE_CALL_MULTIVARIATE,
-            id,
-            parent_index,
-            false,
-        ),
-    )
+    push!(expr.nodes, Node(NODE_CALL_MULTIVARIATE, id, parent_index, false))
     for i in length(x.args):-1:1
         push!(stack, (length(expr.nodes), x.args[i]))
     end
@@ -343,15 +293,7 @@ function _parse_vcat_expression(
 )
     @assert Meta.isexpr(x, :vcat)
     id = get(data.operators.multivariate_operator_to_id, :vcat, nothing)
-    push!(
-        expr.nodes,
-        Node(
-            NODE_CALL_MULTIVARIATE,
-            id,
-            parent_index,
-            false,
-        ),
-    )
+    push!(expr.nodes, Node(NODE_CALL_MULTIVARIATE, id, parent_index, false))
     for i in length(x.args):-1:1
         push!(stack, (length(expr.nodes), x.args[i]))
     end
@@ -364,7 +306,7 @@ function _parse_inequality_expression(
     expr::Expression,
     x::Expr,
     parent_index::Int,
-    broadcasted::Bool=false,
+    broadcasted::Bool = false,
 )
     operator_id = data.operators.comparison_operator_to_id[x.args[1]]
     push!(

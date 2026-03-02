@@ -4,7 +4,6 @@
 # Use of this source code is governed by an MIT-style license that can be found
 # in the LICENSE.md file or at https://opensource.org/licenses/MIT.
 
-
 """
     NodeType
 
@@ -173,7 +172,7 @@ function _classify_linearity(
             else
                 linearity[k] = NONLINEAR
             end
-        elseif node.type ==  NODE_CALL_MULTIVARIATE
+        elseif node.type == NODE_CALL_MULTIVARIATE
             op = get(
                 Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS,
                 node.index,
@@ -358,8 +357,7 @@ function _compute_hessian_sparsity(
             r = pop!(stack)
             should_ignore = pop!(stack_ignore)
             nonlinear_wrt_output[r] = true
-            if nodes[r].type == NODE_LOGIC ||
-               nodes[r].type == NODE_COMPARISON
+            if nodes[r].type == NODE_LOGIC || nodes[r].type == NODE_COMPARISON
                 # don't count the nonlinear interactions inside
                 # logical conditions or comparisons
                 should_ignore = true
@@ -399,9 +397,7 @@ end
 Returns the list of subexpressions which a given tape depends on directly
 """
 function _list_subexpressions(nodes::Vector{Node})
-    indices = Set{Int}(
-        n.index for n in nodes if n.type == NODE_SUBEXPRESSION
-    )
+    indices = Set{Int}(n.index for n in nodes if n.type == NODE_SUBEXPRESSION)
     return sort(collect(indices))
 end
 

@@ -240,15 +240,17 @@ function _infer_sizes(
                         continue
                     else
                         if node.broadcasted
-                            if sizes.ndims[children_arr[first(children_indices)]] == 1
+                            if sizes.ndims[children_arr[first(
+                                children_indices,
+                            )]] == 1
                                 nb_cols = 1
                             else
                                 nb_cols = _size(
-                                sizes,
-                                children_arr[first(children_indices)],
-                                1,
-                            ) 
-                            end 
+                                    sizes,
+                                    children_arr[first(children_indices)],
+                                    1,
+                                )
+                            end
                             _add_size!(
                                 sizes,
                                 k,
