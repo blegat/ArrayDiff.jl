@@ -62,4 +62,6 @@ function Evaluator(
     return Evaluator(model, NLPEvaluator(model, ordered_variables))
 end
 
+include("JuMP/JuMP.jl")
+
 end  # module
