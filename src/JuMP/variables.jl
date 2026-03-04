@@ -15,6 +15,10 @@ function Base.getindex(A::ArrayOfVariables{T}, I...) where {T}
     return JuMP.GenericVariableRef{T}(A.model, MOI.VariableIndex(index))
 end
 
+function JuMP.variable_ref_type(::Type{ArrayOfVariables{T,N}}) where {T,N}
+    return JuMP.variable_ref_type(JuMP.GenericModel{T})
+end
+
 function JuMP.Containers.container(
     f::Function,
     indices::JuMP.Containers.VectorizedProductIterator{
