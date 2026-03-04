@@ -17,7 +17,9 @@ end
 
 function JuMP.Containers.container(
     f::Function,
-    indices::JuMP.Containers.VectorizedProductIterator{NTuple{N,Base.OneTo{Int}}},
+    indices::JuMP.Containers.VectorizedProductIterator{
+        NTuple{N,Base.OneTo{Int}},
+    },
     ::Type{ArrayOfVariables},
 ) where {N}
     return to_generator(JuMP.Containers.container(f, indices, Array))

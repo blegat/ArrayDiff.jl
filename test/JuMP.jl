@@ -25,11 +25,15 @@ function test_array_product()
     @test JuMP.index(W[1, 1]) == MOI.VariableIndex(1)
     @test JuMP.index(W[2, 1]) == MOI.VariableIndex(2)
     @test JuMP.index(W[2]) == MOI.VariableIndex(2)
-    @test sprint(show, W) == "2×2 ArrayDiff.ArrayOfVariables{Float64, 2} with offset 0"
+    @test sprint(show, W) ==
+          "2×2 ArrayDiff.ArrayOfVariables{Float64, 2} with offset 0"
     prod = W * X
     @test prod isa ArrayDiff.ArrayExpr{2}
-    @test sprint(show, prod) == "2×2 ArrayDiff.GenericArrayExpr{VariableRef, 2}"
-    err = ErrorException("`getindex` not implemented, build vectorized expression instead")
+    @test sprint(show, prod) ==
+          "2×2 ArrayDiff.GenericArrayExpr{JuMP.VariableRef, 2}"
+    err = ErrorException(
+        "`getindex` not implemented, build vectorized expression instead",
+    )
     @test_throws err prod[1, 1]
     return
 end
