@@ -1,6 +1,5 @@
 # JuMP extension
 
-import MutableArithmetics as MA
 import JuMP
 
 # Equivalent of `AbstractJuMPScalar` but for arrays
