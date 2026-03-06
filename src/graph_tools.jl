@@ -258,7 +258,7 @@ function _get_nonlinear_child_interactions(
 )::Vector{Tuple{Int,Int}}
     if node.type == NODE_CALL_UNIVARIATE
         @assert num_children == 1
-        op = get(DEFAULT_UNIVARIATE_OPERATORS, node.index, nothing)
+        op = get(Nonlinear.DEFAULT_UNIVARIATE_OPERATORS, node.index, nothing)
         # Univariate operators :+ and :- don't create interactions
         if op in (:+, :-)
             return Tuple{Int,Int}[]
@@ -333,7 +333,7 @@ function _compute_hessian_sparsity(
     # Map from child_group_index to variable indices
     child_group_variables = Dict{Int,Set{Int}}()
     for (k, node) in enumerate(nodes)
-        @assert node.type != Nonlinear.NODE_MOI_VARIABLE
+        @assert node.type != NODE_MOI_VARIABLE
         if input_linearity[k] == CONSTANT
             continue  # No hessian contribution from constant nodes
         end
@@ -353,15 +353,15 @@ function _compute_hessian_sparsity(
             while length(stack) > 0
                 r, child_group_idx = pop!(stack)
                 # Don't traverse into logical conditions or comparisons
-                if nodes[r].type == Nonlinear.NODE_LOGIC ||
-                   nodes[r].type == Nonlinear.NODE_COMPARISON
+                if nodes[r].type == NODE_LOGIC ||
+                   nodes[r].type == NODE_COMPARISON
                     continue
                 end
                 r_children_idx = SparseArrays.nzrange(adj, r)
                 for cidx in r_children_idx
                     push!(stack, (children_arr[cidx], child_group_idx))
                 end
-                if nodes[r].type == Nonlinear.NODE_VARIABLE
+                if nodes[r].type == NODE_VARIABLE
                     if !haskey(child_group_variables, child_group_idx)
                         child_group_variables[child_group_idx] = Set{Int}()
                     end
@@ -369,7 +369,7 @@ function _compute_hessian_sparsity(
                         child_group_variables[child_group_idx],
                         nodes[r].index,
                     )
-                elseif nodes[r].type == Nonlinear.NODE_SUBEXPRESSION
+                elseif nodes[r].type == NODE_SUBEXPRESSION
                     sub_vars = subexpression_variables[nodes[r].index]
                     if !haskey(child_group_variables, child_group_idx)
                         child_group_variables[child_group_idx] = Set{Int}()
@@ -378,7 +378,7 @@ function _compute_hessian_sparsity(
                 end
             end
             _add_hessian_edges!(edge_list, interactions, child_group_variables)
-        elseif node.type == Nonlinear.NODE_SUBEXPRESSION
+        elseif node.type == NODE_SUBEXPRESSION
             for ij in subexpression_edgelist[node.index]
                 push!(edge_list, ij)
             end

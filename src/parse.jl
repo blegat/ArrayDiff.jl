@@ -119,20 +119,6 @@ function parse_expression(
     return
 end
 
-function parse_expression(
-    ::Model,
-    expr::Expression,
-    x::MOI.VariableIndex,
-    parent_index::Int,
-    broadcasted::Bool = false,
-)
-    push!(
-        expr.nodes,
-        Node(NODE_MOI_VARIABLE, x.value, parent_index, broadcasted),
-    )
-    return
-end
-
 function _parse_univariate_expression(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
