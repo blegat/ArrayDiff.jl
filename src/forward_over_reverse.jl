@@ -199,16 +199,16 @@ function _forward_eval_ϵ(
     for k in length(ex.nodes):-1:1
         node = ex.nodes[k]
         partials_storage_ϵ[k] = zero_ϵ
-        if node.type == Nonlinear.NODE_VARIABLE
+        if node.type == NODE_VARIABLE
             storage_ϵ[k] = x_values_ϵ[node.index]
-        elseif node.type == Nonlinear.NODE_VALUE
+        elseif node.type == NODE_VALUE
             storage_ϵ[k] = zero_ϵ
-        elseif node.type == Nonlinear.NODE_SUBEXPRESSION
+        elseif node.type == NODE_SUBEXPRESSION
             storage_ϵ[k] = subexpression_values_ϵ[node.index]
-        elseif node.type == Nonlinear.NODE_PARAMETER
+        elseif node.type == NODE_PARAMETER
             storage_ϵ[k] = zero_ϵ
         else
-            @assert node.type != Nonlinear.NODE_MOI_VARIABLE
+            @assert node.type != NODE_MOI_VARIABLE
             ϵtmp = zero_ϵ
             @inbounds children_idx = SparseArrays.nzrange(ex.adj, k)
             for c_idx in children_idx
@@ -223,7 +223,7 @@ function _forward_eval_ϵ(
                 ϵtmp += storage_val * ex.partials_storage[ix]
             end
             storage_ϵ[k] = ϵtmp
-            if node.type == Nonlinear.NODE_CALL_MULTIVARIATE
+            if node.type == NODE_CALL_MULTIVARIATE
                 # TODO(odow): consider how to refactor this into Nonlinear.
                 op = node.index
                 n_children = length(children_idx)
@@ -349,7 +349,7 @@ function _forward_eval_ϵ(
                         partials_storage_ϵ[i] = dual
                     end
                 end
-            elseif node.type == Nonlinear.NODE_CALL_UNIVARIATE
+            elseif node.type == NODE_CALL_UNIVARIATE
                 @inbounds child_idx = children_arr[ex.adj.colptr[k]]
                 f′′ = eval_univariate_hessian(
                     d.data.operators,
@@ -378,10 +378,10 @@ function _reverse_eval_ϵ(
         _reinterpret_unsafe(ForwardDiff.Partials{N,T}, ex.partials_storage_ϵ)
     @assert length(reverse_storage_ϵ) >= length(ex.nodes)
     @assert length(partials_storage_ϵ) >= length(ex.nodes)
-    if ex.nodes[1].type == Nonlinear.NODE_VARIABLE
+    if ex.nodes[1].type == NODE_VARIABLE
         @inbounds output_ϵ[ex.nodes[1].index] += scale_ϵ
         return
-    elseif ex.nodes[1].type == Nonlinear.NODE_SUBEXPRESSION
+    elseif ex.nodes[1].type == NODE_SUBEXPRESSION
         @inbounds subexpression_output[ex.nodes[1].index] +=
             scale * ex.reverse_storage[1]
         @inbounds subexpression_output_ϵ[ex.nodes[1].index] += scale_ϵ
@@ -390,10 +390,10 @@ function _reverse_eval_ϵ(
     reverse_storage_ϵ[1] = scale_ϵ
     for k in 2:length(ex.nodes)
         @inbounds node = ex.nodes[k]
-        if node.type == Nonlinear.NODE_VALUE ||
-           node.type == Nonlinear.NODE_LOGIC ||
-           node.type == Nonlinear.NODE_COMPARISON ||
-           node.type == Nonlinear.NODE_PARAMETER
+        if node.type == NODE_VALUE ||
+           node.type == NODE_LOGIC ||
+           node.type == NODE_COMPARISON ||
+           node.type == NODE_PARAMETER
             continue
         end
         parent_value = scale * ex.reverse_storage[node.parent]
@@ -407,9 +407,9 @@ function _reverse_eval_ϵ(
                 ex.partials_storage[k],
             )
         end
-        if node.type == Nonlinear.NODE_VARIABLE
+        if node.type == NODE_VARIABLE
             @inbounds output_ϵ[node.index] += reverse_storage_ϵ[k]
-        elseif node.type == Nonlinear.NODE_SUBEXPRESSION
+        elseif node.type == NODE_SUBEXPRESSION
             @inbounds subexpression_output[node.index] +=
                 scale * ex.reverse_storage[k]
             @inbounds subexpression_output_ϵ[node.index] += reverse_storage_ϵ[k]

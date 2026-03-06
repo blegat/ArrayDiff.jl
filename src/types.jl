@@ -4,50 +4,95 @@
 # Use of this source code is governed by an MIT-style license that can be found
 # in the LICENSE.md file or at https://opensource.org/licenses/MIT.
 
-struct _SubexpressionStorage
-    nodes::Vector{Nonlinear.Node}
-    adj::SparseArrays.SparseMatrixCSC{Bool,Int}
-    sizes::Sizes
-    const_values::Vector{Float64}
-    forward_storage::Vector{Float64}
-    partials_storage::Vector{Float64}
-    reverse_storage::Vector{Float64}
-    partials_storage_ϵ::Vector{Float64}
-    linearity::Linearity
-
-    function _SubexpressionStorage(
-        nodes::Vector{Nonlinear.Node},
-        adj::SparseArrays.SparseMatrixCSC{Bool,Int},
-        const_values::Vector{Float64},
-        partials_storage_ϵ::Vector{Float64},
-        linearity::Linearity,
-    )
-        sizes = _infer_sizes(nodes, adj)
-        N = _length(sizes)
-        return new(
-            nodes,
-            adj,
-            _infer_sizes(nodes, adj),
-            const_values,
-            zeros(N),  # forward_storage,
-            zeros(N),  # partials_storage,
-            zeros(N),  # reverse_storage,
-            partials_storage_ϵ,
-            linearity,
-        )
+"""
+    struct Expression
+        nodes::Vector{Node}
+        values::Vector{Float64}
     end
+
+The core type that represents a nonlinear expression. See the MathOptInterface
+documentation for information on how the nodes and values form an expression
+tree.
+"""
+struct Expression
+    nodes::Vector{Node}
+    values::Vector{Float64}
+    Expression() = new(Node[], Float64[])
+end
+
+function Base.:(==)(x::Expression, y::Expression)
+    return x.nodes == y.nodes && x.values == y.values
+end
+
+"""
+    struct Constraint
+        expression::Expression
+        set::Union{
+            MOI.LessThan{Float64},
+            MOI.GreaterThan{Float64},
+            MOI.EqualTo{Float64},
+            MOI.Interval{Float64},
+        }
+    end
+
+A type to hold information relating to the nonlinear constraint `f(x) in S`,
+where `f(x)` is defined by `.expression`, and `S` is `.set`.
+"""
+struct Constraint
+    expression::Expression
+    set::Union{
+        MOI.LessThan{Float64},
+        MOI.GreaterThan{Float64},
+        MOI.EqualTo{Float64},
+        MOI.Interval{Float64},
+    }
+end
+
+"""
+    ParameterIndex
+
+An index to a nonlinear parameter that is returned by [`add_parameter`](@ref).
+Given `data::Model` and `p::ParameterIndex`, use `data[p]` to retrieve
+the current value of the parameter and `data[p] = value` to set a new value.
+"""
+struct ParameterIndex
+    value::Int
+end
+
+"""
+    ExpressionIndex
+
+An index to a nonlinear expression that is returned by [`add_expression`](@ref).
+
+Given `data::Model` and `ex::ExpressionIndex`, use `data[ex]` to
+retrieve the corresponding [`Expression`](@ref).
+"""
+struct ExpressionIndex
+    value::Int
+end
+
+"""
+    ConstraintIndex
+
+An index to a nonlinear constraint that is returned by [`add_constraint`](@ref).
+
+Given `data::Model` and `c::ConstraintIndex`, use `data[c]` to
+retrieve the corresponding [`Constraint`](@ref).
+"""
+struct ConstraintIndex
+    value::Int
 end
 
 # We don't need to store the full vector of `linearity` but we return
 # it because it is needed in `compute_hessian_sparsity`.
 function _subexpression_and_linearity(
-    expr::Nonlinear.Expression,
+    expr::Expression,
     moi_index_to_consecutive_index,
     partials_storage_ϵ::Vector{Float64},
     d,
 )
     nodes = _replace_moi_variables(expr.nodes, moi_index_to_consecutive_index)
-    adj = Nonlinear.adjacency_matrix(nodes)
+    adj = adjacency_matrix(nodes)
     linearity = if d.want_hess
         _classify_linearity(nodes, adj, d.subexpression_linearity)
     else
@@ -148,12 +193,9 @@ It has the following fields:
  * `operators::OperatorRegistry` : stores the operators used in the model.
 """
 mutable struct Model
-    objective::Union{Nothing,MOI.Nonlinear.Expression}
-    expressions::Vector{MOI.Nonlinear.Expression}
-    constraints::OrderedDict{
-        MOI.Nonlinear.ConstraintIndex,
-        MOI.Nonlinear.Constraint,
-    }
+    objective::Union{Nothing,Expression}
+    expressions::Vector{Expression}
+    constraints::OrderedDict{ConstraintIndex,Constraint}
     parameters::Vector{Float64}
     operators::OperatorRegistry
     # This is a private field, used only to increment the ConstraintIndex.
@@ -161,11 +203,8 @@ mutable struct Model
     function Model()
         model = new(
             nothing,
-            MOI.Nonlinear.Expression[],
-            OrderedDict{
-                MOI.Nonlinear.ConstraintIndex,
-                MOI.Nonlinear.Constraint,
-            }(),
+            Expression[],
+            OrderedDict{ConstraintIndex,Constraint}(),
             Float64[],
             OperatorRegistry(),
             0,
@@ -181,7 +220,7 @@ mutable struct Evaluator{B} <: MOI.AbstractNLPEvaluator
     backend::B
     # ordered_constraints is needed because `OrderedDict` doesn't support
     # looking up a key by the linear index.
-    ordered_constraints::Vector{MOI.Nonlinear.ConstraintIndex}
+    ordered_constraints::Vector{ConstraintIndex}
     # Storage for the NLPBlockDual, so that we can query the dual of individual
     # constraints without needing to query the full vector each time.
     constraint_dual::Vector{Float64}

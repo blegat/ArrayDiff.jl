@@ -543,7 +543,7 @@ function test_linearity()
         model = ArrayDiff.Model()
         ex = ArrayDiff.add_expression(model, input)
         expr = model[ex]
-        adj = Nonlinear.adjacency_matrix(expr.nodes)
+        adj = ArrayDiff.adjacency_matrix(expr.nodes)
         nodes = ArrayDiff._replace_moi_variables(expr.nodes, variables)
         ret = ArrayDiff._classify_linearity(nodes, adj, ArrayDiff.Linearity[])
         @test ret[1] == test_value

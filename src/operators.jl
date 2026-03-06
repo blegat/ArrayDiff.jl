@@ -203,6 +203,19 @@ end
     return error("Invalid id for univariate operator: $id")
 end
 
+function _generate_eval_univariate_2nd_deriv()
+    exprs = map(
+        arg -> :(return value_deriv_and_second($(arg), x)[3]),
+        Nonlinear.DEFAULT_UNIVARIATE_OPERATORS,
+    )
+    return Nonlinear._create_binary_switch(1:length(exprs), exprs)
+end
+
+@eval @inline function _eval_univariate_2nd_deriv(id, x::T) where {T}
+    $(_generate_eval_univariate_2nd_deriv())
+    return error("Invalid id for univariate operator: $id")
+end
+
 function eval_multivariate_function(
     registry::OperatorRegistry,
     op::Symbol,

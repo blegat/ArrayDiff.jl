@@ -548,6 +548,67 @@ function test_objective_univariate_operator()
     return
 end
 
+function test_objective_broadcasted_product()
+    model = ArrayDiff.Model()
+    x1 = MOI.VariableIndex(1)
+    x2 = MOI.VariableIndex(2)
+    x3 = MOI.VariableIndex(3)
+    x4 = MOI.VariableIndex(4)
+    ArrayDiff.set_objective(model, :(norm([$x1, $x2] .* [$x3, $x4])))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
+    MOI.initialize(evaluator, [:Grad])
+    sizes = evaluator.backend.objective.expr.sizes
+    @test sizes.ndims == [0, 2, 1, 0, 0, 1, 0, 0]
+    @test sizes.size_offset == [0, 2, 1, 0, 0, 0, 0, 0]
+    @test sizes.size == [2, 2, 2, 1]
+    @test sizes.storage_offset == [0, 1, 3, 5, 6, 7, 9, 10, 11]
+    x1 = 1.0
+    x2 = 2.0
+    x3 = 3.0
+    x4 = 4.0
+    @test MOI.eval_objective(evaluator, [x1, x2, x3, x4]) == sqrt(3.0^2 + 8.0^2)
+    g = ones(4)
+    MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3, x4])
+    @test g == [9.0, 32.0, 3.0, 16.0] / sqrt(3.0^2 + 8.0^2)
+    return
+end
+
+function test_objective_broadcasted_matrix_product()
+    model = ArrayDiff.Model()
+    x1 = MOI.VariableIndex(1)
+    x2 = MOI.VariableIndex(2)
+    x3 = MOI.VariableIndex(3)
+    x4 = MOI.VariableIndex(4)
+    ArrayDiff.set_objective(
+        model,
+        :(norm([$x1 $x2; $x3 $x4] .* [$x1 $x2; $x3 $x4])),
+    )
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
+    MOI.initialize(evaluator, [:Grad])
+    sizes = evaluator.backend.objective.expr.sizes
+    @test sizes.ndims == [0, 2, 2, 2, 0, 0, 2, 0, 0, 2, 2, 0, 0, 2, 0, 0]
+    @test sizes.size_offset ==
+          [0, 12, 10, 8, 0, 0, 6, 0, 0, 4, 2, 0, 0, 0, 0, 0]
+    @test sizes.size == [1, 2, 1, 2, 2, 2, 1, 2, 1, 2, 2, 2, 2, 2]
+    @test sizes.storage_offset ==
+          [0, 1, 5, 9, 11, 12, 13, 15, 16, 17, 21, 23, 24, 25, 27, 28, 29]
+    x1 = 1.0
+    x2 = 2.0
+    x3 = 3.0
+    x4 = 4.0
+    @test MOI.eval_objective(evaluator, [x1, x2, x3, x4]) ==
+          sqrt(1.0^2 + 4.0^2 + 9.0^2 + 16.0^2)
+    g = ones(4)
+    MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3, x4])
+    @test g == [
+        2 * 1.0^3 / sqrt(354),
+        2 * 2.0^3 / sqrt(354),
+        2 * 3.0^3 / sqrt(354),
+        2 * 4.0^3 / sqrt(354),
+    ]
+    return
+end
+
 end  # module
 
 TestArrayDiff.runtests()
