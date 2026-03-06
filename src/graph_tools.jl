@@ -253,20 +253,20 @@ For functions like `+` or `-`, the result is `[]` since there are no nonlinear
 interactions between children.
 """
 function _get_nonlinear_child_interactions(
-    node::Nonlinear.Node,
+    node::Node,
     num_children::Int,
 )::Vector{Tuple{Int,Int}}
-    if node.type == Nonlinear.NODE_CALL_UNIVARIATE
+    if node.type == NODE_CALL_UNIVARIATE
         @assert num_children == 1
-        op = get(Nonlinear.DEFAULT_UNIVARIATE_OPERATORS, node.index, nothing)
+        op = get(DEFAULT_UNIVARIATE_OPERATORS, node.index, nothing)
         # Univariate operators :+ and :- don't create interactions
         if op in (:+, :-)
             return Tuple{Int,Int}[]
         else
             return [(1, 1)]
         end
-    elseif node.type == Nonlinear.NODE_CALL_MULTIVARIATE
-        op = get(Nonlinear.DEFAULT_MULTIVARIATE_OPERATORS, node.index, nothing)
+    elseif node.type == NODE_CALL_MULTIVARIATE
+        op = get(DEFAULT_MULTIVARIATE_OPERATORS, node.index, nothing)
         if op in (:+, :-, :ifelse, :min, :max)
             # No nonlinear interactions between children
             return Tuple{Int,Int}[]
