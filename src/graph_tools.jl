@@ -20,6 +20,9 @@ field, which should be interpreted as follows:
  * `NODE_VALUE`: the index into the `.values` field of `Expression`
  * `NODE_PARAMETER`: the index into `data.parameters`
  * `NODE_SUBEXPRESSION`:  the index into `data.expressions`
+ * `NODE_CALL_UNIVARIATE_BROADCASTED`: the index into `operators.univariate_operators`
+ * `NODE_CALL_MULTIVARIATE_BROADCASTED`: the index into `operators.multivariate_operators`
+ * `NODE_CALL_UNIVARIATE_REDUCE`: the index into `operators.univariate_operators`
 """
 @enum(
     NodeType,
@@ -42,6 +45,12 @@ field, which should be interpreted as follows:
     NODE_PARAMETER,
     # Index is into the list of subexpressions
     NODE_SUBEXPRESSION,
+    # Index into the univariate operators, with broadcasting
+    NODE_CALL_UNIVARIATE_BROADCASTED,
+    # Index into the multivariate operators, with broadcasting
+    NODE_CALL_MULTIVARIATE_BROADCASTED,
+    # Index into the univariate operators, with reduction
+    NODE_CALL_UNIVARIATE_REDUCE,
 )
 
 @enum(Linearity, CONSTANT, LINEAR, PIECEWISE_LINEAR, NONLINEAR)
@@ -63,7 +72,6 @@ struct Node
     type::NodeType
     index::Int
     parent::Int
-    broadcasted::Bool
 end
 
 """
@@ -87,7 +95,6 @@ function _replace_moi_variables(
                 NODE_VARIABLE,
                 moi_index_to_consecutive_index[MOI.VariableIndex(node.index)],
                 node.parent,
-                false,
             )
         else
             new_nodes[i] = node

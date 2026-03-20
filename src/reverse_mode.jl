@@ -175,15 +175,9 @@ function _forward_eval(
                         v2[j] = @j f.forward_storage[ix2]
                         @j f.partials_storage[ix1] = v2[j]
                     end
-                    if node.broadcasted
-                        for j in _eachindex(f.sizes, k)
-                            @j f.forward_storage[k] = v1[j] * v2[j]
-                        end
-                    else
-                        v_prod = v1 * v2
-                        for j in _eachindex(f.sizes, k)
-                            @j f.forward_storage[k] = v_prod[j]
-                        end
+                    v_prod = v1 * v2
+                    for j in _eachindex(f.sizes, k)
+                        @j f.forward_storage[k] = v_prod[j]
                     end
                     # Node `k` is scalar
                 else
@@ -382,6 +376,66 @@ function _forward_eval(
                     f.partials_storage[children_arr[i]] = ∇f[r]
                 end
             end
+        elseif node.type == NODE_CALL_MULTIVARIATE_BROADCASTED
+            children_indices = SparseArrays.nzrange(f.adj, k)
+            N = length(children_indices)
+            if node.index == node.index == 3 # :*
+                # Node `k` is not scalar, so we do matrix multiplication
+                if f.sizes.ndims[k] != 0
+                    @assert N == 2
+                    idx1 = first(children_indices)
+                    idx2 = last(children_indices)
+                    @inbounds ix1 = children_arr[idx1]
+                    @inbounds ix2 = children_arr[idx2]
+                    v1 = zeros(_size(f.sizes, ix1)...)
+                    v2 = zeros(_size(f.sizes, ix2)...)
+                    for j in _eachindex(f.sizes, ix1)
+                        v1[j] = @j f.forward_storage[ix1]
+                        @j f.partials_storage[ix2] = v1[j]
+                    end
+                    for j in _eachindex(f.sizes, ix2)
+                        v2[j] = @j f.forward_storage[ix2]
+                        @j f.partials_storage[ix1] = v2[j]
+                    end
+                    for j in _eachindex(f.sizes, k)
+                        @j f.forward_storage[k] = v1[j] * v2[j]
+                    end
+                    # Node `k` is scalar
+                else
+                    tmp_prod = one(T)
+                    for c_idx in children_indices
+                        @inbounds tmp_prod *=
+                            f.forward_storage[children_arr[c_idx]]
+                    end
+                    if tmp_prod == zero(T) || N <= 2
+                        # This is inefficient if there are a lot of children.
+                        # 2 is chosen as a limit because (x*y)/y does not always
+                        # equal x for floating-point numbers. This can produce
+                        # unexpected error in partials. There's still an error when
+                        # multiplying three or more terms, but users are less likely
+                        # to complain about it.
+                        for c_idx in children_indices
+                            prod_others = one(T)
+                            for c_idx2 in children_indices
+                                (c_idx == c_idx2) && continue
+                                ix = children_arr[c_idx2]
+                                prod_others *= f.forward_storage[ix]
+                            end
+                            f.partials_storage[children_arr[c_idx]] =
+                                prod_others
+                        end
+                    else
+                        # Compute all-minus-one partial derivatives by dividing from
+                        # the total product.
+                        for c_idx in children_indices
+                            ix = children_arr[c_idx]
+                            f.partials_storage[ix] =
+                                tmp_prod / f.forward_storage[ix]
+                        end
+                    end
+                    @inbounds f.forward_storage[k] = tmp_prod
+                end
+            end
         elseif node.type == NODE_CALL_UNIVARIATE
             child_idx = children_arr[f.adj.colptr[k]]
             if node.index == 1 # :+
@@ -483,26 +537,13 @@ function _reverse_eval(f::_SubexpressionStorage)
                         for j in _eachindex(f.sizes, k)
                             rev_parent[j] = @j f.reverse_storage[k]
                         end
-                        if node.broadcasted
-                            rev_v1 = zeros(_size(f.sizes, ix1)...)
-                            rev_v2 = zeros(_size(f.sizes, ix2)...)
-                            for j in _eachindex(f.sizes, ix1)
-                                rev_v1[j] = rev_parent[j] * v2[j]
-                                @j f.reverse_storage[ix1] = rev_v1[j]
-                            end
-                            for j in _eachindex(f.sizes, ix2)
-                                rev_v2[j] = rev_parent[j] * v1[j]
-                                @j f.reverse_storage[ix2] = rev_v2[j]
-                            end
-                        else
-                            rev_v1 = rev_parent * v2'
-                            rev_v2 = v1' * rev_parent
-                            for j in _eachindex(f.sizes, ix1)
-                                @j f.reverse_storage[ix1] = rev_v1[j]
-                            end
-                            for j in _eachindex(f.sizes, ix2)
-                                @j f.reverse_storage[ix2] = rev_v2[j]
-                            end
+                        rev_v1 = rev_parent * v2'
+                        rev_v2 = v1' * rev_parent
+                        for j in _eachindex(f.sizes, ix1)
+                            @j f.reverse_storage[ix1] = rev_v1[j]
+                        end
+                        for j in _eachindex(f.sizes, ix2)
+                            @j f.reverse_storage[ix2] = rev_v2[j]
                         end
                         continue
                     end
@@ -677,6 +718,42 @@ function _reverse_eval(f::_SubexpressionStorage)
                         @s f.reverse_storage[ix] = rev_parent_j
                     end
                     continue
+                end
+            end
+        elseif node.type == NODE_CALL_MULTIVARIATE_BROADCASTED
+            if node.index in eachindex(DEFAULT_MULTIVARIATE_OPERATORS)
+                op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
+                if op == :*
+                    if f.sizes.ndims[k] != 0
+                        # Node `k` is not scalar, so we do matrix multiplication or broadcasted multiplication
+                        idx1 = first(children_indices)
+                        idx2 = last(children_indices)
+                        ix1 = children_arr[idx1]
+                        ix2 = children_arr[idx2]
+                        v1 = zeros(_size(f.sizes, ix1)...)
+                        v2 = zeros(_size(f.sizes, ix2)...)
+                        for j in _eachindex(f.sizes, ix1)
+                            v1[j] = @j f.forward_storage[ix1]
+                        end
+                        for j in _eachindex(f.sizes, ix2)
+                            v2[j] = @j f.forward_storage[ix2]
+                        end
+                        rev_parent = zeros(_size(f.sizes, k)...)
+                        for j in _eachindex(f.sizes, k)
+                            rev_parent[j] = @j f.reverse_storage[k]
+                        end
+                        rev_v1 = zeros(_size(f.sizes, ix1)...)
+                        rev_v2 = zeros(_size(f.sizes, ix2)...)
+                        for j in _eachindex(f.sizes, ix1)
+                            rev_v1[j] = rev_parent[j] * v2[j]
+                            @j f.reverse_storage[ix1] = rev_v1[j]
+                        end
+                        for j in _eachindex(f.sizes, ix2)
+                            rev_v2[j] = rev_parent[j] * v1[j]
+                            @j f.reverse_storage[ix2] = rev_v2[j]
+                        end
+                        continue
+                    end
                 end
             end
         elseif node.type != NODE_CALL_UNIVARIATE
