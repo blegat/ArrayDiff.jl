@@ -172,6 +172,7 @@ struct _FunctionStorage{R<:SMC.AbstractColoringResult}
                 grad_sparsity,
                 Int[],
                 Int[],
+                Int[],
                 nothing,
                 Array{Float64}(undef, 0, 0),
                 dependent_subexpressions,
