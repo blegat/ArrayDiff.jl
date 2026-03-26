@@ -71,7 +71,6 @@ function _hessian_color_preprocess(
 
     # Perform coloring using SMC
     problem = SMC.ColoringProblem(; structure = :symmetric, partition = :column)
-    display(S)
     tree_result = SMC.coloring(S, problem, algo)
 
     # Wrap result with local_indices

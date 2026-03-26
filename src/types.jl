@@ -189,6 +189,7 @@ struct _FunctionStorage{
                 grad_sparsity,
                 Int[],
                 Int[],
+                Int[],
                 nothing,
                 Array{T}(undef, 0, 0),
                 dependent_subexpressions,
