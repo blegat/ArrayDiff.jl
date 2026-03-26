@@ -5,23 +5,23 @@ authors = ["Sophie Lequeu <slequeu@hotmail.com>", "Benoît Legat <benoit.legat@g
 
 [deps]
 Calculus = "49dc2e85-a5d0-5ad3-a950-438e2897f1b9"
-DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
 MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 NaNMath = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+SparseMatrixColorings = "0a514795-09f3-496d-8182-132a7b665d35"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 
 [compat]
 Calculus = "0.5.2"
-DataStructures = "0.18, 0.19"
 ForwardDiff = "1"
 JuMP = "1.29.4"
 MathOptInterface = "1.40"
 NaNMath = "1"
 OrderedCollections = "1.8.1"
 SparseArrays = "1.10"
+SparseMatrixColorings = "0.4.26"
 SpecialFunctions = "2.6.1"
 julia = "1.10"
