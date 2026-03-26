@@ -4,17 +4,25 @@
 # Use of this source code is governed by an MIT-style license that can be found
 # in the LICENSE.md file or at https://opensource.org/licenses/MIT.
 
+
 """
     struct ColoringResult
-        result::SMC.TreeSetColoringResult
+        result::SMC.AbstractColoringResult
         local_indices::Vector{Int}  # map from local to global indices
+        full_colptr::Vector{Int}    # colptr of the full symmetric matrix used for coloring
+        lower_pos::Vector{Int}      # positions of lower-triangular entries in the full nzval
+        full_buffer::Vector{Float64} # pre-allocated buffer of size nnz(full symmetric matrix)
     end
 
-Wrapper around TreeSetColoringResult that also stores local_indices mapping.
+Wrapper around AbstractColoringResult that also stores auxiliary data needed
+for Hessian recovery from a full symmetric matrix decompression.
 """
 struct ColoringResult{R<:SMC.AbstractColoringResult}
     result::R
-    local_indices::Vector{Int}  # map from local to global indices
+    local_indices::Vector{Int}   # map from local to global indices
+    full_colptr::Vector{Int}     # colptr of full symmetric matrix used for coloring
+    lower_pos::Vector{Int}       # positions of lower-triangular entries in full nzval
+    full_buffer::Vector{Float64} # scratch buffer of length nnz(full symmetric matrix)
 end
 
 """
@@ -28,9 +36,9 @@ end
 `edgelist` contains the nonzeros in the Hessian, *including* nonzeros on the
 diagonal.
 
-Returns `(I, J, result)` where `I` and `J` are the row and column indices
-of the Hessian structure, and `result` is a `TreeSetColoringResult` from
-SparseMatrixColorings.
+Returns `(colptr, I, J, result)` where `colptr`, `I` and `J` define the lower
+triangular CSC sparsity structure of the Hessian (in global variable indices),
+and `result` is a `ColoringResult` wrapping an SMC coloring result.
 """
 function _hessian_color_preprocess(
     edgelist,
@@ -39,15 +47,15 @@ function _hessian_color_preprocess(
     seen_idx = MOI.Nonlinear.Coloring.IndexedSet(0),
 )
     resize!(seen_idx, num_total_var)
-    I, J = Int[], Int[]
-    for (i, j) in edgelist
-        push!(seen_idx, i)
-        push!(seen_idx, j)
-        push!(I, i)
-        push!(J, j)
-        if i != j
-            push!(I, j)
-            push!(J, i)
+    # Collect off-diagonal lower-triangular entries (local coords, filled later)
+    I_off, J_off = Int[], Int[]
+    for (ei, ej) in edgelist
+        push!(seen_idx, ei)
+        push!(seen_idx, ej)
+        if ei != ej
+            # Store in lower triangular format: row > col
+            push!(I_off, max(ei, ej))
+            push!(J_off, min(ei, ej))
         end
     end
     local_indices = sort!(collect(seen_idx))
@@ -57,32 +65,58 @@ function _hessian_color_preprocess(
     for k in eachindex(local_indices)
         global_to_local_idx[local_indices[k]] = k
     end
-    # only do the coloring on the local indices
-    for k in eachindex(I)
-        I[k] = global_to_local_idx[I[k]]
-        J[k] = global_to_local_idx[J[k]]
+    # Map off-diagonal entries to local indices
+    for k in eachindex(I_off)
+        I_off[k] = global_to_local_idx[I_off[k]]
+        J_off[k] = global_to_local_idx[J_off[k]]
     end
 
-    # Create sparsity pattern matrix
     n = length(local_indices)
-    S = SMC.SparsityPatternCSC(
-        SparseArrays.sparse(I, J, trues(length(I)), n, n, &),
-    )
 
-    # Perform coloring using SMC
+    # Build full symmetric matrix: both (i,j) and (j,i) for off-diagonal, plus diagonal
+    I_full, J_full = Int[], Int[]
+    for k in eachindex(I_off)
+        push!(I_full, I_off[k]); push!(J_full, J_off[k])  # lower
+        push!(I_full, J_off[k]); push!(J_full, I_off[k])  # upper (transpose)
+    end
+    for k in 1:n
+        push!(I_full, k); push!(J_full, k)  # diagonal
+    end
+    mat_sym = SparseArrays.sparse(I_full, J_full, trues(length(I_full)), n, n, |)
+
+    # Perform coloring on full symmetric matrix
+    S = SMC.SparsityPatternCSC(mat_sym)
     problem = SMC.ColoringProblem(; structure = :symmetric, partition = :column)
-    display(S)
     tree_result = SMC.coloring(S, problem, algo)
 
-    # Wrap result with local_indices
-    result = ColoringResult(tree_result, local_indices)
+    # Find positions of lower-triangular entries within the full CSC nzval array.
+    # findnz on a CSC matrix returns elements in CSC (column-major) order,
+    # matching the nzval layout exactly.
+    I_nz, J_nz, _ = SparseArrays.findnz(mat_sym)
+    lower_pos = findall(k -> I_nz[k] >= J_nz[k], eachindex(I_nz))
 
-    # SparseMatrixColorings assumes that `I` and `J` are CSC-ordered
-    B = SMC.compress(S, tree_result)
-    C = SMC.decompress(B, tree_result)
-    I_sorted, J_sorted = SparseArrays.findnz(C)
+    # Lower-triangular CSC-ordered local indices
+    I_low_csc = I_nz[lower_pos]
+    J_low_csc = J_nz[lower_pos]
 
-    return C.colptr, I_sorted, J_sorted, result
+    # Map back to global indices for the returned hess_I / hess_J
+    I_global = [local_indices[i] for i in I_low_csc]
+    J_global = [local_indices[j] for j in J_low_csc]
+
+    # Build lower-triangular sparse matrix to obtain its colptr
+    mat_low = SparseArrays.sparse(I_low_csc, J_low_csc, trues(length(I_low_csc)), n, n, |)
+
+    full_buffer = Vector{Float64}(undef, SparseArrays.nnz(mat_sym))
+
+    result = ColoringResult(
+        tree_result,
+        local_indices,
+        copy(mat_sym.colptr),
+        lower_pos,
+        full_buffer,
+    )
+
+    return copy(mat_low.colptr), I_global, J_global, result
 end
 
 """
@@ -126,7 +160,7 @@ end
 
 Recover the Hessian values from the Hessian-matrix product H*R_seed.
 R is the result of H*R_seed where R_seed is the seed matrix.
-`stored_values` is a temporary vector.
+`stored_values` is a temporary vector (unused, kept for API compatibility).
 """
 function _recover_from_matmat!(
     colptr::AbstractVector,
@@ -135,6 +169,10 @@ function _recover_from_matmat!(
     result::ColoringResult,
     stored_values::AbstractVector{T},
 ) where {T}
-    SMC.decompress_csc!(V, colptr, R, result.result, :U)
+    # Decompress into the full symmetric buffer, then extract lower-triangular values.
+    SMC.decompress_csc!(result.full_buffer, result.full_colptr, R, result.result, :F)
+    for k in eachindex(V)
+        V[k] = result.full_buffer[result.lower_pos[k]]
+    end
     return
 end
