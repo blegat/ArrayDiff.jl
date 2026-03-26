@@ -103,15 +103,15 @@ function test_objective_quadratic_multivariate()
     g = [NaN, NaN]
     MOI.eval_objective_gradient(evaluator, g, [1.2, 2.3])
     @test g == [2 * 1.2 + 2.3, 1.2 + 2 * 2.3]
-    @test MOI.hessian_objective_structure(evaluator) == [(1, 1), (2, 2), (2, 1)]
+    @test MOI.hessian_objective_structure(evaluator) == [(1, 1), (2, 1), (2, 2)]
     H = [NaN, NaN, NaN]
     MOI.eval_hessian_objective(evaluator, H, [1.2, 2.3])
-    @test H == [2.0, 2.0, 1.0]
+    @test H == [2.0, 1.0, 2.0]
     @test MOI.hessian_lagrangian_structure(evaluator) ==
-          [(1, 1), (2, 2), (2, 1)]
+          [(1, 1), (2, 1), (2, 2)]
     H = [NaN, NaN, NaN]
     MOI.eval_hessian_lagrangian(evaluator, H, [1.2, 2.3], 1.5, Float64[])
-    @test H == 1.5 .* [2.0, 2.0, 1.0]
+    @test H == 1.5 .* [2.0, 1.0, 2.0]
     v = [0.3, 0.4]
     hv = [NaN, NaN]
     MOI.eval_hessian_lagrangian_product(
@@ -143,19 +143,19 @@ function test_objective_quadratic_multivariate_subexpressions()
     MOI.eval_objective_gradient(evaluator, g, val)
     @test g == [2 * 1.2 + 2.3, 1.2 + 2 * 2.3]
     @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, val)
-    @test MOI.hessian_objective_structure(evaluator) == [(1, 1), (2, 2), (2, 1)]
+    @test MOI.hessian_objective_structure(evaluator) == [(1, 1), (2, 1), (2, 2)]
     H = [NaN, NaN, NaN]
     MOI.eval_hessian_objective(evaluator, H, val)
-    @test H == [2.0, 2.0, 1.0]
+    @test H == [2.0, 1.0, 2.0]
     @test evaluator.backend.max_chunk == 2
     @test 0 == @allocated MOI.eval_hessian_objective(evaluator, H, val)
     @test MOI.hessian_lagrangian_structure(evaluator) ==
-          [(1, 1), (2, 2), (2, 1)]
+          [(1, 1), (2, 1), (2, 2)]
     H = [NaN, NaN, NaN]
     μ = Float64[]
     MOI.eval_hessian_lagrangian(evaluator, H, val, 1.5, μ)
     @test 0 == @allocated MOI.eval_hessian_lagrangian(evaluator, H, val, 1.5, μ)
-    @test H == 1.5 .* [2.0, 2.0, 1.0]
+    @test H == 1.5 .* [2.0, 1.0, 2.0]
     v = [0.3, 0.4]
     hv = [NaN, NaN]
     MOI.eval_hessian_lagrangian_product(evaluator, hv, val, v, 1.5, μ)
@@ -276,10 +276,10 @@ function test_constraint_quadratic_multivariate()
     MOI.eval_constraint_jacobian(evaluator, J, x_val)
     @test J == [2 * x_val[1] + x_val[2], x_val[1] + 2 * x_val[2]]
     @test MOI.hessian_lagrangian_structure(evaluator) ==
-          [(1, 1), (2, 2), (2, 1)]
+          [(1, 1), (2, 1), (2, 2)]
     H = [NaN, NaN, NaN]
     MOI.eval_hessian_lagrangian(evaluator, H, x_val, 0.0, [1.5])
-    @test H == 1.5 .* [2.0, 2.0, 1.0]
+    @test H == 1.5 .* [2.0, 1.0, 2.0]
     return
 end
 
@@ -313,10 +313,10 @@ function test_constraint_quadratic_multivariate_subexpressions()
     @test y ≈ wJ[:]
     # Hessian-Lagrangian
     @test MOI.hessian_lagrangian_structure(evaluator) ==
-          [(1, 1), (2, 2), (2, 1)]
+          [(1, 1), (2, 1), (2, 2)]
     H = [NaN, NaN, NaN]
     MOI.eval_hessian_lagrangian(evaluator, H, x_val, 0.0, [1.5])
-    @test H ≈ 1.5 .* [2.0, 2.0, 1.0]
+    @test H ≈ 1.5 .* [2.0, 1.0, 2.0]
     return
 end
 
@@ -342,10 +342,10 @@ function test_hessian_sparsity_registered_function()
     @test :Hess in ArrayDiff.features_available(evaluator)
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.hessian_lagrangian_structure(evaluator) ==
-          [(1, 1), (2, 2), (3, 3), (3, 1)]
+          [(1, 1), (3, 1), (2, 2), (3, 3)]
     H = fill(NaN, 4)
     MOI.eval_hessian_lagrangian(evaluator, H, rand(3), 1.5, Float64[])
-    @test H == 1.5 .* [2.0, 2.0, 2.0, 0.0]
+    @test H == 1.5 .* [2.0, 0.0, 2.0, 2.0]
     return
 end
 
@@ -372,10 +372,10 @@ function test_hessian_sparsity_registered_rosenbrock()
     @test :Hess in ArrayDiff.features_available(evaluator)
     MOI.initialize(evaluator, [:Grad, :Jac, :Hess])
     @test MOI.hessian_lagrangian_structure(evaluator) ==
-          [(1, 1), (2, 2), (2, 1)]
+          [(1, 1), (2, 1), (2, 2)]
     H = fill(NaN, 3)
     MOI.eval_hessian_lagrangian(evaluator, H, [1.0, 1.0], 1.5, Float64[])
-    @test H == 1.5 .* [802.0, 200.0, -400.0]
+    @test H == 1.5 .* [802.0, -400.0, 200.0]
     return
 end
 
