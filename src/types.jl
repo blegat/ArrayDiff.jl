@@ -370,12 +370,10 @@ mutable struct NLPEvaluator{
         problem =
             SMC.ColoringProblem(; structure = :symmetric, partition = :column)
         C = typeof(coloring_algorithm)
-        R = Base.promote_op(
-            SMC.coloring,
-            SMC.SparsityPatternCSC{Int},
-            typeof(problem),
-            C,
+        _S = SMC.SparsityPatternCSC(
+            SparseArrays.sparse([1], [1], Bool[true], 1, 1),
         )
+        R = typeof(SMC.coloring(_S, problem, coloring_algorithm))
         return new{T,S,R,C}(data, ordered_variables, coloring_algorithm)
     end
 end
