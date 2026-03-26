@@ -78,10 +78,12 @@ function _hessian_color_preprocess(
     # Wrap result with local_indices
     result = ColoringResult(tree_result, local_indices)
 
-    # Get CSC-ordered indices directly from the sparse matrix
-    I_sorted, J_sorted, _ = SparseArrays.findnz(mat)
+    # Get CSC-ordered indices from the sparse matrix, then map back to global
+    I_local, J_local, _ = SparseArrays.findnz(mat)
+    I_global = [local_indices[i] for i in I_local]
+    J_global = [local_indices[j] for j in J_local]
 
-    return copy(mat.colptr), I_sorted, J_sorted, result
+    return copy(mat.colptr), I_global, J_global, result
 end
 
 """
