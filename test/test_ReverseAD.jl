@@ -426,13 +426,13 @@ function test_coloring_end_to_end_hessian_coloring_and_recovery()
     R = ArrayDiff._seed_matrix(rinfo)
     ArrayDiff._prepare_seed_matrix!(R, rinfo)
     @test I == [1, 2, 2]
-    @test J == [1, 2, 1]
+    @test J == [1, 1, 2]
     @test R == [1.0 0.0; 0.0 1.0]
     hess = [3.4 2.1; 2.1 1.3]
     matmat = hess * R
     V = zeros(3)
     ArrayDiff._recover_from_matmat!(colptr, V, matmat, rinfo, zeros(3))
-    @test V == [3.4, 1.3, 2.1]
+    @test V == [3.4, 2.1, 1.3]
     return
 end
 

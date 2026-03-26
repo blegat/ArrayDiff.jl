@@ -40,15 +40,12 @@ function _hessian_color_preprocess(
 )
     resize!(seen_idx, num_total_var)
     I, J = Int[], Int[]
-    for (i, j) in edgelist
-        push!(seen_idx, i)
-        push!(seen_idx, j)
-        push!(I, i)
-        push!(J, j)
-        if i != j
-            push!(I, j)
-            push!(J, i)
-        end
+    for (ei, ej) in edgelist
+        push!(seen_idx, ei)
+        push!(seen_idx, ej)
+        # Store in lower triangular format: row >= col
+        push!(I, max(ei, ej))
+        push!(J, min(ei, ej))
     end
     local_indices = sort!(collect(seen_idx))
     empty!(seen_idx)
@@ -63,11 +60,16 @@ function _hessian_color_preprocess(
         J[k] = global_to_local_idx[J[k]]
     end
 
-    # Create sparsity pattern matrix
     n = length(local_indices)
-    S = SMC.SparsityPatternCSC(
-        SparseArrays.sparse(I, J, trues(length(I)), n, n, &),
-    )
+    # Always include diagonal entries (needed for Hessian recovery)
+    for k in 1:n
+        push!(I, k)
+        push!(J, k)
+    end
+
+    # Create lower triangular sparsity pattern (including diagonal)
+    mat = SparseArrays.sparse(I, J, trues(length(I)), n, n, |)
+    S = SMC.SparsityPatternCSC(mat)
 
     # Perform coloring using SMC
     problem = SMC.ColoringProblem(; structure = :symmetric, partition = :column)
@@ -76,12 +78,10 @@ function _hessian_color_preprocess(
     # Wrap result with local_indices
     result = ColoringResult(tree_result, local_indices)
 
-    # SparseMatrixColorings assumes that `I` and `J` are CSC-ordered
-    B = SMC.compress(S, tree_result)
-    C = SMC.decompress(B, tree_result)
-    I_sorted, J_sorted = SparseArrays.findnz(C)
+    # Get CSC-ordered indices directly from the sparse matrix
+    I_sorted, J_sorted, _ = SparseArrays.findnz(mat)
 
-    return C.colptr, I_sorted, J_sorted, result
+    return copy(mat.colptr), I_sorted, J_sorted, result
 end
 
 """
@@ -134,6 +134,6 @@ function _recover_from_matmat!(
     result::ColoringResult,
     stored_values::AbstractVector{T},
 ) where {T}
-    SMC.decompress_csc!(V, colptr, R, result.result, :U)
+    SMC.decompress_csc!(V, colptr, R, result.result, :L)
     return
 end
