@@ -459,6 +459,31 @@ function _forward_eval(
                 f.forward_storage[k] = ret_f
                 f.partials_storage[child_idx] = ret_f′
             end
+        elseif node.type == NODE_CALL_UNIVARIATE_BROADCASTED
+            child_idx = children_arr[f.adj.colptr[k]]
+            if node.index == 1 # :+
+                for j in _eachindex(f.sizes, k)
+                    @j f.partials_storage[child_idx] = one(T)
+                    val = @j f.forward_storage[child_idx]
+                    @j f.forward_storage[k] = val
+                end
+            elseif node.index == 2 # :-
+                for j in _eachindex(f.sizes, k)
+                    @j f.partials_storage[child_idx] = -one(T)
+                    val = @j f.forward_storage[child_idx]
+                    @j f.forward_storage[k] = -val
+                end
+            else
+                for j in _eachindex(f.sizes, k)
+                    ret_f, ret_f′ = eval_univariate_function_and_gradient(
+                        operators,
+                        node.index,
+                        @j f.forward_storage[child_idx]
+                    )
+                    @j f.forward_storage[k] = ret_f
+                    @j f.partials_storage[child_idx] = ret_f′
+                end
+            end
         elseif node.type == NODE_COMPARISON
             children_idx = SparseArrays.nzrange(f.adj, k)
             result = true
@@ -756,7 +781,7 @@ function _reverse_eval(f::_SubexpressionStorage)
                     end
                 end
             end
-        elseif node.type != NODE_CALL_UNIVARIATE
+        elseif node.type != NODE_CALL_UNIVARIATE && node.type != NODE_CALL_UNIVARIATE_BROADCASTED
             continue
         end
         # Node `k` has same size as its children.

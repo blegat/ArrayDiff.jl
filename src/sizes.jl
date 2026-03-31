@@ -339,6 +339,17 @@ function _infer_sizes(
                     op,
                 )
             end
+        elseif node.type == NODE_CALL_UNIVARIATE_BROADCASTED
+            if !(
+                node.index in
+                eachindex(MOI.Nonlinear.DEFAULT_UNIVARIATE_OPERATORS)
+            )
+                # TODO user-defined operators
+                continue
+            end
+            @assert N == 1
+            op = MOI.Nonlinear.DEFAULT_UNIVARIATE_OPERATORS[node.index]
+            _copy_size!(sizes, k, children_arr[first(children_indices)])
         end
     end
     for k in eachindex(nodes)

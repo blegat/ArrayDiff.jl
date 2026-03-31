@@ -12,10 +12,8 @@ function _parse_multivariate_expression(
     broadcasted = false
     # if first char of x is a dot, then it is broadcasted and we should look up the operator without the dot
     if x.args[1] isa Symbol && startswith(string(x.args[1]), ".")
-        println("Found a broadcasted operator: ", x.args[1])
         x = Expr(:call, Symbol(string(x.args[1])[2:end]), x.args[2:end]...)
         broadcasted = true
-        println("Deleted the dot, now looking for operator: ", x.args[1])
     end
     id = get(data.operators.multivariate_operator_to_id, x.args[1], nothing)
     if id === nothing
@@ -112,14 +110,15 @@ function _parse_univariate_expression(
     x::Expr,
     parent_index::Int,
 )
-    @assert Meta.isexpr(x, :call, 2)
+    @assert Meta.isexpr(x, :call, 2) || Meta.isexpr(x, :., 2)
     broadcasted = false
+    if Meta.isexpr(x, :.)
+        broadcasted = true
+    end
     # if first char of x is a dot, then it is broadcasted and we should look up the operator without the dot
     if x.args[1] isa Symbol && startswith(string(x.args[1]), ".")
-        println("Found a broadcasted operator: ", x.args[1])
         x = Expr(:call, Symbol(string(x.args[1])[2:end]), x.args[2:end]...)
         broadcasted = true
-        println("Deleted the dot, now looking for operator: ", x.args[1])
     end
     id = get(data.operators.univariate_operator_to_id, x.args[1], nothing)
     if id === nothing
@@ -167,6 +166,9 @@ function _parse_expression(stack, data, expr, x, parent_index)
             # Punt to multivariate and try to recover later.
             _parse_multivariate_expression(stack, data, expr, x, parent_index)
         end
+    elseif Meta.isexpr(x, :.)
+        # This is a special case for handling univariate broadcasted operators
+        _parse_univariate_expression(stack, data, expr, x, parent_index)
     elseif Meta.isexpr(x, :comparison)
         _parse_comparison_expression(stack, data, expr, x, parent_index)
     elseif Meta.isexpr(x, :...)
@@ -187,6 +189,8 @@ function _parse_expression(stack, data, expr, x, parent_index)
         _parse_vcat_expression(stack, data, expr, x, parent_index)
     elseif Meta.isexpr(x, :row)
         _parse_row_expression(stack, data, expr, x, parent_index)
+    elseif Meta.isexpr(x, :tuple) && length(x.args) == 1
+        push!(stack, (parent_index, x.args[1]))
     else
         error("Unsupported expression: $x")
     end
