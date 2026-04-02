@@ -344,7 +344,7 @@ function _infer_sizes(
                 node.index in
                 eachindex(MOI.Nonlinear.DEFAULT_UNIVARIATE_OPERATORS)
             )
-                # TODO user-defined operators
+                error("TODO user-defined operators")
                 continue
             end
             @assert N == 1
