@@ -4,7 +4,6 @@
 # Use of this source code is governed by an MIT-style license that can be found
 # in the LICENSE.md file or at https://opensource.org/licenses/MIT.
 
-
 """
     struct ColoringResult
         result::SMC.AbstractColoringResult
@@ -76,13 +75,17 @@ function _hessian_color_preprocess(
     # Build full symmetric matrix: both (i,j) and (j,i) for off-diagonal, plus diagonal
     I_full, J_full = Int[], Int[]
     for k in eachindex(I_off)
-        push!(I_full, I_off[k]); push!(J_full, J_off[k])  # lower
-        push!(I_full, J_off[k]); push!(J_full, I_off[k])  # upper (transpose)
+        push!(I_full, I_off[k]);
+        push!(J_full, J_off[k])  # lower
+        push!(I_full, J_off[k]);
+        push!(J_full, I_off[k])  # upper (transpose)
     end
     for k in 1:n
-        push!(I_full, k); push!(J_full, k)  # diagonal
+        push!(I_full, k);
+        push!(J_full, k)  # diagonal
     end
-    mat_sym = SparseArrays.sparse(I_full, J_full, trues(length(I_full)), n, n, |)
+    mat_sym =
+        SparseArrays.sparse(I_full, J_full, trues(length(I_full)), n, n, |)
 
     # Perform coloring on full symmetric matrix
     S = SMC.SparsityPatternCSC(mat_sym)
@@ -104,7 +107,14 @@ function _hessian_color_preprocess(
     J_global = [local_indices[j] for j in J_low_csc]
 
     # Build lower-triangular sparse matrix to obtain its colptr
-    mat_low = SparseArrays.sparse(I_low_csc, J_low_csc, trues(length(I_low_csc)), n, n, |)
+    mat_low = SparseArrays.sparse(
+        I_low_csc,
+        J_low_csc,
+        trues(length(I_low_csc)),
+        n,
+        n,
+        |,
+    )
 
     full_buffer = Vector{Float64}(undef, SparseArrays.nnz(mat_sym))
 
@@ -170,7 +180,13 @@ function _recover_from_matmat!(
     stored_values::AbstractVector{T},
 ) where {T}
     # Decompress into the full symmetric buffer, then extract lower-triangular values.
-    SMC.decompress_csc!(result.full_buffer, result.full_colptr, R, result.result, :F)
+    SMC.decompress_csc!(
+        result.full_buffer,
+        result.full_colptr,
+        R,
+        result.result,
+        :F,
+    )
     for k in eachindex(V)
         V[k] = result.full_buffer[result.lower_pos[k]]
     end
