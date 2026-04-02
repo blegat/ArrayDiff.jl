@@ -22,7 +22,7 @@ field, which should be interpreted as follows:
  * `NODE_SUBEXPRESSION`:  the index into `data.expressions`
  * `NODE_CALL_UNIVARIATE_BROADCASTED`: the index into `operators.univariate_operators`
  * `NODE_CALL_MULTIVARIATE_BROADCASTED`: the index into `operators.multivariate_operators`
- * `NODE_CALL_UNIVARIATE_REDUCE`: the index into `operators.univariate_operators`
+ * `NODE_CALL_REDUCE`: the index into `operators.multivariate_operators`
 """
 @enum(
     NodeType,
@@ -49,8 +49,8 @@ field, which should be interpreted as follows:
     NODE_CALL_UNIVARIATE_BROADCASTED,
     # Index into the multivariate operators, with broadcasting
     NODE_CALL_MULTIVARIATE_BROADCASTED,
-    # Index into the univariate operators, with reduction
-    NODE_CALL_UNIVARIATE_REDUCE,
+    # Index into the multivariate operators, with reduction
+    NODE_CALL_REDUCE,
 )
 
 @enum(Linearity, CONSTANT, LINEAR, PIECEWISE_LINEAR, NONLINEAR)
