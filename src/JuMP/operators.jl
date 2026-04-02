@@ -28,3 +28,26 @@ end
 function Base.broadcasted(op::Function, x::AbstractJuMPArray)
     return _broadcast(JuMP.variable_ref_type(x), op, x)
 end
+
+function Base.broadcasted(op::Function, x::AbstractJuMPArray, y::AbstractArray)
+    return _broadcast(JuMP.variable_ref_type(x), op, x, y)
+end
+
+function Base.broadcasted(op::Function, x::AbstractArray, y::AbstractJuMPArray)
+    return _broadcast(JuMP.variable_ref_type(y), op, x, y)
+end
+
+function Base.broadcasted(
+    op::Function,
+    x::AbstractJuMPArray,
+    y::AbstractJuMPArray,
+)
+    return _broadcast(JuMP.variable_ref_type(x), op, x, y)
+end
+
+import LinearAlgebra
+
+function LinearAlgebra.norm(x::AbstractJuMPArray)
+    V = JuMP.variable_ref_type(x)
+    return JuMP.GenericNonlinearExpr{V}(:norm, Any[x])
+end

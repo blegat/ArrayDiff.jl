@@ -19,4 +19,4 @@ end
 
 Base.size(expr::GenericArrayExpr) = expr.size
 
-JuMP.variable_ref_type(::Type{GenericMatrixExpr{V}}) where {V} = V
+JuMP.variable_ref_type(::Type{GenericArrayExpr{V,N}}) where {V,N} = V
