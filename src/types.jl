@@ -172,6 +172,7 @@ struct _FunctionStorage{R<:SMC.AbstractColoringResult}
                 grad_sparsity,
                 Int[],
                 Int[],
+                Int[],
                 nothing,
                 Array{Float64}(undef, 0, 0),
                 dependent_subexpressions,
@@ -340,12 +341,10 @@ mutable struct NLPEvaluator{R,C<:SMC.GreedyColoringAlgorithm} <:
         problem =
             SMC.ColoringProblem(; structure = :symmetric, partition = :column)
         C = typeof(coloring_algorithm)
-        R = Base.promote_op(
-            SMC.coloring,
-            SMC.SparsityPatternCSC{Int},
-            typeof(problem),
-            C,
+        _S = SMC.SparsityPatternCSC(
+            SparseArrays.sparse([1], [1], Bool[true], 1, 1),
         )
+        R = typeof(SMC.coloring(_S, problem, coloring_algorithm))
         return new{R,C}(data, ordered_variables, coloring_algorithm)
     end
 end
