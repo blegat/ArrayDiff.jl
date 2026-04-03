@@ -55,6 +55,34 @@ function test_neural()
     return
 end
 
+function test_binary_broadcasting()
+    n = 2
+    model = Model()
+    @variable(model, W[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    Y = rand(n, n)
+    D1 = W .- Y
+    @test D1 isa ArrayDiff.MatrixExpr
+    @test D1.head == :-
+    @test D1.broadcasted
+    @test size(D1) == (n, n)
+    @test D1.args[1] === W
+    @test D1.args[2] === Y
+    D2 = Y .- W
+    @test D2 isa ArrayDiff.MatrixExpr
+    @test D2.head == :-
+    @test D2.broadcasted
+    @test D2.args[1] === Y
+    @test D2.args[2] === W
+    @variable(model, V[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    D3 = W .- V
+    @test D3 isa ArrayDiff.MatrixExpr
+    @test D3.head == :-
+    @test D3.broadcasted
+    @test D3.args[1] === W
+    @test D3.args[2] === V
+    return
+end
+
 function test_norm()
     n = 2
     model = Model()
