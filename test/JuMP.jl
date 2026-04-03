@@ -130,6 +130,14 @@ function test_l2_loss_nested()
     Y_hat = W2 * tanh.(W1 * X)
     diff_expr = Y_hat .- Y
     @test diff_expr isa ArrayDiff.MatrixExpr
+    @test diff_expr.head == :-
+    @test diff_expr.broadcasted
+    @test diff_expr.args[1] === Y_hat
+    @test diff_expr.args[2] === Y
+    loss = LinearAlgebra.norm(diff_expr)
+    @test loss isa JuMP.NonlinearExpr
+    @test loss.head == :norm
+    @test loss.args[1] === diff_expr
     return
 end
 
