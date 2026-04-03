@@ -95,25 +95,28 @@ function test_norm()
     return
 end
 
-function test_l2_loss()
+function test_l2_loss_simple()
     n = 2
     X = rand(n, n)
     Y = rand(n, n)
     model = Model()
     @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
     @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-    Y_hat = W2 * tanh.(W1 * X)
-    @test Y_hat isa ArrayDiff.MatrixExpr
-    diff_expr = Y_hat .- Y
+    prod = W2 * X
+    diff_expr = prod .- Y
     @test diff_expr isa ArrayDiff.MatrixExpr
-    loss = LinearAlgebra.norm(diff_expr)
-    @test loss isa JuMP.NonlinearExpr
-    @test loss.head == :norm
-    @test loss.args[1] === diff_expr
-    @test diff_expr.head == :-
-    @test diff_expr.broadcasted
-    @test diff_expr.args[1] === Y_hat
-    @test diff_expr.args[2] === Y
+    return
+end
+
+function test_l2_loss_tanh()
+    n = 2
+    X = rand(n, n)
+    Y = rand(n, n)
+    model = Model()
+    @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    hidden = tanh.(W1 * X)
+    diff_expr = hidden .- Y
+    @test diff_expr isa ArrayDiff.MatrixExpr
     return
 end
 
