@@ -95,6 +95,26 @@ function test_norm()
     return
 end
 
+function test_l2_loss()
+    n = 2
+    X = rand(n, n)
+    Y = rand(n, n)
+    model = Model()
+    @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    Y_hat = W2 * tanh.(W1 * X)
+    loss = LinearAlgebra.norm(Y_hat .- Y)
+    @test loss isa JuMP.NonlinearExpr
+    @test loss.head == :norm
+    diff_expr = loss.args[1]
+    @test diff_expr isa ArrayDiff.MatrixExpr
+    @test diff_expr.head == :-
+    @test diff_expr.broadcasted
+    @test diff_expr.args[1] === Y_hat
+    @test diff_expr.args[2] === Y
+    return
+end
+
 end  # module
 
 TestJuMP.runtests()
