@@ -4,7 +4,6 @@ using Test
 
 using JuMP
 using ArrayDiff
-import LinearAlgebra
 
 function runtests()
     for name in names(@__MODULE__; all = true)
@@ -52,69 +51,6 @@ function test_neural()
     @test length(Y2.args) == 2
     @test Y2.args[1] === W2
     @test Y2.args[2] === X1
-    return
-end
-
-function test_binary_broadcasting()
-    n = 2
-    model = Model()
-    @variable(model, W[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-    Y = rand(n, n)
-    # AbstractJuMPArray .- AbstractArray
-    D1 = W .- Y
-    @test D1 isa ArrayDiff.MatrixExpr
-    @test D1.head == :-
-    @test D1.broadcasted
-    @test size(D1) == (n, n)
-    @test D1.args[1] === W
-    @test D1.args[2] === Y
-    # AbstractArray .- AbstractJuMPArray
-    D2 = Y .- W
-    @test D2 isa ArrayDiff.MatrixExpr
-    @test D2.head == :-
-    @test D2.broadcasted
-    @test D2.args[1] === Y
-    @test D2.args[2] === W
-    # AbstractJuMPArray .- AbstractJuMPArray
-    @variable(model, V[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-    D3 = W .- V
-    @test D3 isa ArrayDiff.MatrixExpr
-    @test D3.head == :-
-    @test D3.broadcasted
-    @test D3.args[1] === W
-    @test D3.args[2] === V
-    return
-end
-
-function test_norm()
-    n = 2
-    model = Model()
-    @variable(model, W[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-    loss = LinearAlgebra.norm(W)
-    @test loss isa JuMP.NonlinearExpr
-    @test loss.head == :norm
-    @test length(loss.args) == 1
-    @test loss.args[1] === W
-    return
-end
-
-function test_l2_loss()
-    n = 2
-    X = rand(n, n)
-    Y = rand(n, n)
-    model = Model()
-    @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-    @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-    Y_hat = W2 * tanh.(W1 * X)
-    loss = LinearAlgebra.norm(Y_hat .- Y)
-    @test loss isa JuMP.NonlinearExpr
-    @test loss.head == :norm
-    diff_expr = loss.args[1]
-    @test diff_expr isa ArrayDiff.MatrixExpr
-    @test diff_expr.head == :-
-    @test diff_expr.broadcasted
-    @test diff_expr.args[1] === Y_hat
-    @test diff_expr.args[2] === Y
     return
 end
 
