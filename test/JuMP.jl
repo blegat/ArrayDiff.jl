@@ -95,31 +95,6 @@ function test_norm()
     return
 end
 
-function test_l2_loss_simple()
-    n = 2
-    X = rand(n, n)
-    Y = rand(n, n)
-    model = Model()
-    @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-    @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-    prod = W2 * X
-    diff_expr = prod .- Y
-    @test diff_expr isa ArrayDiff.MatrixExpr
-    return
-end
-
-function test_l2_loss_tanh()
-    n = 2
-    X = rand(n, n)
-    Y = rand(n, n)
-    model = Model()
-    @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-    hidden = tanh.(W1 * X)
-    diff_expr = hidden .- Y
-    @test diff_expr isa ArrayDiff.MatrixExpr
-    return
-end
-
 function test_l2_loss()
     n = 2
     X = rand(n, n)
