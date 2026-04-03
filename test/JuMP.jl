@@ -130,7 +130,11 @@ function test_l2_loss_nested()
     Y_hat = W2 * tanh.(W1 * X)
     diff_expr = Y_hat .- Y
     @test diff_expr isa ArrayDiff.MatrixExpr
-    loss = LinearAlgebra.norm(diff_expr)
+    # Test creating NonlinearExpr manually
+    loss = JuMP.GenericNonlinearExpr{JuMP.VariableRef}(
+        :norm,
+        Any[diff_expr],
+    )
     @test loss isa JuMP.NonlinearExpr
     return
 end
