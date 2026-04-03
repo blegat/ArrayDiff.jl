@@ -47,12 +47,18 @@ end
 
 import LinearAlgebra
 
-# Resolve ambiguity with JuMP's
-#   norm(::AbstractArray{<:AbstractJuMPScalar})
-# by constraining both the container and element type.
-function LinearAlgebra.norm(
-    x::AbstractJuMPArray{T},
-) where {T<:JuMP.AbstractJuMPScalar}
+function _array_norm(x::AbstractJuMPArray)
     V = JuMP.variable_ref_type(x)
     return JuMP.GenericNonlinearExpr{V}(:norm, Any[x])
+end
+
+# Define norm for each concrete AbstractJuMPArray subtype to avoid
+# ambiguity with JuMP's error-throwing
+#   LinearAlgebra.norm(::AbstractArray{<:AbstractJuMPScalar})
+function LinearAlgebra.norm(x::GenericArrayExpr)
+    return _array_norm(x)
+end
+
+function LinearAlgebra.norm(x::ArrayOfVariables)
+    return _array_norm(x)
 end
