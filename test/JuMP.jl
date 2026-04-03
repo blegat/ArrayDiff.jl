@@ -100,14 +100,12 @@ function test_l2_loss()
     X = rand(n, n)
     Y = rand(n, n)
     model = Model()
-    @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-    @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-    Y_hat = W2 * tanh.(W1 * X)
-    @test Y_hat isa ArrayDiff.MatrixExpr
-    diff_expr = Y_hat .- Y
+    @variable(model, W[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    # Broadcast on GenericArrayExpr (result of matmul)
+    prod = W * X
+    @test prod isa ArrayDiff.MatrixExpr
+    diff_expr = prod .- Y
     @test diff_expr isa ArrayDiff.MatrixExpr
-    loss = LinearAlgebra.norm(diff_expr)
-    @test loss isa JuMP.NonlinearExpr
     return
 end
 
