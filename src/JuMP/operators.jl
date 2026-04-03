@@ -47,7 +47,12 @@ end
 
 import LinearAlgebra
 
-function LinearAlgebra.norm(x::AbstractJuMPArray)
+# Resolve ambiguity with JuMP's
+#   norm(::AbstractArray{<:AbstractJuMPScalar})
+# by constraining both the container and element type.
+function LinearAlgebra.norm(
+    x::AbstractJuMPArray{T},
+) where {T<:JuMP.AbstractJuMPScalar}
     V = JuMP.variable_ref_type(x)
     return JuMP.GenericNonlinearExpr{V}(:norm, Any[x])
 end
