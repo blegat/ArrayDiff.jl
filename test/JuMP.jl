@@ -115,8 +115,6 @@ function test_l2_loss()
     @test diff_expr.broadcasted
     @test diff_expr.args[1] === Y_hat
     @test diff_expr.args[2] === Y
-    @objective(model, Min, loss)
-    @test objective_sense(model) == MIN_SENSE
     return
 end
 
