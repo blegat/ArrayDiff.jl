@@ -120,6 +120,19 @@ function test_l2_loss_tanh()
     return
 end
 
+function test_l2_loss_nested()
+    n = 2
+    X = rand(n, n)
+    Y = rand(n, n)
+    model = Model()
+    @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    Y_hat = W2 * tanh.(W1 * X)
+    diff_expr = Y_hat .- Y
+    @test diff_expr isa ArrayDiff.MatrixExpr
+    return
+end
+
 end  # module
 
 TestJuMP.runtests()
