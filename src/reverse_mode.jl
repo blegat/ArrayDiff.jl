@@ -781,7 +781,8 @@ function _reverse_eval(f::_SubexpressionStorage)
                     end
                 end
             end
-        elseif node.type != NODE_CALL_UNIVARIATE && node.type != NODE_CALL_UNIVARIATE_BROADCASTED
+        elseif node.type != NODE_CALL_UNIVARIATE &&
+               node.type != NODE_CALL_UNIVARIATE_BROADCASTED
             continue
         end
         # Node `k` has same size as its children.
