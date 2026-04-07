@@ -388,7 +388,28 @@ function _forward_eval(
         elseif node.type == NODE_CALL_MULTIVARIATE_BROADCASTED
             children_indices = SparseArrays.nzrange(f.adj, k)
             N = length(children_indices)
-            if node.index == node.index == 3 # :*
+            if node.index == 1 # :+  (broadcasted)
+                for j in _eachindex(f.sizes, k)
+                    tmp_sum = zero(T)
+                    for c_idx in children_indices
+                        ix = children_arr[c_idx]
+                        @j f.partials_storage[ix] = one(T)
+                        tmp_sum += @j f.forward_storage[ix]
+                    end
+                    @j f.forward_storage[k] = tmp_sum
+                end
+            elseif node.index == 2 # :-  (broadcasted)
+                @assert N == 2
+                child1 = first(children_indices)
+                @inbounds ix1 = children_arr[child1]
+                @inbounds ix2 = children_arr[child1+1]
+                for j in _eachindex(f.sizes, k)
+                    @j f.partials_storage[ix1] = one(T)
+                    @j f.partials_storage[ix2] = -one(T)
+                    @j f.forward_storage[k] =
+                        @j(f.forward_storage[ix1]) - @j(f.forward_storage[ix2])
+                end
+            elseif node.index == 3 # :*  (broadcasted)
                 # Node `k` is not scalar, so we do matrix multiplication
                 if f.sizes.ndims[k] != 0
                     @assert N == 2

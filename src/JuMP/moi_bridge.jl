@@ -1,5 +1,6 @@
 # Conversion from JuMP array types to MOI ArrayNonlinearFunction,
-# to Julia Expr for ArrayDiff parsing, and NLPBlock setup helpers.
+# to Julia Expr for ArrayDiff parsing, and NLPBlock setup via
+# JuMP.set_objective_function override.
 
 # ── moi_function: JuMP → MOI ─────────────────────────────────────────────────
 
@@ -115,41 +116,14 @@ function to_expr(x::Expr)
     return x
 end
 
-# ── Scalar expression from array operations ──────────────────────────────────
+# ── to_expr for JuMP scalar nonlinear expressions ────────────────────────────
 
-"""
-    ArrayScalarExpr
-
-A scalar-valued expression that operates on array subexpressions (e.g.,
-`dot(A, B)`, `sum(A)`, `norm(A)`). This is the result type of scalar
-reductions on `GenericArrayExpr`.
-"""
-struct ArrayScalarExpr
-    head::Symbol
-    args::Vector{Any}
-end
-
-function to_expr(x::ArrayScalarExpr)
+function to_expr(x::JuMP.GenericNonlinearExpr)
     return Expr(:call, x.head, Any[to_expr(a) for a in x.args]...)
 end
 
-"""
-    ArrayDiff.dot(x, y)
-
-Compute the dot product (sum of elementwise products) of two array expressions.
-Returns an `ArrayScalarExpr` (scalar).
-"""
-function dot(x, y)
-    return ArrayScalarExpr(:dot, Any[x, y])
-end
-
-"""
-    ArrayDiff.sumsq(x)
-
-Compute the sum of squares of an array expression. Equivalent to `dot(x, x)`.
-"""
-function sumsq(x)
-    return dot(x, x)
+function to_expr(x::JuMP.GenericVariableRef)
+    return JuMP.index(x)
 end
 
 # ── parse_expression for ArrayNonlinearFunction ──────────────────────────────
@@ -172,48 +146,43 @@ function parse_expression(
     return parse_expression(data, expr, to_expr(x), parent_index)
 end
 
-# ── NLPBlock setup helpers ───────────────────────────────────────────────────
+# ── Detect whether a JuMP expression contains array args ─────────────────────
 
-"""
-    set_nlp_objective!(jmodel::JuMP.Model, sense, objective)
+_has_array_args(::Any) = false
+_has_array_args(::AbstractJuMPArray) = true
+_has_array_args(::ArrayNonlinearFunction) = true
 
-Build an `ArrayDiff.Model` from the given `objective` expression (which may be
-an `ArrayScalarExpr`, `GenericArrayExpr`, `ArrayNonlinearFunction`, or plain
-`Expr`), create an `ArrayDiff.Evaluator` with first-order AD, and set the
-resulting `MOI.NLPBlockData` on the JuMP model's backend.
+function _has_array_args(x::JuMP.GenericNonlinearExpr)
+    return any(_has_array_args, x.args)
+end
 
-## Example
+# ── Override set_objective_function for array-valued nonlinear expressions ────
 
-```julia
-model = Model(NLopt.Optimizer)
-@variable(model, W[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-Y = W * X
-diff = Y - target
-ArrayDiff.set_nlp_objective!(model, MOI.MIN_SENSE, ArrayDiff.sumsq(diff))
-optimize!(model)
-```
-"""
-function set_nlp_objective!(
-    jmodel::JuMP.Model,
-    sense::MOI.OptimizationSense,
-    objective,
-)
-    # Collect ordered variables
+function _set_arraydiff_nlp_block!(
+    jmodel::JuMP.GenericModel{T},
+    func::JuMP.GenericNonlinearExpr{JuMP.GenericVariableRef{T}},
+) where {T}
     vars = JuMP.all_variables(jmodel)
     ordered_variables = [JuMP.index(v) for v in vars]
-
-    # Build ArrayDiff Model
     ad_model = Model()
-    obj_expr = to_expr(objective)
+    obj_expr = to_expr(func)
     set_objective(ad_model, obj_expr)
-
-    # Create evaluator (first-order AD)
     evaluator = Evaluator(ad_model, Mode(), ordered_variables)
     nlp_data = MOI.NLPBlockData(evaluator)
+    MOI.set(JuMP.backend(jmodel), MOI.NLPBlock(), nlp_data)
+    return
+end
 
-    # Set on the JuMP backend
-    backend = JuMP.backend(jmodel)
-    MOI.set(backend, MOI.NLPBlock(), nlp_data)
-    MOI.set(backend, MOI.ObjectiveSense(), sense)
+function JuMP.set_objective_function(
+    model::JuMP.GenericModel{T},
+    func::JuMP.GenericNonlinearExpr{JuMP.GenericVariableRef{T}},
+) where {T<:Real}
+    if _has_array_args(func)
+        return _set_arraydiff_nlp_block!(model, func)
+    end
+    # Fall back to standard JuMP: convert to MOI and set on backend.
+    f = JuMP.moi_function(func)
+    attr = MOI.ObjectiveFunction{typeof(f)}()
+    MOI.set(JuMP.backend(model), attr, f)
     return
 end

@@ -5,8 +5,8 @@
 # first-order NLP solver.
 
 using JuMP
-import MathOptInterface as MOI
 using ArrayDiff
+using LinearAlgebra
 import NLopt
 
 n = 2
@@ -28,12 +28,11 @@ end
 # Forward pass: Y = W2 * tanh.(W1 * X)
 Y = W2 * tanh.(W1 * X)
 
-# Loss: sum of squared differences
-diff = Y - target
-loss = ArrayDiff.sumsq(diff)
+# Loss: ||Y - target||  (norm returns a scalar NonlinearExpr)
+# Pre-compute expression before @objective to avoid macro rewriting of `.-`
+loss = norm(Y .- target)
+@objective(model, Min, loss)
 
-# Set the NLP objective and optimize
-ArrayDiff.set_nlp_objective!(model, MOI.MIN_SENSE, loss)
 optimize!(model)
 
 println("Termination status: ", termination_status(model))

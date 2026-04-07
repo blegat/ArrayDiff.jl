@@ -285,7 +285,10 @@ function _infer_sizes(
                 continue
             end
             op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
-            if op == :*
+            if op == :+ || op == :-
+                # Broadcasted +/- preserves shape
+                _copy_size!(sizes, k, children_arr[first(children_indices)])
+            elseif op == :*
                 # TODO assert compatible sizes and all ndims should be 0 or 2
                 first_matrix = findfirst(children_indices) do i
                     return !iszero(sizes.ndims[children_arr[i]])

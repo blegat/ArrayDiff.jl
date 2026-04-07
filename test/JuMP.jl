@@ -145,11 +145,11 @@ function test_to_expr()
     X = rand(2, 2)
     Y = W * tanh.(W * X)
     diff = Y - X
-    loss = ArrayDiff.sumsq(diff)
+    loss = LinearAlgebra.norm(diff)
     expr = ArrayDiff.to_expr(loss)
     @test expr isa Expr
     @test expr.head == :call
-    @test expr.args[1] == :dot
+    @test expr.args[1] == :norm
     return
 end
 
@@ -183,9 +183,8 @@ function test_neural_nlopt()
         set_start_value(W2[i, j], start_W2[i, j])
     end
     Y = W2 * tanh.(W1 * X)
-    diff = Y - target
-    loss = ArrayDiff.sumsq(diff)
-    ArrayDiff.set_nlp_objective!(model, MOI.MIN_SENSE, loss)
+    loss = LinearAlgebra.norm(Y .- target)
+    @objective(model, Min, loss)
     optimize!(model)
     @test termination_status(model) == MOI.LOCALLY_SOLVED
     @test objective_value(model) < 1e-6
