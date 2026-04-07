@@ -146,7 +146,8 @@ function parse_expression(
     return parse_expression(data, expr, to_expr(x), parent_index)
 end
 
-# ── Detect whether a JuMP expression contains array args ─────────────────────
+# Hacky workaround that sets an NLPBlock to force the solver to use ArrayDiff
+# instead of MOI.Nonlinear.ReverseAD
 
 _has_array_args(::Any) = false
 _has_array_args(::AbstractJuMPArray) = true
@@ -156,8 +157,6 @@ function _has_array_args(x::JuMP.GenericNonlinearExpr)
     return any(_has_array_args, x.args)
 end
 
-# ── Override set_objective_function for array-valued nonlinear expressions ────
-
 function _set_arraydiff_nlp_block!(
     jmodel::JuMP.GenericModel{T},
     func::JuMP.GenericNonlinearExpr{JuMP.GenericVariableRef{T}},
@@ -165,8 +164,7 @@ function _set_arraydiff_nlp_block!(
     vars = JuMP.all_variables(jmodel)
     ordered_variables = [JuMP.index(v) for v in vars]
     ad_model = Model()
-    obj_expr = to_expr(func)
-    set_objective(ad_model, obj_expr)
+    set_objective(ad_model, func)
     evaluator = Evaluator(ad_model, Mode(), ordered_variables)
     nlp_data = MOI.NLPBlockData(evaluator)
     MOI.set(JuMP.backend(jmodel), MOI.NLPBlock(), nlp_data)

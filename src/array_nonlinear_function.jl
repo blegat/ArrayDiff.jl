@@ -33,12 +33,16 @@ end
 A block of contiguous `MOI.VariableIndex` values representing an N-dimensional
 array. Used as an argument in `ArrayNonlinearFunction`.
 """
-struct ArrayOfVariableIndices{N}
+struct ArrayOfVariableIndices{N} <: MOI.AbstractVectorFunction
     offset::Int
     size::NTuple{N,Int}
 end
 
 Base.size(a::ArrayOfVariableIndices) = a.size
+
+function MOI.output_dimension(f::ArrayOfVariableIndices)
+    return prod(f.size)
+end
 
 function _to_moi(x::ArrayNonlinearFunction)
     return x
