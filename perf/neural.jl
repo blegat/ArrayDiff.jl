@@ -13,7 +13,7 @@ n = 2
 X = rand(n, n)
 target = rand(n, n)
 
-model = Model(NLopt.Optimizer)
+model = direct_model(ArrayDiff.Optimizer(NLopt.Optimizer()))
 set_attribute(model, "algorithm", :LD_LBFGS)
 
 @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
@@ -28,8 +28,7 @@ end
 # Forward pass: Y = W2 * tanh.(W1 * X)
 Y = W2 * tanh.(W1 * X)
 
-# Loss: ||Y - target||  (norm returns a scalar NonlinearExpr)
-# Pre-compute expression before @objective to avoid macro rewriting of `.-`
+# Loss: ||Y - target||  (norm returns a scalar-shaped GenericArrayExpr)
 loss = norm(Y .- target)
 @objective(model, Min, loss)
 

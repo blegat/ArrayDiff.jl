@@ -90,8 +90,9 @@ function test_norm()
     model = Model()
     @variable(model, W[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
     loss = LinearAlgebra.norm(W)
-    @test loss isa JuMP.NonlinearExpr
+    @test loss isa ArrayDiff.GenericArrayExpr{JuMP.VariableRef,0}
     @test loss.head == :norm
+    @test loss.size == ()
     @test length(loss.args) == 1
     @test loss.args[1] === W
     return
@@ -112,7 +113,7 @@ function test_l2_loss()
     @test diff_expr.args[1] === Y_hat
     @test diff_expr.args[2] === Y
     loss = LinearAlgebra.norm(diff_expr)
-    @test loss isa JuMP.NonlinearExpr
+    @test loss isa ArrayDiff.GenericArrayExpr{JuMP.VariableRef,0}
     @test loss.head == :norm
     @test loss.args[1] === diff_expr
 end
@@ -139,17 +140,22 @@ function test_array_addition()
     return
 end
 
-function test_to_expr()
+function test_parse_moi()
+    # Test that ArrayDiff.Model can parse ArrayNonlinearFunction directly
     model = Model()
     @variable(model, W[1:2, 1:2], container = ArrayDiff.ArrayOfVariables)
     X = rand(2, 2)
-    Y = W * tanh.(W * X)
-    diff = Y - X
+    Y = W * X
+    diff = Y .- X
     loss = LinearAlgebra.norm(diff)
-    expr = ArrayDiff.to_expr(loss)
-    @test expr isa Expr
-    @test expr.head == :call
-    @test expr.args[1] == :norm
+    f = JuMP.moi_function(loss)
+    @test f isa ArrayDiff.ArrayNonlinearFunction{0}
+    @test f.head == :norm
+    @test f.size == ()
+    @test MOI.output_dimension(f) == 1
+    ad_model = ArrayDiff.Model()
+    ArrayDiff.set_objective(ad_model, f)
+    @test ad_model.objective !== nothing
     return
 end
 
@@ -171,7 +177,7 @@ function test_neural_nlopt()
     n = 2
     X = [1.0 0.5; 0.3 0.8]
     target = [0.5 0.2; 0.1 0.7]
-    model = Model(NLopt.Optimizer)
+    model = direct_model(ArrayDiff.Optimizer(NLopt.Optimizer()))
     set_attribute(model, "algorithm", :LD_LBFGS)
     @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
     @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)

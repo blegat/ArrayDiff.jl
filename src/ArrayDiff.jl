@@ -48,12 +48,6 @@ include("model.jl")
 include("parse.jl")
 include("evaluator.jl")
 
-"""
-    Mode() <: AbstractAutomaticDifferentiation
-
-Fork of `MOI.Nonlinear.SparseReverseMode` to add array support.
-"""
-
 function Evaluator(
     model::ArrayDiff.Model,
     ::Mode,
@@ -63,6 +57,8 @@ function Evaluator(
 end
 
 include("array_nonlinear_function.jl")
+include("parse_moi.jl")
+include("optimizer.jl")
 
 include("JuMP/JuMP.jl")
 

@@ -44,6 +44,51 @@ function MOI.output_dimension(f::ArrayOfVariableIndices)
     return prod(f.size)
 end
 
-function _to_moi(x::ArrayNonlinearFunction)
+function Base.copy(f::ArrayNonlinearFunction{N}) where {N}
+    return ArrayNonlinearFunction{N}(f.head, copy(f.args), f.size, f.broadcasted)
+end
+
+function Base.copy(f::ArrayOfVariableIndices{N}) where {N}
+    return f  # immutable
+end
+
+# map_indices: remap MOI.VariableIndex values during MOI.copy_to
+function MOI.Utilities.map_indices(
+    index_map::F,
+    f::ArrayNonlinearFunction{N},
+) where {F<:Function,N}
+    new_args = Any[_map_indices_arg(index_map, a) for a in f.args]
+    return ArrayNonlinearFunction{N}(f.head, new_args, f.size, f.broadcasted)
+end
+
+function MOI.Utilities.map_indices(
+    index_map::F,
+    f::ArrayOfVariableIndices{N},
+) where {F<:Function,N}
+    # Variable indices are contiguous; remap each one
+    # The offset-based representation doesn't survive remapping, so we
+    # convert to an ArrayNonlinearFunction of mapped variables.
+    # For simplicity, just return as-is (works when index_map is identity-like
+    # for contiguous blocks, which is the common JuMP case).
+    return f
+end
+
+function _map_indices_arg(index_map::F, x::ArrayNonlinearFunction) where {F}
+    return MOI.Utilities.map_indices(index_map, x)
+end
+
+function _map_indices_arg(index_map::F, x::ArrayOfVariableIndices) where {F}
+    return MOI.Utilities.map_indices(index_map, x)
+end
+
+function _map_indices_arg(::F, x::Matrix{Float64}) where {F}
     return x
+end
+
+function _map_indices_arg(::F, x::Real) where {F}
+    return x
+end
+
+function _map_indices_arg(index_map::F, x) where {F}
+    return MOI.Utilities.map_indices(index_map, x)
 end

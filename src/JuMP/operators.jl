@@ -49,7 +49,7 @@ import LinearAlgebra
 
 function _array_norm(x::AbstractJuMPArray)
     V = JuMP.variable_ref_type(x)
-    return JuMP.GenericNonlinearExpr{V}(:norm, Any[x])
+    return GenericArrayExpr{V,0}(:norm, Any[x], (), false)
 end
 
 # Define norm for each concrete AbstractJuMPArray subtype to avoid
