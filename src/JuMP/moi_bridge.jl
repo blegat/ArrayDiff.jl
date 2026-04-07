@@ -23,13 +23,20 @@ end
 # ── set_objective_function for scalar-shaped array expressions ───────────────
 # GenericArrayExpr{V,0} (size=()) is scalar-valued but contains array
 # subexpressions.  JuMP's default set_objective_function only handles
-# AbstractJuMPScalar, so we add a method here.
+# AbstractJuMPScalar, so we add a method here.  We also set the
+# AutomaticDifferentiationBackend to ArrayDiff.Mode() so that the solver
+# uses ArrayDiff's evaluator.
 
 function JuMP.set_objective_function(
     model::JuMP.GenericModel{T},
     func::GenericArrayExpr{JuMP.GenericVariableRef{T},0},
 ) where {T<:Real}
     f = JuMP.moi_function(func)
+    MOI.set(
+        JuMP.backend(model),
+        MOI.AutomaticDifferentiationBackend(),
+        Mode(),
+    )
     attr = MOI.ObjectiveFunction{typeof(f)}()
     MOI.set(JuMP.backend(model), attr, f)
     model.is_model_dirty = true

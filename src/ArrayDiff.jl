@@ -48,6 +48,9 @@ include("model.jl")
 include("parse.jl")
 include("evaluator.jl")
 
+include("array_nonlinear_function.jl")
+include("parse_moi.jl")
+
 function Evaluator(
     model::ArrayDiff.Model,
     ::Mode,
@@ -56,9 +59,19 @@ function Evaluator(
     return Evaluator(model, NLPEvaluator(model, ordered_variables))
 end
 
-include("array_nonlinear_function.jl")
-include("parse_moi.jl")
-include("optimizer.jl")
+# Called by solvers (e.g., NLopt) via:
+#   MOI.Nonlinear.Evaluator(nlp_model, ad_backend, vars)
+# When nlp_model is an ArrayNonlinearFunction and ad_backend is Mode(),
+# we build an ArrayDiff.Model and return our Evaluator.
+function Nonlinear.Evaluator(
+    func::ArrayNonlinearFunction,
+    ::Mode,
+    ordered_variables::Vector{MOI.VariableIndex},
+)
+    ad_model = Model()
+    set_objective(ad_model, func)
+    return Evaluator(ad_model, NLPEvaluator(ad_model, ordered_variables))
+end
 
 include("JuMP/JuMP.jl")
 

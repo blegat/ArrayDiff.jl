@@ -7,6 +7,8 @@ using ArrayDiff
 import LinearAlgebra
 import MathOptInterface as MOI
 import NLopt
+import NLPModelsJuMP
+import NLPModelsIpopt
 
 function runtests()
     for name in names(@__MODULE__; all = true)
@@ -177,7 +179,7 @@ function test_neural_nlopt()
     n = 2
     X = [1.0 0.5; 0.3 0.8]
     target = [0.5 0.2; 0.1 0.7]
-    model = direct_model(ArrayDiff.Optimizer(NLopt.Optimizer()))
+    model = direct_model(NLopt.Optimizer())
     set_attribute(model, "algorithm", :LD_LBFGS)
     @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
     @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
@@ -194,6 +196,35 @@ function test_neural_nlopt()
     optimize!(model)
     @test termination_status(model) == MOI.LOCALLY_SOLVED
     @test objective_value(model) < 1e-6
+    return
+end
+
+function test_neural_ipopt_nlpmodels()
+    n = 2
+    X = [1.0 0.5; 0.3 0.8]
+    target = [0.5 0.2; 0.1 0.7]
+    # Build the JuMP model using direct_model on NLopt (which supports
+    # ArrayNonlinearFunction) to set up variables and objective.
+    inner = NLopt.Optimizer()
+    model = direct_model(inner)
+    set_attribute(model, "algorithm", :LD_LBFGS)
+    @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    start_W1 = [0.3 -0.2; 0.1 0.4]
+    start_W2 = [-0.1 0.5; 0.2 -0.3]
+    for i in 1:n, j in 1:n
+        set_start_value(W1[i, j], start_W1[i, j])
+        set_start_value(W2[i, j], start_W2[i, j])
+    end
+    Y = W2 * tanh.(W1 * X)
+    loss = LinearAlgebra.norm(Y .- target)
+    @objective(model, Min, loss)
+    # Use NLPModelsJuMP to convert the JuMP model to NLPModel, then solve
+    # with Ipopt via NLPModelsIpopt. The ad_backend on NLopt carries Mode().
+    nlp = NLPModelsJuMP.MathOptNLPModel(model; hessian = false)
+    stats = NLPModelsIpopt.ipopt(nlp; print_level = 0)
+    @test stats.status == :first_order
+    @test stats.objective < 1e-6
     return
 end
 

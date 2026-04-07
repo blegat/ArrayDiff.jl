@@ -13,7 +13,7 @@ n = 2
 X = rand(n, n)
 target = rand(n, n)
 
-model = direct_model(ArrayDiff.Optimizer(NLopt.Optimizer()))
+model = direct_model(NLopt.Optimizer())
 set_attribute(model, "algorithm", :LD_LBFGS)
 
 @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
