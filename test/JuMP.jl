@@ -5,6 +5,8 @@ using Test
 using JuMP
 using ArrayDiff
 import LinearAlgebra
+import MathOptInterface as MOI
+import NLopt
 
 function runtests()
     for name in names(@__MODULE__; all = true)
@@ -113,6 +115,80 @@ function test_l2_loss()
     @test loss isa JuMP.NonlinearExpr
     @test loss.head == :norm
     @test loss.args[1] === diff_expr
+end
+
+function test_array_subtraction()
+    model = Model()
+    @variable(model, W[1:2, 1:2], container = ArrayDiff.ArrayOfVariables)
+    X = rand(2, 2)
+    diff = W * X - X
+    @test diff isa ArrayDiff.MatrixExpr
+    @test diff.head == :-
+    @test size(diff) == (2, 2)
+    return
+end
+
+function test_array_addition()
+    model = Model()
+    @variable(model, W[1:2, 1:2], container = ArrayDiff.ArrayOfVariables)
+    X = rand(2, 2)
+    s = W * X + X
+    @test s isa ArrayDiff.MatrixExpr
+    @test s.head == :+
+    @test size(s) == (2, 2)
+    return
+end
+
+function test_to_expr()
+    model = Model()
+    @variable(model, W[1:2, 1:2], container = ArrayDiff.ArrayOfVariables)
+    X = rand(2, 2)
+    Y = W * tanh.(W * X)
+    diff = Y - X
+    loss = ArrayDiff.sumsq(diff)
+    expr = ArrayDiff.to_expr(loss)
+    @test expr isa Expr
+    @test expr.head == :call
+    @test expr.args[1] == :dot
+    return
+end
+
+function test_moi_function()
+    model = Model()
+    @variable(model, W[1:2, 1:2], container = ArrayDiff.ArrayOfVariables)
+    X = rand(2, 2)
+    Y = W * X
+    f = JuMP.moi_function(Y)
+    @test f isa ArrayDiff.ArrayNonlinearFunction{2}
+    @test f.head == :*
+    @test f.size == (2, 2)
+    @test !f.broadcasted
+    @test MOI.output_dimension(f) == 4
+    return
+end
+
+function test_neural_nlopt()
+    n = 2
+    X = [1.0 0.5; 0.3 0.8]
+    target = [0.5 0.2; 0.1 0.7]
+    model = Model(NLopt.Optimizer)
+    set_attribute(model, "algorithm", :LD_LBFGS)
+    @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    # Use distinct starting values to break symmetry
+    start_W1 = [0.3 -0.2; 0.1 0.4]
+    start_W2 = [-0.1 0.5; 0.2 -0.3]
+    for i in 1:n, j in 1:n
+        set_start_value(W1[i, j], start_W1[i, j])
+        set_start_value(W2[i, j], start_W2[i, j])
+    end
+    Y = W2 * tanh.(W1 * X)
+    diff = Y - target
+    loss = ArrayDiff.sumsq(diff)
+    ArrayDiff.set_nlp_objective!(model, MOI.MIN_SENSE, loss)
+    optimize!(model)
+    @test termination_status(model) == MOI.LOCALLY_SOLVED
+    @test objective_value(model) < 1e-6
     return
 end
 

@@ -248,6 +248,8 @@ function eval_multivariate_function(
         return maximum(x)
     elseif op == :vect
         return x
+    elseif op == :sum
+        return sum(x; init = zero(T))
     end
     id = registry.multivariate_operator_to_id[op]
     offset = id - registry.multivariate_user_operator_start

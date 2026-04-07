@@ -347,6 +347,15 @@ function _forward_eval(
                         @j f.partials_storage[ix] = v / @s f.forward_storage[k]
                     end
                 end
+            elseif node.index == 15 # sum
+                @assert N == 1
+                ix = children_arr[first(children_indices)]
+                tmp_sum = zero(T)
+                for j in _eachindex(f.sizes, ix)
+                    @j f.partials_storage[ix] = one(T)
+                    tmp_sum += @j f.forward_storage[ix]
+                end
+                @s f.forward_storage[k] = tmp_sum
             elseif node.index == 16 # row
                 for j in _eachindex(f.sizes, k)
                     ix = children_arr[children_indices[j]]
@@ -733,6 +742,13 @@ function _reverse_eval(f::_SubexpressionStorage)
                             rev_parent * partial,
                         )
                         @j f.reverse_storage[ix] = val
+                    end
+                    continue
+                elseif op == :sum
+                    rev_parent = @s f.reverse_storage[k]
+                    ix = children_arr[children_indices[1]]
+                    for j in _eachindex(f.sizes, ix)
+                        @j f.reverse_storage[ix] = rev_parent
                     end
                     continue
                 elseif op == :row

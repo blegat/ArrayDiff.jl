@@ -188,6 +188,8 @@ function _infer_sizes(
                 # TODO assert all arguments have same size
             elseif op == :norm
                 # TODO actually norm should be moved to univariate
+            elseif op == :sum
+                # sum reduces array to scalar, ndims stays 0
             elseif op == :+ || op == :-
                 # TODO assert all arguments have same size
                 _copy_size!(sizes, k, children_arr[first(children_indices)])

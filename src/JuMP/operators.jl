@@ -62,3 +62,47 @@ end
 function LinearAlgebra.norm(x::ArrayOfVariables)
     return _array_norm(x)
 end
+
+# Subtraction between array expressions and constant arrays
+function Base.:(-)(x::AbstractJuMPArray{T,N}, y::AbstractArray) where {T,N}
+    V = JuMP.variable_ref_type(x)
+    @assert size(x) == size(y)
+    return GenericArrayExpr{V,N}(:-, Any[x, y], size(x), false)
+end
+
+function Base.:(-)(x::AbstractArray, y::AbstractJuMPArray{T,N}) where {T,N}
+    V = JuMP.variable_ref_type(y)
+    @assert size(x) == size(y)
+    return GenericArrayExpr{V,N}(:-, Any[x, y], size(y), false)
+end
+
+function Base.:(-)(
+    x::AbstractJuMPArray{T,N},
+    y::AbstractJuMPArray{S,N},
+) where {T,S,N}
+    V = JuMP.variable_ref_type(x)
+    @assert size(x) == size(y)
+    return GenericArrayExpr{V,N}(:-, Any[x, y], size(x), false)
+end
+
+# Addition between array expressions and constant arrays
+function Base.:(+)(x::AbstractJuMPArray{T,N}, y::AbstractArray) where {T,N}
+    V = JuMP.variable_ref_type(x)
+    @assert size(x) == size(y)
+    return GenericArrayExpr{V,N}(:+, Any[x, y], size(x), false)
+end
+
+function Base.:(+)(x::AbstractArray, y::AbstractJuMPArray{T,N}) where {T,N}
+    V = JuMP.variable_ref_type(y)
+    @assert size(x) == size(y)
+    return GenericArrayExpr{V,N}(:+, Any[x, y], size(y), false)
+end
+
+function Base.:(+)(
+    x::AbstractJuMPArray{T,N},
+    y::AbstractJuMPArray{S,N},
+) where {T,S,N}
+    V = JuMP.variable_ref_type(x)
+    @assert size(x) == size(y)
+    return GenericArrayExpr{V,N}(:+, Any[x, y], size(x), false)
+end
