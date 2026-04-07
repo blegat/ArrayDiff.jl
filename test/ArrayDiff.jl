@@ -609,6 +609,31 @@ function test_objective_broadcasted_matrix_product()
     return
 end
 
+function test_objective_broadcasted_tanh()
+    model = ArrayDiff.Model()
+    x1 = MOI.VariableIndex(1)
+    x2 = MOI.VariableIndex(2)
+    ArrayDiff.set_objective(model, :(norm(tanh.([$x1, $x2]))))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x1, x2])
+    MOI.initialize(evaluator, [:Grad])
+    sizes = evaluator.backend.objective.expr.sizes
+    @test sizes.ndims == [0, 1, 1, 0, 0]
+    @test sizes.size_offset == [0, 1, 0, 0, 0]
+    @test sizes.size == [2, 2]
+    @test sizes.storage_offset == [0, 1, 3, 5, 6, 7]
+    x1 = 1.0
+    x2 = 2.0
+    @test MOI.eval_objective(evaluator, [x1, x2]) ==
+          sqrt(tanh(1.0)^2 + tanh(2.0)^2)
+    g = ones(2)
+    MOI.eval_objective_gradient(evaluator, g, [x1, x2])
+    @test g ≈ [
+        tanh(1.0) * (1 - tanh(1.0)^2) / sqrt(tanh(1.0)^2 + tanh(2.0)^2),
+        tanh(2.0) * (1 - tanh(2.0)^2) / sqrt(tanh(1.0)^2 + tanh(2.0)^2),
+    ]
+    return
+end
+
 end  # module
 
 TestArrayDiff.runtests()

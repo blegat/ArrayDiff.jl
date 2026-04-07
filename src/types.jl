@@ -195,7 +195,7 @@ It has the following fields:
 mutable struct Model
     objective::Union{Nothing,Expression}
     expressions::Vector{Expression}
-    constraints::OrderedDict{ConstraintIndex,Constraint}
+    constraints::OrderedCollections.OrderedDict{ConstraintIndex,Constraint}
     parameters::Vector{Float64}
     operators::OperatorRegistry
     # This is a private field, used only to increment the ConstraintIndex.
@@ -204,7 +204,7 @@ mutable struct Model
         model = new(
             nothing,
             Expression[],
-            OrderedDict{ConstraintIndex,Constraint}(),
+            OrderedCollections.OrderedDict{ConstraintIndex,Constraint}(),
             Float64[],
             OperatorRegistry(),
             0,

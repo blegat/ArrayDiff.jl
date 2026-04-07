@@ -239,50 +239,24 @@ function _infer_sizes(
                         _add_size!(sizes, k, (1, 1))
                         continue
                     else
-                        if node.broadcasted
-                            if sizes.ndims[children_arr[first(
-                                children_indices,
-                            )]] == 1
-                                nb_cols = 1
-                            else
-                                nb_cols = _size(
+                        _add_size!(
+                            sizes,
+                            k,
+                            (
+                                _size(
                                     sizes,
                                     children_arr[first(children_indices)],
                                     1,
-                                )
-                            end
-                            _add_size!(
-                                sizes,
-                                k,
-                                (
-                                    _size(
-                                        sizes,
-                                        children_arr[first(children_indices)],
-                                        1,
-                                    ),
-                                    nb_cols,
                                 ),
-                            )
-                        else
-                            _add_size!(
-                                sizes,
-                                k,
-                                (
-                                    _size(
-                                        sizes,
-                                        children_arr[first(children_indices)],
-                                        1,
-                                    ),
-                                    _size(
-                                        sizes,
-                                        children_arr[last(children_indices)],
-                                        sizes.ndims[children_arr[last(
-                                            children_indices,
-                                        )],],
-                                    ),
+                                _size(
+                                    sizes,
+                                    children_arr[last(children_indices)],
+                                    sizes.ndims[children_arr[last(
+                                        children_indices,
+                                    )],],
                                 ),
-                            )
-                        end
+                            ),
+                        )
                         continue
                     end
                 end
@@ -302,6 +276,48 @@ function _infer_sizes(
                     children_indices,
                     op,
                 )
+            end
+        elseif node.type == NODE_CALL_MULTIVARIATE_BROADCASTED
+            if !(node.index in eachindex(DEFAULT_MULTIVARIATE_OPERATORS))
+                # TODO user-defined operators
+                continue
+            end
+            op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
+            if op == :*
+                # TODO assert compatible sizes and all ndims should be 0 or 2
+                first_matrix = findfirst(children_indices) do i
+                    return !iszero(sizes.ndims[children_arr[i]])
+                end
+                if !isnothing(first_matrix)
+                    if sizes.ndims[children_arr[first(children_indices)]] == 0
+                        _add_size!(sizes, k, (1, 1))
+                        continue
+                    else
+                        if sizes.ndims[children_arr[first(children_indices)]] ==
+                           1
+                            nb_cols = 1
+                        else
+                            nb_cols = _size(
+                                sizes,
+                                children_arr[first(children_indices)],
+                                1,
+                            )
+                        end
+                        _add_size!(
+                            sizes,
+                            k,
+                            (
+                                _size(
+                                    sizes,
+                                    children_arr[first(children_indices)],
+                                    1,
+                                ),
+                                nb_cols,
+                            ),
+                        )
+                        continue
+                    end
+                end
             end
         elseif node.type == NODE_CALL_UNIVARIATE
             if !(
@@ -323,6 +339,17 @@ function _infer_sizes(
                     op,
                 )
             end
+        elseif node.type == NODE_CALL_UNIVARIATE_BROADCASTED
+            if !(
+                node.index in
+                eachindex(MOI.Nonlinear.DEFAULT_UNIVARIATE_OPERATORS)
+            )
+                error("TODO user-defined operators")
+                continue
+            end
+            @assert N == 1
+            op = MOI.Nonlinear.DEFAULT_UNIVARIATE_OPERATORS[node.index]
+            _copy_size!(sizes, k, children_arr[first(children_indices)])
         end
     end
     for k in eachindex(nodes)
