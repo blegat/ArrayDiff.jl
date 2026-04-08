@@ -12,6 +12,11 @@ const Nonlinear = MOI.Nonlinear
 import SparseArrays
 import OrderedCollections
 
+"""
+    Mode() <: MOI.Nonlinear.AbstractAutomaticDifferentiation
+
+Fork of `MOI.Nonlinear.SparseReverseMode` to add array support.
+"""
 struct Mode <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
 
 # Override basic math functions to return NaN instead of throwing errors.
@@ -51,6 +56,32 @@ include("evaluator.jl")
 include("array_nonlinear_function.jl")
 include("parse_moi.jl")
 
+# Tell MOI to create an ArrayDiff.Model when Mode() is the AD backend.
+Nonlinear.nonlinear_model(::Mode) = Model()
+
+# Extend MOI.Nonlinear functions so solvers can call them on ArrayDiff.Model.
+function Nonlinear.register_operator(
+    model::Model,
+    op::Symbol,
+    nargs::Int,
+    f::Function...,
+)
+    return register_operator(model, op, nargs, f...)
+end
+
+# Extend MOI.Nonlinear.set_objective so that solvers calling
+# MOI.Nonlinear.set_objective(arraydiff_model, snf) dispatch here.
+function Nonlinear.set_objective(model::Model, obj::MOI.ScalarNonlinearFunction)
+    model.objective = parse_expression(model, obj)
+    return
+end
+
+function Nonlinear.set_objective(model::Model, ::Nothing)
+    model.objective = nothing
+    return
+end
+
+# Create an ArrayDiff Evaluator from an ArrayDiff Model.
 function Evaluator(
     model::ArrayDiff.Model,
     ::Mode,
@@ -59,18 +90,15 @@ function Evaluator(
     return Evaluator(model, NLPEvaluator(model, ordered_variables))
 end
 
-# Called by solvers (e.g., NLopt) via:
-#   MOI.Nonlinear.Evaluator(nlp_model, ad_backend, vars)
-# When nlp_model is an ArrayNonlinearFunction and ad_backend is Mode(),
-# we build an ArrayDiff.Model and return our Evaluator.
+# Called by solvers via MOI.Nonlinear.Evaluator(nlp_model, ad_backend, vars).
+# When nlp_model is an ArrayDiff.Model (created by nonlinear_model(::Mode)),
+# the model already has the parsed objective — just build the evaluator.
 function Nonlinear.Evaluator(
-    func::ArrayNonlinearFunction,
+    model::Model,
     ::Mode,
     ordered_variables::Vector{MOI.VariableIndex},
 )
-    ad_model = Model()
-    set_objective(ad_model, func)
-    return Evaluator(ad_model, NLPEvaluator(ad_model, ordered_variables))
+    return Evaluator(model, NLPEvaluator(model, ordered_variables))
 end
 
 include("JuMP/JuMP.jl")

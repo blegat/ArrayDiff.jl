@@ -28,7 +28,7 @@ end
 # Forward pass: Y = W2 * tanh.(W1 * X)
 Y = W2 * tanh.(W1 * X)
 
-# Loss: ||Y - target||  (norm returns a scalar-shaped GenericArrayExpr)
+# Loss: ||Y - target||  (norm returns a scalar NonlinearExpr)
 loss = norm(Y .- target)
 @objective(model, Min, loss)
 
