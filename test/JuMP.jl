@@ -5,6 +5,11 @@ using Test
 using JuMP
 using ArrayDiff
 import LinearAlgebra
+import MathOptInterface as MOI
+import NLopt
+import Ipopt
+import NLPModelsJuMP
+import NLPModelsIpopt
 
 function runtests()
     for name in names(@__MODULE__; all = true)
@@ -113,6 +118,124 @@ function test_l2_loss()
     @test loss isa JuMP.NonlinearExpr
     @test loss.head == :norm
     @test loss.args[1] === diff_expr
+end
+
+function test_array_subtraction()
+    model = Model()
+    @variable(model, W[1:2, 1:2], container = ArrayDiff.ArrayOfVariables)
+    X = rand(2, 2)
+    diff = W * X - X
+    @test diff isa ArrayDiff.MatrixExpr
+    @test diff.head == :-
+    @test size(diff) == (2, 2)
+    return
+end
+
+function test_array_addition()
+    model = Model()
+    @variable(model, W[1:2, 1:2], container = ArrayDiff.ArrayOfVariables)
+    X = rand(2, 2)
+    s = W * X + X
+    @test s isa ArrayDiff.MatrixExpr
+    @test s.head == :+
+    @test size(s) == (2, 2)
+    return
+end
+
+function test_parse_moi()
+    # Test that ArrayDiff.Model can parse ScalarNonlinearFunction
+    # with ArrayNonlinearFunction args
+    model = Model()
+    @variable(model, W[1:2, 1:2], container = ArrayDiff.ArrayOfVariables)
+    X = rand(2, 2)
+    Y = W * X
+    diff = Y .- X
+    loss = LinearAlgebra.norm(diff)
+    snf = JuMP.moi_function(loss)
+    @test snf isa MOI.ScalarNonlinearFunction
+    @test snf.head == :norm
+    @test snf.args[1] isa ArrayDiff.ArrayNonlinearFunction{2}
+    ad_model = ArrayDiff.Model()
+    ArrayDiff.set_objective(ad_model, snf)
+    @test ad_model.objective !== nothing
+    return
+end
+
+function test_moi_function()
+    model = Model()
+    @variable(model, W[1:2, 1:2], container = ArrayDiff.ArrayOfVariables)
+    X = rand(2, 2)
+    Y = W * X
+    f = JuMP.moi_function(Y)
+    @test f isa ArrayDiff.ArrayNonlinearFunction{2}
+    @test f.head == :*
+    @test f.size == (2, 2)
+    @test !f.broadcasted
+    @test MOI.output_dimension(f) == 4
+    return
+end
+
+function test_neural_nlopt()
+    n = 2
+    X = [1.0 0.5; 0.3 0.8]
+    target = [0.5 0.2; 0.1 0.7]
+    model = direct_model(NLopt.Optimizer())
+    set_attribute(model, "algorithm", :LD_LBFGS)
+    @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    # Use distinct starting values to break symmetry
+    start_W1 = [0.3 -0.2; 0.1 0.4]
+    start_W2 = [-0.1 0.5; 0.2 -0.3]
+    for i in 1:n, j in 1:n
+        set_start_value(W1[i, j], start_W1[i, j])
+        set_start_value(W2[i, j], start_W2[i, j])
+    end
+    Y = W2 * tanh.(W1 * X)
+    loss = LinearAlgebra.norm(Y .- target)
+    @objective(model, Min, loss)
+    optimize!(model)
+    @test termination_status(model) == MOI.LOCALLY_SOLVED
+    @test objective_value(model) < 1e-6
+    return
+end
+
+function test_neural_ipopt_nlpmodels()
+    # Test end-to-end: JuMP → NLopt (stores ArrayDiff model) → NLPModelsJuMP → Ipopt
+    n = 2
+    X = [1.0 0.5; 0.3 0.8]
+    target = [0.5 0.2; 0.1 0.7]
+    inner = NLopt.Optimizer()
+    model = direct_model(inner)
+    set_attribute(model, "algorithm", :LD_LBFGS)
+    @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    start_W1 = [0.3 -0.2; 0.1 0.4]
+    start_W2 = [-0.1 0.5; 0.2 -0.3]
+    for i in 1:n, j in 1:n
+        set_start_value(W1[i, j], start_W1[i, j])
+        set_start_value(W2[i, j], start_W2[i, j])
+    end
+    Y = W2 * tanh.(W1 * X)
+    loss = LinearAlgebra.norm(Y .- target)
+    @objective(model, Min, loss)
+    # NLopt's nlp_model is now an ArrayDiff.Model (via nonlinear_model API).
+    # Build the evaluator from it and solve with Ipopt via its MOI interface.
+    nvar = 2 * n * n
+    vars = MOI.VariableIndex.(1:nvar)
+    evaluator = ArrayDiff.Evaluator(inner.nlp_model, ArrayDiff.Mode(), vars)
+    nlp_data = MOI.NLPBlockData(evaluator)
+    ipopt = Ipopt.Optimizer()
+    MOI.set(ipopt, MOI.RawOptimizerAttribute("print_level"), 0)
+    MOI.set(ipopt, MOI.RawOptimizerAttribute("hessian_approximation"), "limited-memory")
+    xs = MOI.add_variables(ipopt, nvar)
+    x0 = vcat(vec(start_W1), vec(start_W2))
+    for i in 1:nvar
+        MOI.set(ipopt, MOI.VariablePrimalStart(), xs[i], x0[i])
+    end
+    MOI.set(ipopt, MOI.NLPBlock(), nlp_data)
+    MOI.set(ipopt, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+    MOI.optimize!(ipopt)
+    @test MOI.get(ipopt, MOI.TerminationStatus()) == MOI.LOCALLY_SOLVED
     return
 end
 
