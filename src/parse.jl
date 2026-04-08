@@ -158,7 +158,9 @@ end
 
 function _parse_expression(stack, data, expr, x, parent_index)
     if Meta.isexpr(x, :call)
-        if length(x.args) == 2 && !Meta.isexpr(x.args[2], :...)
+        if x.args[1] == :reduce
+            _parse_reduce_expression(stack, data, expr, x, parent_index)
+        elseif length(x.args) == 2 && !Meta.isexpr(x.args[2], :...)
             _parse_univariate_expression(stack, data, expr, x, parent_index)
         else
             # The call is either n-ary, or it is a splat, in which case we
@@ -275,6 +277,36 @@ function _parse_vcat_expression(
     for i in length(x.args):-1:1
         push!(stack, (length(expr.nodes), x.args[i]))
     end
+    return
+end
+
+function _parse_reduce_expression(stack, data, expr, x, parent_index)
+    if length(x.args) != 3
+        error("Unsupported reduce expression: $x. Expected reduce(op, collection).")
+    end
+
+    op = x.args[2]
+    collection = x.args[3]
+
+    if !Meta.isexpr(collection, :vect)
+        error("Unsupported reduce collection: $collection. Expected a vector literal.")
+    end
+
+    args = collection.args
+
+    if isempty(args)
+        error("Unsupported reduce on empty collection.")
+    elseif length(args) == 1
+        push!(stack, (parent_index, args[1]))
+        return
+    end
+
+    folded = Expr(:call, op, args[1], args[2])
+    for i in 3:length(args)
+        folded = Expr(:call, op, folded, args[i])
+    end
+
+    push!(stack, (parent_index, folded))
     return
 end
 
