@@ -4,7 +4,7 @@
 # ── moi_function: JuMP → MOI ─────────────────────────────────────────────────
 
 function _to_moi_arg(x::ArrayOfVariables{T,N}) where {T,N}
-    return ArrayOfVariableIndices{N}(x.offset, x.size)
+    return ArrayOfContiguousVariables{N}(x.offset, x.size)
 end
 
 function _to_moi_arg(x::GenericArrayExpr{V,N}) where {V,N}

@@ -13,7 +13,7 @@ function _parse_moi_stack(data::Model, expr::Expression, root, parent_index::Int
             _parse_scalar_nonlinear(stack, data, expr, item, parent)
         elseif item isa ArrayNonlinearFunction
             _parse_array_nonlinear(stack, data, expr, item, parent)
-        elseif item isa ArrayOfVariableIndices
+        elseif item isa ArrayOfContiguousVariables
             _parse_array_of_variable_indices(stack, data, expr, item, parent)
         elseif item isa Matrix{Float64}
             _parse_constant_matrix(stack, data, expr, item, parent)
@@ -49,7 +49,7 @@ end
 function parse_expression(
     data::Model,
     expr::Expression,
-    x::ArrayOfVariableIndices,
+    x::ArrayOfContiguousVariables,
     parent_index::Int,
 )
     return _parse_moi_stack(data, expr, x, parent_index)
@@ -140,13 +140,13 @@ function _parse_array_nonlinear(
     return
 end
 
-# ── ArrayOfVariableIndices ───────────────────────────────────────────────────
+# ── ArrayOfContiguousVariables ───────────────────────────────────────────────────
 
 function _parse_array_of_variable_indices(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
     expr::Expression,
-    x::ArrayOfVariableIndices{2},
+    x::ArrayOfContiguousVariables{2},
     parent_index::Int,
 )
     m, n = x.size
@@ -171,7 +171,7 @@ function _parse_array_of_variable_indices(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
     expr::Expression,
-    x::ArrayOfVariableIndices{1},
+    x::ArrayOfContiguousVariables{1},
     parent_index::Int,
 )
     m = x.size[1]
@@ -224,4 +224,3 @@ function _parse_constant_vector(
     end
     return
 end
-
