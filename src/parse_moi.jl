@@ -1,7 +1,4 @@
 # parse_expression methods for MOI function types on ArrayDiff.Model.
-#
-# These let ArrayDiff.set_objective accept MOI.ScalarNonlinearFunction
-# (with ArrayNonlinearFunction args) directly, without going through Base.Expr.
 
 # ── Shared iterative stack loop ──────────────────────────────────────────────
 
@@ -9,19 +6,7 @@ function _parse_moi_stack(data::Model, expr::Expression, root, parent_index::Int
     stack = Tuple{Int,Any}[(parent_index, root)]
     while !isempty(stack)
         parent, item = pop!(stack)
-        if item isa MOI.ScalarNonlinearFunction
-            _parse_scalar_nonlinear(stack, data, expr, item, parent)
-        elseif item isa ArrayNonlinearFunction
-            _parse_array_nonlinear(stack, data, expr, item, parent)
-        elseif item isa ArrayOfContiguousVariables
-            _parse_array_of_variable_indices(stack, data, expr, item, parent)
-        elseif item isa Matrix{Float64}
-            _parse_constant_matrix(stack, data, expr, item, parent)
-        elseif item isa Vector{Float64}
-            _parse_constant_vector(stack, data, expr, item, parent)
-        else
-            parse_expression(data, expr, item, parent)
-        end
+        _parse_moi_stack!(stack, data, expr, item, parent)
     end
     return
 end
@@ -57,7 +42,17 @@ end
 
 # ── ScalarNonlinearFunction ──────────────────────────────────────────────────
 
-function _parse_scalar_nonlinear(
+function _parse_moi_stack!(
+    ::Vector{Tuple{Int,Any}},
+    data::Model,
+    expr::Expression,
+    x::Union{Float64,MOI.VariableIndex},
+    parent_index::Int,
+)
+    return parse_expression(data, expr, x, parent_index)
+end
+
+function _parse_moi_stack!(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
     expr::Expression,
@@ -87,7 +82,7 @@ end
 
 # ── ArrayNonlinearFunction ───────────────────────────────────────────────────
 
-function _parse_array_nonlinear(
+function _parse_moi_stack!(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
     expr::Expression,
@@ -142,7 +137,7 @@ end
 
 # ── ArrayOfContiguousVariables ───────────────────────────────────────────────────
 
-function _parse_array_of_variable_indices(
+function _parse_moi_stack!(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
     expr::Expression,
@@ -167,7 +162,7 @@ function _parse_array_of_variable_indices(
     return
 end
 
-function _parse_array_of_variable_indices(
+function _parse_moi_stack!(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
     expr::Expression,
@@ -187,7 +182,7 @@ end
 
 # ── Constant matrices and vectors ────────────────────────────────────────────
 
-function _parse_constant_matrix(
+function _parse_moi_stack!(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
     expr::Expression,
@@ -209,7 +204,7 @@ function _parse_constant_matrix(
     return
 end
 
-function _parse_constant_vector(
+function _parse_moi_stack!(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
     expr::Expression,

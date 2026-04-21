@@ -39,7 +39,7 @@ function test_neural()
         @test prod.head == :*
         @test !prod.broadcasted
         @test sprint(show, prod) ==
-              "2×2 ArrayDiff.GenericArrayExpr{JuMP.VariableRef, 2}"
+              "2×2 ArrayDiff.GenericArrayExpr{$(JuMP.VariableRef), 2}"
         err = ErrorException(
             "`getindex` not implemented, build vectorized expression instead",
         )
