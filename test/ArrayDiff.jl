@@ -634,6 +634,79 @@ function test_objective_broadcasted_tanh()
     return
 end
 
+function test_objective_reduce_sum()
+    model = ArrayDiff.Model()
+    x1 = MOI.VariableIndex(1)
+    x2 = MOI.VariableIndex(2)
+    x3 = MOI.VariableIndex(3)
+    ArrayDiff.set_objective(model, :(reduce(+, [$x1, $x2, $x3])))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3])
+    MOI.initialize(evaluator, [:Grad])
+    sizes = evaluator.backend.objective.expr.sizes
+    @test sizes.ndims == [0, 0, 0, 0, 0]
+    @test sizes.size_offset == [0, 0, 0, 0, 0]
+    @test sizes.size == []
+    @test sizes.storage_offset == [0, 1, 2, 3, 4, 5]
+    x1 = 1.0
+    x2 = 2.0
+    x3 = 3.0
+    @test MOI.eval_objective(evaluator, [x1, x2, x3]) == 6.0
+    g = ones(3)
+    MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3])
+    @test g == [1.0, 1.0, 1.0]
+    return
+end
+
+function test_objective_reduce_prod()
+    model = ArrayDiff.Model()
+    x1 = MOI.VariableIndex(1)
+    x2 = MOI.VariableIndex(2)
+    x3 = MOI.VariableIndex(3)
+    ArrayDiff.set_objective(model, :(reduce(*, [$x1, $x2, $x3])))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3])
+    MOI.initialize(evaluator, [:Grad])
+    sizes = evaluator.backend.objective.expr.sizes
+    @test sizes.ndims == [0, 0, 0, 0, 0]
+    @test sizes.size_offset == [0, 0, 0, 0, 0]
+    @test sizes.size == []
+    @test sizes.storage_offset == [0, 1, 2, 3, 4, 5]
+    x1 = 1.0
+    x2 = 2.0
+    x3 = 3.0
+    @test MOI.eval_objective(evaluator, [x1, x2, x3]) == 6.0
+    g = ones(3)
+    MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3])
+    @test g == [6.0 / x1, 6.0 / x2, 6.0 / x3]
+    return
+end
+
+function test_objective_reduce_atan()
+    model = ArrayDiff.Model()
+    x1 = MOI.VariableIndex(1)
+    x2 = MOI.VariableIndex(2)
+    x3 = MOI.VariableIndex(3)
+    ArrayDiff.set_objective(model, :(reduce(atan, [$x1, $x2, $x3])))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3])
+    MOI.initialize(evaluator, [:Grad])
+    sizes = evaluator.backend.objective.expr.sizes
+    @test sizes.ndims == [0, 0, 0, 0, 0]
+    @test sizes.size_offset == [0, 0, 0, 0, 0]
+    @test sizes.size == []
+    @test sizes.storage_offset == [0, 1, 2, 3, 4, 5]
+    x1 = 1.0
+    x2 = 2.0
+    x3 = 3.0
+    @test MOI.eval_objective(evaluator, [x1, x2, x3]) == atan(atan(x1, x2), x3)
+    g = ones(3)
+    MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3])
+    @test g ≈ [
+        x2 * x3 / ((x1^2 + x2^2) * (x3^2 + atan(x1, x2)^2)),
+        -x1 * x3 / ((x1^2 + x2^2) * (x3^2 + atan(x1, x2)^2)),
+        -atan(x1, x2) / (x3^2 + atan(x1, x2)^2),
+    ]
+    return
+end
+
 end  # module
 
 TestArrayDiff.runtests()
