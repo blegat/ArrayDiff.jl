@@ -696,8 +696,7 @@ function test_objective_reduce_atan()
     x1 = 1.0
     x2 = 2.0
     x3 = 3.0
-    @test MOI.eval_objective(evaluator, [x1, x2, x3]) ==
-          atan(atan(x1, x2), x3)
+    @test MOI.eval_objective(evaluator, [x1, x2, x3]) == atan(atan(x1, x2), x3)
     g = ones(3)
     MOI.eval_objective_gradient(evaluator, g, [x1, x2, x3])
     @test g ≈ [
@@ -705,7 +704,7 @@ function test_objective_reduce_atan()
         -x1 * x3 / ((x1^2 + x2^2) * (x3^2 + atan(x1, x2)^2)),
         -atan(x1, x2) / (x3^2 + atan(x1, x2)^2),
     ]
-    return  
+    return
 end
 
 end  # module

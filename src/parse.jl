@@ -282,14 +282,18 @@ end
 
 function _parse_reduce_expression(stack, data, expr, x, parent_index)
     if length(x.args) != 3
-        error("Unsupported reduce expression: $x. Expected reduce(op, collection).")
+        error(
+            "Unsupported reduce expression: $x. Expected reduce(op, collection).",
+        )
     end
 
     op = x.args[2]
     collection = x.args[3]
 
     if !Meta.isexpr(collection, :vect)
-        error("Unsupported reduce collection: $collection. Expected a vector literal.")
+        error(
+            "Unsupported reduce collection: $collection. Expected a vector literal.",
+        )
     end
 
     args = collection.args
