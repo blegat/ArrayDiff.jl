@@ -2,7 +2,12 @@
 
 # ── Shared iterative stack loop ──────────────────────────────────────────────
 
-function _parse_moi_stack(data::Model, expr::Expression, root, parent_index::Int)
+function _parse_moi_stack(
+    data::Model,
+    expr::Expression,
+    root,
+    parent_index::Int,
+)
     stack = Tuple{Int,Any}[(parent_index, root)]
     while !isempty(stack)
         parent, item = pop!(stack)
@@ -115,10 +120,7 @@ function _parse_moi_stack!(
         if nargs == 1
             id = get(data.operators.univariate_operator_to_id, op, nothing)
             if id !== nothing
-                push!(
-                    expr.nodes,
-                    Node(NODE_CALL_UNIVARIATE, id, parent_index),
-                )
+                push!(expr.nodes, Node(NODE_CALL_UNIVARIATE, id, parent_index))
                 push!(stack, (length(expr.nodes), x.args[1]))
                 return
             end

@@ -226,7 +226,11 @@ function test_neural_ipopt_nlpmodels()
     nlp_data = MOI.NLPBlockData(evaluator)
     ipopt = Ipopt.Optimizer()
     MOI.set(ipopt, MOI.RawOptimizerAttribute("print_level"), 0)
-    MOI.set(ipopt, MOI.RawOptimizerAttribute("hessian_approximation"), "limited-memory")
+    MOI.set(
+        ipopt,
+        MOI.RawOptimizerAttribute("hessian_approximation"),
+        "limited-memory",
+    )
     xs = MOI.add_variables(ipopt, nvar)
     x0 = vcat(vec(start_W1), vec(start_W2))
     for i in 1:nvar

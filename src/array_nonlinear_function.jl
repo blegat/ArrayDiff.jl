@@ -28,7 +28,12 @@ function MOI.output_dimension(f::ArrayNonlinearFunction)
 end
 
 function Base.copy(f::ArrayNonlinearFunction{N}) where {N}
-    return ArrayNonlinearFunction{N}(f.head, copy(f.args), f.size, f.broadcasted)
+    return ArrayNonlinearFunction{N}(
+        f.head,
+        copy(f.args),
+        f.size,
+        f.broadcasted,
+    )
 end
 
 """
