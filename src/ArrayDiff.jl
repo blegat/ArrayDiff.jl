@@ -57,17 +57,7 @@ include("array_nonlinear_function.jl")
 include("parse_moi.jl")
 
 # Tell MOI to create an ArrayDiff.Model when Mode() is the AD backend.
-Nonlinear.nonlinear_model(::Mode) = Model()
-
-# Extend MOI.Nonlinear functions so solvers can call them on ArrayDiff.Model.
-function Nonlinear.register_operator(
-    model::Model,
-    op::Symbol,
-    nargs::Int,
-    f::Function...,
-)
-    return register_operator(model, op, nargs, f...)
-end
+Nonlinear.model(::Mode) = Model()
 
 # Extend MOI.Nonlinear.set_objective so that solvers calling
 # MOI.Nonlinear.set_objective(arraydiff_model, snf) dispatch here.
@@ -91,7 +81,7 @@ function Evaluator(
 end
 
 # Called by solvers via MOI.Nonlinear.Evaluator(nlp_model, ad_backend, vars).
-# When nlp_model is an ArrayDiff.Model (created by nonlinear_model(::Mode)),
+# When nlp_model is an ArrayDiff.Model (created by model(::Mode)),
 # the model already has the parsed objective — just build the evaluator.
 function Nonlinear.Evaluator(
     model::Model,

@@ -1,10 +1,6 @@
 # Largely inspired by MathOptInterface/src/Nonlinear/parse.jl
 # Most functions have been copy-pasted and slightly modified to adapt to small changes in OperatorRegistry and Model.
 
-function MOI.features_available(evaluator::Evaluator)
-    return features_available(evaluator)
-end
-
 function MOI.initialize(evaluator::Evaluator, features::Vector{Symbol})
     start_time = time()
     empty!(evaluator.ordered_constraints)

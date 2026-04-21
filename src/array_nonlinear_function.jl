@@ -3,9 +3,9 @@
 
 Represents an N-dimensional array-valued nonlinear function for MOI.
 
-The `output_dimension` is `prod(size)` — the vectorization of the array — since
-`MOI.AbstractVectorFunction` cannot represent multidimensional arrays. No actual
-vectorization is performed; this is only for passing through MOI layers.
+The `output_dimension` is `prod(size)`, the length of the vectorization of the
+array, since `MOI.AbstractVectorFunction` cannot represent multidimensional
+arrays. No actual vectorization node is added to the expression graph.
 
 ## Fields
 

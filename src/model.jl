@@ -73,7 +73,7 @@ function register_operator(
     return
 end
 
-function features_available(evaluator::Evaluator)
+function MOI.features_available(evaluator::Evaluator)
     features = Symbol[]
     if evaluator.backend !== nothing
         append!(features, MOI.features_available(evaluator.backend))
