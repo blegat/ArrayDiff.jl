@@ -347,6 +347,15 @@ function _forward_eval(
                         @j f.partials_storage[ix] = v / @s f.forward_storage[k]
                     end
                 end
+            elseif node.index == 15 # sum
+                @assert N == 1
+                ix = children_arr[first(children_indices)]
+                tmp_sum = zero(T)
+                for j in _eachindex(f.sizes, ix)
+                    @j f.partials_storage[ix] = one(T)
+                    tmp_sum += @j f.forward_storage[ix]
+                end
+                @s f.forward_storage[k] = tmp_sum
             elseif node.index == 16 # row
                 for j in _eachindex(f.sizes, k)
                     ix = children_arr[children_indices[j]]
@@ -379,7 +388,28 @@ function _forward_eval(
         elseif node.type == NODE_CALL_MULTIVARIATE_BROADCASTED
             children_indices = SparseArrays.nzrange(f.adj, k)
             N = length(children_indices)
-            if node.index == node.index == 3 # :*
+            if node.index == 1 # :+  (broadcasted)
+                for j in _eachindex(f.sizes, k)
+                    tmp_sum = zero(T)
+                    for c_idx in children_indices
+                        ix = children_arr[c_idx]
+                        @j f.partials_storage[ix] = one(T)
+                        tmp_sum += @j f.forward_storage[ix]
+                    end
+                    @j f.forward_storage[k] = tmp_sum
+                end
+            elseif node.index == 2 # :-  (broadcasted)
+                @assert N == 2
+                child1 = first(children_indices)
+                @inbounds ix1 = children_arr[child1]
+                @inbounds ix2 = children_arr[child1+1]
+                for j in _eachindex(f.sizes, k)
+                    @j f.partials_storage[ix1] = one(T)
+                    @j f.partials_storage[ix2] = -one(T)
+                    @j f.forward_storage[k] =
+                        @j(f.forward_storage[ix1]) - @j(f.forward_storage[ix2])
+                end
+            elseif node.index == 3 # :*  (broadcasted)
                 # Node `k` is not scalar, so we do matrix multiplication
                 if f.sizes.ndims[k] != 0
                     @assert N == 2
@@ -733,6 +763,13 @@ function _reverse_eval(f::_SubexpressionStorage)
                             rev_parent * partial,
                         )
                         @j f.reverse_storage[ix] = val
+                    end
+                    continue
+                elseif op == :sum
+                    rev_parent = @s f.reverse_storage[k]
+                    ix = children_arr[children_indices[1]]
+                    for j in _eachindex(f.sizes, ix)
+                        @j f.reverse_storage[ix] = rev_parent
                     end
                     continue
                 elseif op == :row

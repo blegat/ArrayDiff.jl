@@ -12,6 +12,11 @@ const Nonlinear = MOI.Nonlinear
 import SparseArrays
 import OrderedCollections
 
+"""
+    Mode() <: MOI.Nonlinear.AbstractAutomaticDifferentiation
+
+Fork of `MOI.Nonlinear.SparseReverseMode` to add array support.
+"""
 struct Mode <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
 
 # Override basic math functions to return NaN instead of throwing errors.
@@ -48,14 +53,38 @@ include("model.jl")
 include("parse.jl")
 include("evaluator.jl")
 
-"""
-    Mode() <: AbstractAutomaticDifferentiation
+include("array_nonlinear_function.jl")
+include("parse_moi.jl")
 
-Fork of `MOI.Nonlinear.SparseReverseMode` to add array support.
-"""
+# Tell MOI to create an ArrayDiff.Model when Mode() is the AD backend.
+Nonlinear.model(::Mode) = Model()
 
+# Extend MOI.Nonlinear.set_objective so that solvers calling
+# MOI.Nonlinear.set_objective(arraydiff_model, snf) dispatch here.
+function Nonlinear.set_objective(model::Model, obj::MOI.ScalarNonlinearFunction)
+    model.objective = parse_expression(model, obj)
+    return
+end
+
+function Nonlinear.set_objective(model::Model, ::Nothing)
+    model.objective = nothing
+    return
+end
+
+# Create an ArrayDiff Evaluator from an ArrayDiff Model.
 function Evaluator(
     model::ArrayDiff.Model,
+    ::Mode,
+    ordered_variables::Vector{MOI.VariableIndex},
+)
+    return Evaluator(model, NLPEvaluator(model, ordered_variables))
+end
+
+# Called by solvers via MOI.Nonlinear.Evaluator(nlp_model, ad_backend, vars).
+# When nlp_model is an ArrayDiff.Model (created by model(::Mode)),
+# the model already has the parsed objective — just build the evaluator.
+function Nonlinear.Evaluator(
+    model::Model,
     ::Mode,
     ordered_variables::Vector{MOI.VariableIndex},
 )
