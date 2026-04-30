@@ -1,0 +1,8 @@
+channels = ["conda-forge"]
+
+[deps]
+python = ">=3.10,<3.13"
+
+[pip.deps]
+torch = ">=2.2"
+numpy = ">=1.24"
