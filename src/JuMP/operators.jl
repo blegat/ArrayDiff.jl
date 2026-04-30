@@ -45,6 +45,28 @@ function Base.broadcasted(
     return _broadcast(JuMP.variable_ref_type(x), op, x, y)
 end
 
+function Base.broadcasted(op::Function, x::AbstractJuMPArray, y::Number)
+    return _broadcast(JuMP.variable_ref_type(x), op, x, y)
+end
+
+function Base.broadcasted(op::Function, x::Number, y::AbstractJuMPArray)
+    return _broadcast(JuMP.variable_ref_type(y), op, x, y)
+end
+
+function Base.broadcasted(
+    ::typeof(Base.literal_pow),
+    ::typeof(^),
+    x::AbstractJuMPArray,
+    ::Val{y},
+) where {y}
+    return Base.broadcasted(^, x, y)
+end
+
+function Base.sum(x::GenericArrayExpr)
+    V = JuMP.variable_ref_type(x)
+    return JuMP.GenericNonlinearExpr{V}(:sum, Any[x])
+end
+
 import LinearAlgebra
 
 function _array_norm(x::AbstractJuMPArray)

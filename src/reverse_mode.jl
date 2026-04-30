@@ -465,6 +465,29 @@ function _forward_eval(
                     end
                     @inbounds f.forward_storage[k] = tmp_prod
                 end
+            elseif node.index == 4 # :^ (broadcasted), array .^ scalar
+                @assert N == 2
+                idx1 = first(children_indices)
+                idx2 = last(children_indices)
+                @inbounds ix1 = children_arr[idx1]
+                @inbounds ix2 = children_arr[idx2]
+                @assert f.sizes.ndims[ix2] == 0 "Broadcasted ^ requires scalar exponent"
+                @inbounds exponent =
+                    f.forward_storage[f.sizes.storage_offset[ix2]+1]
+                for j in _eachindex(f.sizes, k)
+                    base = @j f.forward_storage[ix1]
+                    if exponent == 2
+                        @j f.forward_storage[k] = base * base
+                        @j f.partials_storage[ix1] = 2 * base
+                    elseif exponent == 1
+                        @j f.forward_storage[k] = base
+                        @j f.partials_storage[ix1] = one(T)
+                    else
+                        @j f.forward_storage[k] = pow(base, exponent)
+                        @j f.partials_storage[ix1] =
+                            exponent * pow(base, exponent - 1)
+                    end
+                end
             end
         elseif node.type == NODE_CALL_UNIVARIATE
             child_idx = children_arr[f.adj.colptr[k]]
@@ -816,6 +839,35 @@ function _reverse_eval(f::_SubexpressionStorage)
                         end
                         continue
                     end
+                elseif op == :^
+                    # Broadcasted array .^ scalar: per-j reverse for the base,
+                    # and a sum-reduced reverse for the (scalar) exponent.
+                    @assert length(children_indices) == 2
+                    idx1 = first(children_indices)
+                    idx2 = last(children_indices)
+                    @inbounds ix1 = children_arr[idx1]
+                    @inbounds ix2 = children_arr[idx2]
+                    for j in _eachindex(f.sizes, k)
+                        rev_parent = @j f.reverse_storage[k]
+                        partial = @j f.partials_storage[ix1]
+                        val = ifelse(
+                            rev_parent == 0.0 && !isfinite(partial),
+                            rev_parent,
+                            rev_parent * partial,
+                        )
+                        @j f.reverse_storage[ix1] = val
+                    end
+                    rev_exp = zero(Float64)
+                    for j in _eachindex(f.sizes, k)
+                        rev_parent = @j f.reverse_storage[k]
+                        base = @j f.forward_storage[ix1]
+                        out = @j f.forward_storage[k]
+                        if base > 0
+                            rev_exp += rev_parent * out * log(base)
+                        end
+                    end
+                    @s f.reverse_storage[ix2] = rev_exp
+                    continue
                 end
             end
         elseif node.type != NODE_CALL_UNIVARIATE &&

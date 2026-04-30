@@ -288,6 +288,9 @@ function _infer_sizes(
             if op == :+ || op == :-
                 # Broadcasted +/- preserves shape
                 _copy_size!(sizes, k, children_arr[first(children_indices)])
+            elseif op == :^
+                # Broadcasted ^ with scalar exponent preserves base shape
+                _copy_size!(sizes, k, children_arr[first(children_indices)])
             elseif op == :*
                 # TODO assert compatible sizes and all ndims should be 0 or 2
                 first_matrix = findfirst(children_indices) do i

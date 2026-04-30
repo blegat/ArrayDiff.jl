@@ -6,7 +6,6 @@
 
 using JuMP
 using ArrayDiff
-using LinearAlgebra
 import NLopt
 
 n = 2
@@ -28,8 +27,8 @@ end
 # Forward pass: Y = W2 * tanh.(W1 * X)
 Y = W2 * tanh.(W1 * X)
 
-# Loss: ||Y - target||  (norm returns a scalar NonlinearExpr)
-loss = norm(Y .- target)
+# Loss: sum of squared errors
+loss = sum((Y .- target) .^ 2)
 @objective(model, Min, loss)
 
 optimize!(model)
