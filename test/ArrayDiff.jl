@@ -634,6 +634,58 @@ function test_objective_broadcasted_tanh()
     return
 end
 
+function test_objective_broadcasted_pow_vector()
+    model = ArrayDiff.Model()
+    x1 = MOI.VariableIndex(1)
+    x2 = MOI.VariableIndex(2)
+    ArrayDiff.set_objective(model, :(sum([$x1, $x2] .^ 2)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x1, x2])
+    MOI.initialize(evaluator, [:Grad])
+    x1v = 3.0
+    x2v = -4.0
+    @test MOI.eval_objective(evaluator, [x1v, x2v]) == x1v^2 + x2v^2
+    g = ones(2)
+    MOI.eval_objective_gradient(evaluator, g, [x1v, x2v])
+    @test g == [2 * x1v, 2 * x2v]
+    return
+end
+
+function test_objective_broadcasted_pow_matrix_with_constant()
+    model = ArrayDiff.Model()
+    x1 = MOI.VariableIndex(1)
+    x2 = MOI.VariableIndex(2)
+    x3 = MOI.VariableIndex(3)
+    x4 = MOI.VariableIndex(4)
+    ArrayDiff.set_objective(
+        model,
+        :(sum(([$x1 $x2; $x3 $x4] - [1 1; 1 1]) .^ 2)),
+    )
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
+    MOI.initialize(evaluator, [:Grad])
+    xs = [1.0, 2.0, 3.0, 4.0]
+    @test MOI.eval_objective(evaluator, xs) ==
+          (1-1)^2 + (2-1)^2 + (3-1)^2 + (4-1)^2
+    g = ones(4)
+    MOI.eval_objective_gradient(evaluator, g, xs)
+    @test g == [2 * (1 - 1), 2 * (2 - 1), 2 * (3 - 1), 2 * (4 - 1)]
+    return
+end
+
+function test_objective_broadcasted_pow_cubed()
+    model = ArrayDiff.Model()
+    x1 = MOI.VariableIndex(1)
+    x2 = MOI.VariableIndex(2)
+    ArrayDiff.set_objective(model, :(sum([$x1, $x2] .^ 3)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x1, x2])
+    MOI.initialize(evaluator, [:Grad])
+    xs = [2.0, 3.0]
+    @test MOI.eval_objective(evaluator, xs) ≈ 2.0^3 + 3.0^3
+    g = ones(2)
+    MOI.eval_objective_gradient(evaluator, g, xs)
+    @test g ≈ [3 * 2.0^2, 3 * 3.0^2]
+    return
+end
+
 end  # module
 
 TestArrayDiff.runtests()
