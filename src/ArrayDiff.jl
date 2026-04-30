@@ -56,8 +56,13 @@ include("evaluator.jl")
 include("array_nonlinear_function.jl")
 include("parse_moi.jl")
 
-# Tell MOI to create an ArrayDiff.Model when Mode() is the AD backend.
-Nonlinear.model(::Mode) = Model()
+if isdefined(Nonlinear, :model)
+    # Needs https://github.com/jump-dev/MathOptInterface.jl/pull/2989
+    # Remove this `if` when it's part of a released version of MOI
+
+    # Tell MOI to create an ArrayDiff.Model when Mode() is the AD backend.
+    Nonlinear.model(::Mode) = Model()
+end
 
 # Extend MOI.Nonlinear.set_objective so that solvers calling
 # MOI.Nonlinear.set_objective(arraydiff_model, snf) dispatch here.
