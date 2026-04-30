@@ -124,6 +124,8 @@ function pytorch_trace(f)
     return prof.key_averages().table(sort_by = "cuda_time_total")
 end
 
+const _pygc = pyimport("gc")
+
 # -------------------------------------------------------------------------
 # Benchmark + verify for one (h, d, n)
 # -------------------------------------------------------------------------
@@ -157,15 +159,17 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
     println("gradients match: ", ok)
 
     # ----- Benchmarks -----
-    println("\n--- benchmark (median over many samples, includes CUDA.synchronize) ---")
+    # samples=30 evals=1 caps total iterations so the PyTorch caching allocator
+    # doesn't blow up at h=4096; setup= clears it between samples.
+    println("\n--- benchmark (median of 30 samples, post-sync) ---")
     bj = @benchmark begin
         reverse_diff($W1g, $W2g, $Xg, $yg)
         CUDA.synchronize()
-    end
+    end samples=30 evals=1 seconds=10
     bp = @benchmark begin
         pytorch_grad($W1t, $W2t, $Xt, $yt)
         $torch.cuda.synchronize()
-    end
+    end samples=30 evals=1 seconds=10 setup=($(_pygc).collect(); $torch.cuda.empty_cache())
     @printf "Julia (CUDA.jl) : median %8.3f µs\n" 1e-3 * median(bj).time
     @printf "PyTorch eager   : median %8.3f µs\n" 1e-3 * median(bp).time
 
@@ -194,6 +198,11 @@ function main()
 
     for h in (16, 256, 4096)
         run_one(; h = h)
+        # Release per-h tensors from both caching allocators before the next sweep.
+        GC.gc(true)
+        CUDA.reclaim()
+        _pygc.collect()
+        torch.cuda.empty_cache()
     end
 end
 
