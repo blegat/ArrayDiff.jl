@@ -176,6 +176,11 @@ function test_moi_function()
 end
 
 function test_neural_nlopt()
+    if !isdefined(MOI.Nonlinear, :model)
+        # TODO Needs https://github.com/jump-dev/MathOptInterface.jl/pull/2989
+        # Remove this `if` when it's part of a released version of MOI
+        return
+    end
     n = 2
     X = [1.0 0.5; 0.3 0.8]
     target = [0.5 0.2; 0.1 0.7]
@@ -200,6 +205,11 @@ function test_neural_nlopt()
 end
 
 function test_neural_ipopt_nlpmodels()
+    if !isdefined(MOI.Nonlinear, :model)
+        # TODO Needs https://github.com/jump-dev/MathOptInterface.jl/pull/2989
+        # Remove this `if` when it's part of a released version of MOI
+        return
+    end
     # Test end-to-end: JuMP → NLopt (stores ArrayDiff model) → NLPModelsJuMP → Ipopt
     n = 2
     X = [1.0 0.5; 0.3 0.8]
