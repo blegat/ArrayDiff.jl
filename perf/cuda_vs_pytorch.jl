@@ -80,6 +80,36 @@ function julia_trace(f)
     end
 end
 
+# CUDATools.Profile.ProfileResults' default `show` calls `format_bytes` on a
+# column that can contain `Inf` (e.g. for non-memcpy kernels), which throws
+# `InexactError(Int64, Inf)`. Walk `trace.device` directly to sidestep it.
+function summarize_julia_trace(io::IO, trace)
+    dev = trace.device
+    names_ = dev.name
+    starts = dev.start
+    stops  = dev.stop
+    counts = Dict{String,Int}()
+    totals = Dict{String,Float64}()  # in seconds
+    order  = String[]
+    for i in eachindex(names_)
+        nm = String(names_[i])
+        if !haskey(counts, nm)
+            push!(order, nm)
+            counts[nm] = 0
+            totals[nm] = 0.0
+        end
+        counts[nm] += 1
+        totals[nm] += stops[i] - starts[i]
+    end
+    sorted = sort(order; by = nm -> -totals[nm])
+    @printf io "  %-66s %6s %10s\n" "kernel" "count" "total µs"
+    println(io, "  ", "-"^66, " ", "-"^6, " ", "-"^10)
+    for nm in sorted
+        label = length(nm) <= 66 ? nm : first(nm, 63) * "..."
+        @printf io "  %-66s %6d %10.2f\n" label counts[nm] 1e6 * totals[nm]
+    end
+end
+
 function pytorch_trace(f)
     f(); torch.cuda.synchronize()  # warmup
     ProfilerActivity = profiler.ProfilerActivity
@@ -141,8 +171,7 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
 
     # ----- CUDA traces -----
     println("\n--- CUDA trace: Julia / CUDA.jl ---")
-    show(stdout, "text/plain", julia_trace(() -> reverse_diff(W1g, W2g, Xg, yg)))
-    println()
+    summarize_julia_trace(stdout, julia_trace(() -> reverse_diff(W1g, W2g, Xg, yg)))
 
     println("\n--- CUDA trace: PyTorch ---")
     println(pytorch_trace(() -> pytorch_grad(W1t, W2t, Xt, yt)))
