@@ -18,6 +18,7 @@
 
 using Random, LinearAlgebra, Printf
 using CUDA
+using CUDA: AS
 using BenchmarkTools
 using PythonCall
 
@@ -34,6 +35,95 @@ end
 function reverse_diff(W1, W2, X, y)
     _, J_1, J_2 = forward_pass(W1, W2, X, y)
     return (J_1 .* (W2' * J_2)) * X'
+end
+
+# -------------------------------------------------------------------------
+# Hardcoded CUDA.jl path — vectorized custom-kernel version
+#
+# Replaces the two big elementwise broadcasts:
+#   1. tanh.(W1 * X) and 1 .- y_1.^2  →  one fused @cuda kernel
+#   2. J_1 .* (W2' * J_2)             →  one @cuda kernel
+# with kernels that issue `ld.global.v4.f32` / `st.global.v4.f32` PTX,
+# matching PyTorch's `vectorized_elementwise_kernel<4, ...>` shape.
+#
+# The third broadcast (J_2 from a 1×n vector) is left as a regular .= since
+# n is tiny (e.g. 178) and vectorization wouldn't measurably help.
+#
+# Pattern is taken from CUDA.jl's own ldg.jl tests, which assert that
+# NTuple{4, Base.VecElement{Float32}} loads via Core.LLVMPtr lower to
+# `ld.global.v4` PTX.
+# -------------------------------------------------------------------------
+const Float4 = NTuple{4, Base.VecElement{Float32}}
+
+@inline _f4ptr(arr::CuDeviceArray{Float32}) =
+    reinterpret(Core.LLVMPtr{Float4, AS.Global}, pointer(arr))
+
+@inline _vec4(t1, t2, t3, t4) =
+    (Base.VecElement(t1), Base.VecElement(t2), Base.VecElement(t3), Base.VecElement(t4))
+
+function _tanh_and_jac_kernel!(y, J, x, n::Int)
+    i    = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    base = 4 * (i - 1)
+    if base + 4 <= n
+        v  = unsafe_load(_f4ptr(x), i, Val(16))
+        t1 = tanh(v[1].value); t2 = tanh(v[2].value)
+        t3 = tanh(v[3].value); t4 = tanh(v[4].value)
+        unsafe_store!(_f4ptr(y), _vec4(t1, t2, t3, t4), i, Val(16))
+        unsafe_store!(_f4ptr(J),
+            _vec4(1f0 - t1*t1, 1f0 - t2*t2, 1f0 - t3*t3, 1f0 - t4*t4), i, Val(16))
+    elseif base < n
+        for k in 1:(n - base)
+            @inbounds t = tanh(x[base + k])
+            @inbounds y[base + k] = t
+            @inbounds J[base + k] = 1f0 - t*t
+        end
+    end
+    return nothing
+end
+
+function tanh_and_jac!(y::CuArray{Float32}, J::CuArray{Float32}, x::CuArray{Float32})
+    n       = length(x)
+    threads = 256
+    blocks  = cld(cld(n, 4), threads)
+    @cuda threads=threads blocks=blocks _tanh_and_jac_kernel!(y, J, x, n)
+    return (y, J)
+end
+
+function _vmul_kernel!(out, a, b, n::Int)
+    i    = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    base = 4 * (i - 1)
+    if base + 4 <= n
+        va = unsafe_load(_f4ptr(a), i, Val(16))
+        vb = unsafe_load(_f4ptr(b), i, Val(16))
+        unsafe_store!(_f4ptr(out),
+            _vec4(va[1].value*vb[1].value, va[2].value*vb[2].value,
+                  va[3].value*vb[3].value, va[4].value*vb[4].value), i, Val(16))
+    elseif base < n
+        for k in 1:(n - base)
+            @inbounds out[base + k] = a[base + k] * b[base + k]
+        end
+    end
+    return nothing
+end
+
+function vmul!(out::CuArray{Float32}, a::CuArray{Float32}, b::CuArray{Float32})
+    n       = length(a)
+    threads = 256
+    blocks  = cld(cld(n, 4), threads)
+    @cuda threads=threads blocks=blocks _vmul_kernel!(out, a, b, n)
+    return out
+end
+
+function reverse_diff_v4(W1, W2, X, y)
+    Z1  = W1 * X                                 # GEMM (h, n)
+    y_1 = similar(Z1)
+    J_1 = similar(Z1)
+    tanh_and_jac!(y_1, J_1, Z1)                  # fused tanh + (1 - y²), vec=4
+    J_2 = 2 .* (W2 * y_1 .- y) ./ size(y, 2)     # 1×n broadcast, kept as-is
+    tmp = W2' * J_2                              # GEMM (h, n)
+    out = similar(tmp)
+    vmul!(out, J_1, tmp)                         # J_1 .* tmp, vec=4
+    return out * X'                              # GEMM (h, d)
 end
 
 # -------------------------------------------------------------------------
@@ -160,7 +250,8 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
 
     # ----- Julia / CUDA.jl -----
     W1g = CuArray(W1); W2g = CuArray(W2); Xg = CuArray(X); yg = CuArray(y)
-    grad_julia = Array(reverse_diff(W1g, W2g, Xg, yg))
+    grad_julia    = Array(reverse_diff(W1g, W2g, Xg, yg))
+    grad_julia_v4 = Array(reverse_diff_v4(W1g, W2g, Xg, yg))
     CUDA.synchronize()
 
     # ----- PyTorch -----
@@ -180,12 +271,13 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
     torch.cuda.synchronize()
 
     # ----- Numerical equivalence -----
-    for (name, g) in [("eager   ", grad_pytorch_eager),
-                      ("compiled", grad_pytorch_compiled)]
+    for (name, g) in [("Julia v4 (vec=4)   ", grad_julia_v4),
+                      ("PyTorch eager      ", grad_pytorch_eager),
+                      ("PyTorch compiled   ", grad_pytorch_compiled)]
         maxdiff = maximum(abs.(grad_julia .- g))
         relmag  = maxdiff / max(maximum(abs.(grad_julia)), eps(Float32))
         ok      = isapprox(grad_julia, g; rtol = rtol, atol = 1f-4)
-        @printf "PyTorch %s vs Julia:  max|Δ| = %.3e (rel %.2e)  match=%s\n" name maxdiff relmag ok
+        @printf "%s vs Julia broadcast: max|Δ| = %.3e (rel %.2e)  match=%s\n" name maxdiff relmag ok
     end
 
     # ----- Benchmarks -----
@@ -196,6 +288,10 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
         reverse_diff($W1g, $W2g, $Xg, $yg)
         CUDA.synchronize()
     end samples=30 evals=1 seconds=10
+    bj4 = @benchmark begin
+        reverse_diff_v4($W1g, $W2g, $Xg, $yg)
+        CUDA.synchronize()
+    end samples=30 evals=1 seconds=10
     be = @benchmark begin
         pytorch_grad_eager($W1t, $W2t, $Xt, $yt)
         $torch.cuda.synchronize()
@@ -204,13 +300,17 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
         pytorch_grad_compiled($W1t, $W2t, $Xt, $yt)
         $torch.cuda.synchronize()
     end samples=30 evals=1 seconds=10 setup=($(_pygc).collect(); $torch.cuda.empty_cache())
-    @printf "Julia (CUDA.jl)  : median %8.3f µs\n" 1e-3 * median(bj).time
+    @printf "Julia broadcast  : median %8.3f µs\n" 1e-3 * median(bj).time
+    @printf "Julia vec=4      : median %8.3f µs\n" 1e-3 * median(bj4).time
     @printf "PyTorch eager    : median %8.3f µs\n" 1e-3 * median(be).time
     @printf "PyTorch compiled : median %8.3f µs\n" 1e-3 * median(bc).time
 
     # ----- CUDA traces -----
-    println("\n--- CUDA trace: Julia / CUDA.jl ---")
+    println("\n--- CUDA trace: Julia broadcast ---")
     summarize_julia_trace(stdout, julia_trace(() -> reverse_diff(W1g, W2g, Xg, yg)))
+
+    println("\n--- CUDA trace: Julia vec=4 ---")
+    summarize_julia_trace(stdout, julia_trace(() -> reverse_diff_v4(W1g, W2g, Xg, yg)))
 
     println("\n--- CUDA trace: PyTorch eager ---")
     println(pytorch_trace(() -> pytorch_grad_eager(W1t, W2t, Xt, yt)))
@@ -231,7 +331,11 @@ function main()
     if !pyconvert(Bool, torch.cuda.is_available())
         error("PyTorch reports CUDA is not available.")
     end
-    println("CUDA.jl device : ", CUDA.name(CUDA.device()))
+    # Match PyTorch's default of fast tanh / fast intrinsics. Affects BOTH
+    # Julia versions equally, so the broadcast-vs-vec=4 comparison still
+    # isolates the kernel-design effect.
+    CUDA.math_mode!(CUDA.FAST_MATH)
+    println("CUDA.jl device : ", CUDA.name(CUDA.device()), "  (math_mode=FAST_MATH)")
     println("PyTorch device : ", pyconvert(String, torch.cuda.get_device_name(0)))
 
     for h in (16, 256, 4096)
