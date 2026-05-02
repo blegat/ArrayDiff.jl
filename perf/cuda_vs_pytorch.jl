@@ -145,7 +145,10 @@ function _gemm_simt!(C::CuArray{Float32,2}, transA::Char, A::CuArray{Float32,2},
     lda = max(1, stride(A, 2))
     ldb = max(1, stride(B, 2))
     ldc = max(1, stride(C, 2))
-    α = Ref{Float32}(alpha); β = Ref{Float32}(beta)
+    # CUDA.jl puts the cuBLAS handle in CUBLAS_POINTER_MODE_DEVICE, so alpha/beta
+    # MUST be device pointers. Passing host Ref{Float32} causes UVA fault handling
+    # per kernel launch (~100× slowdown but eventually-correct values).
+    α = CUDA.CuRef{Float32}(alpha); β = CUDA.CuRef{Float32}(beta)
     CUDA.CUBLAS.cublasGemmEx(
         CUDA.CUBLAS.handle(),
         transA, transB, m, n, k,
