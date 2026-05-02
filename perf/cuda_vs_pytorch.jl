@@ -127,6 +127,62 @@ function reverse_diff_v4(W1, W2, X, y)
 end
 
 # -------------------------------------------------------------------------
+# v5: vec=4 elementwise + SIMT cuBLAS GEMM (no TF32 tensor cores)
+#
+# Under FAST_MATH, gemmExComputeType picks CUBLAS_COMPUTE_32F_FAST_TF32, which
+# routes Float32 matmul through TF32 tensor cores. For our awkward k dims
+# (k=13 for W1*X, k=178 for out*X', k=1 for W2'*J_2), tensor cores can't be
+# filled efficiently and the resulting cutlass_80_tensorop kernel runs much
+# slower than a SIMT FP32 GEMM. We bypass gemmExComputeType by calling
+# cublasGemmEx directly with CUBLAS_COMPUTE_32F + CUBLAS_GEMM_DEFAULT.
+# -------------------------------------------------------------------------
+function _gemm_simt!(C::CuArray{Float32,2}, transA::Char, A::CuArray{Float32,2},
+                     transB::Char, B::CuArray{Float32,2};
+                     alpha::Float32 = 1f0, beta::Float32 = 0f0)
+    m   = size(A, transA == 'N' ? 1 : 2)
+    k   = size(A, transA == 'N' ? 2 : 1)
+    n   = size(B, transB == 'N' ? 2 : 1)
+    lda = max(1, stride(A, 2))
+    ldb = max(1, stride(B, 2))
+    ldc = max(1, stride(C, 2))
+    α = Ref{Float32}(alpha); β = Ref{Float32}(beta)
+    CUDA.CUBLAS.cublasGemmEx(
+        CUDA.CUBLAS.handle(),
+        transA, transB, m, n, k,
+        α, A, Float32, lda,
+        B, Float32, ldb,
+        β, C, Float32, ldc,
+        CUDA.CUBLAS.CUBLAS_COMPUTE_32F,
+        CUDA.CUBLAS.CUBLAS_GEMM_DEFAULT,
+    )
+    return C
+end
+
+function reverse_diff_v5(W1, W2, X, y)
+    h, d = size(W1)
+    nn   = size(X, 2)
+
+    Z1 = CuArray{Float32}(undef, h, nn)
+    _gemm_simt!(Z1, 'N', W1, 'N', X)              # SIMT: (h,d) * (d,n)
+
+    y_1 = similar(Z1)
+    J_1 = similar(Z1)
+    tanh_and_jac!(y_1, J_1, Z1)
+
+    J_2 = 2 .* (W2 * y_1 .- y) ./ size(y, 2)      # tiny, leave as broadcast
+
+    tmp = CuArray{Float32}(undef, h, nn)
+    _gemm_simt!(tmp, 'T', W2, 'N', J_2)           # SIMT: W2' * J_2  (k=1)
+
+    out = similar(tmp)
+    vmul!(out, J_1, tmp)
+
+    result = CuArray{Float32}(undef, h, d)
+    _gemm_simt!(result, 'N', out, 'T', X)         # SIMT: out * X'   (k=n)
+    return result
+end
+
+# -------------------------------------------------------------------------
 # PyTorch path
 # -------------------------------------------------------------------------
 const torch    = pyimport("torch")
@@ -252,6 +308,7 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
     W1g = CuArray(W1); W2g = CuArray(W2); Xg = CuArray(X); yg = CuArray(y)
     grad_julia    = Array(reverse_diff(W1g, W2g, Xg, yg))
     grad_julia_v4 = Array(reverse_diff_v4(W1g, W2g, Xg, yg))
+    grad_julia_v5 = Array(reverse_diff_v5(W1g, W2g, Xg, yg))
     CUDA.synchronize()
 
     # ----- PyTorch -----
@@ -272,6 +329,7 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
 
     # ----- Numerical equivalence -----
     for (name, g) in [("Julia v4 (vec=4)   ", grad_julia_v4),
+                      ("Julia v5 (vec=4+SIMT)", grad_julia_v5),
                       ("PyTorch eager      ", grad_pytorch_eager),
                       ("PyTorch compiled   ", grad_pytorch_compiled)]
         maxdiff = maximum(abs.(grad_julia .- g))
@@ -292,6 +350,10 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
         reverse_diff_v4($W1g, $W2g, $Xg, $yg)
         CUDA.synchronize()
     end samples=30 evals=1 seconds=10
+    bj5 = @benchmark begin
+        reverse_diff_v5($W1g, $W2g, $Xg, $yg)
+        CUDA.synchronize()
+    end samples=30 evals=1 seconds=10
     be = @benchmark begin
         pytorch_grad_eager($W1t, $W2t, $Xt, $yt)
         $torch.cuda.synchronize()
@@ -300,10 +362,11 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
         pytorch_grad_compiled($W1t, $W2t, $Xt, $yt)
         $torch.cuda.synchronize()
     end samples=30 evals=1 seconds=10 setup=($(_pygc).collect(); $torch.cuda.empty_cache())
-    @printf "Julia broadcast  : median %8.3f µs\n" 1e-3 * median(bj).time
-    @printf "Julia vec=4      : median %8.3f µs\n" 1e-3 * median(bj4).time
-    @printf "PyTorch eager    : median %8.3f µs\n" 1e-3 * median(be).time
-    @printf "PyTorch compiled : median %8.3f µs\n" 1e-3 * median(bc).time
+    @printf "Julia broadcast      : median %8.3f µs\n" 1e-3 * median(bj).time
+    @printf "Julia vec=4          : median %8.3f µs\n" 1e-3 * median(bj4).time
+    @printf "Julia vec=4 + SIMT   : median %8.3f µs\n" 1e-3 * median(bj5).time
+    @printf "PyTorch eager        : median %8.3f µs\n" 1e-3 * median(be).time
+    @printf "PyTorch compiled     : median %8.3f µs\n" 1e-3 * median(bc).time
 
     # ----- CUDA traces -----
     println("\n--- CUDA trace: Julia broadcast ---")
@@ -311,6 +374,9 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
 
     println("\n--- CUDA trace: Julia vec=4 ---")
     summarize_julia_trace(stdout, julia_trace(() -> reverse_diff_v4(W1g, W2g, Xg, yg)))
+
+    println("\n--- CUDA trace: Julia vec=4 + SIMT ---")
+    summarize_julia_trace(stdout, julia_trace(() -> reverse_diff_v5(W1g, W2g, Xg, yg)))
 
     println("\n--- CUDA trace: PyTorch eager ---")
     println(pytorch_trace(() -> pytorch_grad_eager(W1t, W2t, Xt, yt)))
