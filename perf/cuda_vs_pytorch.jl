@@ -57,14 +57,27 @@ function build_torch_tensors(W1::Matrix, W2::Matrix, X::Matrix, y::Matrix)
     return W1t, W2t, Xt, yt
 end
 
-function pytorch_grad(W1t, W2t, Xt, yt)
-    y1   = torch.tanh(torch.matmul(W1t, Xt))
-    diff = torch.matmul(W2t, y1) - yt
-    n    = pyconvert(Int, yt.shape[1])
-    loss = (diff * diff).sum() / n
-    grad = torch.autograd.grad(loss, W1t)[0]
-    return grad
+# Define eager + torch.compile'd versions in one Python namespace so the only
+# difference between them is the `torch.compile` call. Each call goes through
+# exactly one PythonCall round-trip, so wall-clock differences reflect what's
+# actually happening on the GPU rather than per-op FFI cost.
+const _grad_fn_eager, _grad_fn_compiled = let
+    nt = @pyexec """
+import torch
+def _eager(W1, W2, X, y):
+    y1 = torch.tanh(torch.matmul(W1, X))
+    diff = torch.matmul(W2, y1) - y
+    loss = (diff * diff).sum() / y.shape[1]
+    return torch.autograd.grad(loss, W1)[0]
+# mode="default" — change to "reduce-overhead" for CUDA Graphs, or
+# "max-autotune" for an aggressive autotune pass.
+_compiled = torch.compile(_eager)
+""" => (_eager::Py, _compiled::Py)
+    (nt._eager, nt._compiled)
 end
+
+pytorch_grad_eager(W1t, W2t, Xt, yt)    = _grad_fn_eager(W1t, W2t, Xt, yt)
+pytorch_grad_compiled(W1t, W2t, Xt, yt) = _grad_fn_compiled(W1t, W2t, Xt, yt)
 
 torch_to_julia(t) = pyconvert(Array, t.detach().cpu().numpy())
 
@@ -147,16 +160,28 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
 
     # ----- PyTorch -----
     W1t, W2t, Xt, yt = build_torch_tensors(W1, W2, X, y)
-    grad_pytorch = torch_to_julia(pytorch_grad(W1t, W2t, Xt, yt))
+    grad_pytorch_eager = torch_to_julia(pytorch_grad_eager(W1t, W2t, Xt, yt))
+    torch.cuda.synchronize()
+
+    # First call to the compiled fn for this shape triggers Inductor codegen
+    # (can take seconds). Time it so the user knows.
+    print("torch.compile codegen for h=$h ... "); flush(stdout)
+    t_compile = @elapsed begin
+        pytorch_grad_compiled(W1t, W2t, Xt, yt)
+        torch.cuda.synchronize()
+    end
+    @printf "%.2f s\n" t_compile
+    grad_pytorch_compiled = torch_to_julia(pytorch_grad_compiled(W1t, W2t, Xt, yt))
     torch.cuda.synchronize()
 
     # ----- Numerical equivalence -----
-    maxdiff = maximum(abs.(grad_julia .- grad_pytorch))
-    relmag  = maxdiff / max(maximum(abs.(grad_julia)), eps(Float32))
-    @printf "max|Δ|         = %.3e\n" maxdiff
-    @printf "max|Δ| / scale = %.3e\n" relmag
-    ok = isapprox(grad_julia, grad_pytorch; rtol = rtol, atol = 1f-4)
-    println("gradients match: ", ok)
+    for (name, g) in [("eager   ", grad_pytorch_eager),
+                      ("compiled", grad_pytorch_compiled)]
+        maxdiff = maximum(abs.(grad_julia .- g))
+        relmag  = maxdiff / max(maximum(abs.(grad_julia)), eps(Float32))
+        ok      = isapprox(grad_julia, g; rtol = rtol, atol = 1f-4)
+        @printf "PyTorch %s vs Julia:  max|Δ| = %.3e (rel %.2e)  match=%s\n" name maxdiff relmag ok
+    end
 
     # ----- Benchmarks -----
     # samples=30 evals=1 caps total iterations so the PyTorch caching allocator
@@ -166,19 +191,27 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
         reverse_diff($W1g, $W2g, $Xg, $yg)
         CUDA.synchronize()
     end samples=30 evals=1 seconds=10
-    bp = @benchmark begin
-        pytorch_grad($W1t, $W2t, $Xt, $yt)
+    be = @benchmark begin
+        pytorch_grad_eager($W1t, $W2t, $Xt, $yt)
         $torch.cuda.synchronize()
     end samples=30 evals=1 seconds=10 setup=($(_pygc).collect(); $torch.cuda.empty_cache())
-    @printf "Julia (CUDA.jl) : median %8.3f µs\n" 1e-3 * median(bj).time
-    @printf "PyTorch eager   : median %8.3f µs\n" 1e-3 * median(bp).time
+    bc = @benchmark begin
+        pytorch_grad_compiled($W1t, $W2t, $Xt, $yt)
+        $torch.cuda.synchronize()
+    end samples=30 evals=1 seconds=10 setup=($(_pygc).collect(); $torch.cuda.empty_cache())
+    @printf "Julia (CUDA.jl)  : median %8.3f µs\n" 1e-3 * median(bj).time
+    @printf "PyTorch eager    : median %8.3f µs\n" 1e-3 * median(be).time
+    @printf "PyTorch compiled : median %8.3f µs\n" 1e-3 * median(bc).time
 
     # ----- CUDA traces -----
     println("\n--- CUDA trace: Julia / CUDA.jl ---")
     summarize_julia_trace(stdout, julia_trace(() -> reverse_diff(W1g, W2g, Xg, yg)))
 
-    println("\n--- CUDA trace: PyTorch ---")
-    println(pytorch_trace(() -> pytorch_grad(W1t, W2t, Xt, yt)))
+    println("\n--- CUDA trace: PyTorch eager ---")
+    println(pytorch_trace(() -> pytorch_grad_eager(W1t, W2t, Xt, yt)))
+
+    println("\n--- CUDA trace: PyTorch compiled ---")
+    println(pytorch_trace(() -> pytorch_grad_compiled(W1t, W2t, Xt, yt)))
 
     return nothing
 end
