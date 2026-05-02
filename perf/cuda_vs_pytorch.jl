@@ -62,9 +62,14 @@ end
 # exactly one PythonCall round-trip, so wall-clock differences reflect what's
 # actually happening on the GPU rather than per-op FFI cost.
 const _grad_fn_eager, _grad_fn_compiled = let
+    # `import torch` inside _eager so it lands in the function's __globals__
+    # at call time — @pyexec runs with separate globals/locals dicts, and a
+    # top-level `import torch` would only populate locals, leaving _eager
+    # unable to resolve `torch` when invoked later.
     nt = @pyexec """
 import torch
 def _eager(W1, W2, X, y):
+    import torch
     y1 = torch.tanh(torch.matmul(W1, X))
     diff = torch.matmul(W2, y1) - y
     loss = (diff * diff).sum() / y.shape[1]
