@@ -21,6 +21,7 @@ using CUDA
 using CUDA: AS
 using BenchmarkTools
 using PythonCall
+using Lux, Zygote
 
 # -------------------------------------------------------------------------
 # Hardcoded CUDA.jl path
@@ -146,18 +147,25 @@ function _gemm_simt!(C::CuArray{Float32,2}, transA::Char, A::CuArray{Float32,2},
     ldb = max(1, stride(B, 2))
     ldc = max(1, stride(C, 2))
     # CUDA.jl puts the cuBLAS handle in CUBLAS_POINTER_MODE_DEVICE, so alpha/beta
-    # MUST be device pointers. Passing host Ref{Float32} causes UVA fault handling
-    # per kernel launch (~100× slowdown but eventually-correct values).
+    # MUST be device pointers (host Ref triggers UVA fault handling — 100× slowdown).
     α = CUDA.CuRef{Float32}(alpha); β = CUDA.CuRef{Float32}(beta)
-    CUDA.CUBLAS.cublasGemmEx(
-        CUDA.CUBLAS.handle(),
-        transA, transB, m, n, k,
-        α, A, Float32, lda,
-        B, Float32, ldb,
-        β, C, Float32, ldc,
-        CUDA.CUBLAS.CUBLAS_COMPUTE_32F,
-        CUDA.CUBLAS.CUBLAS_GEMM_DEFAULT,
-    )
+    h = CUDA.CUBLAS.handle()
+    # Under FAST_MATH the handle's math mode is CUBLAS_TF32_TENSOR_OP_MATH, which
+    # forces TF32 tensor cores even when we ask for CUBLAS_COMPUTE_32F. Flip it to
+    # DEFAULT_MATH for this call so cuBLAS picks a SIMT FP32 kernel.
+    CUDA.CUBLAS.math_mode!(h, CUDA.DEFAULT_MATH)
+    try
+        CUDA.CUBLAS.cublasGemmEx(
+            h, transA, transB, m, n, k,
+            α, A, Float32, lda,
+            B, Float32, ldb,
+            β, C, Float32, ldc,
+            CUDA.CUBLAS.CUBLAS_COMPUTE_32F,
+            CUDA.CUBLAS.CUBLAS_GEMM_DEFAULT,
+        )
+    finally
+        CUDA.CUBLAS.math_mode!(h, CUDA.math_mode())  # restore (FAST_MATH → TF32 tensor op)
+    end
     return C
 end
 
@@ -183,6 +191,38 @@ function reverse_diff_v5(W1, W2, X, y)
     result = CuArray{Float32}(undef, h, d)
     _gemm_simt!(result, 'N', out, 'T', X)         # SIMT: out * X'   (k=n)
     return result
+end
+
+# -------------------------------------------------------------------------
+# Lux + Zygote path
+#
+# Builds an equivalent 2-layer MLP `Y = W2 * tanh(W1 * X)` (no bias) using
+# Lux, plugs in the *same* CuArray weights so the gradient is comparable,
+# and lets Zygote source-to-source the backward. This goes through the same
+# CUDA.jl + cuBLAS stack as `reverse_diff`, so we expect similar kernels —
+# the interesting thing is the AD/dispatch overhead Lux+Zygote add on top.
+# -------------------------------------------------------------------------
+function build_lux(W1g::CuArray{Float32,2}, W2g::CuArray{Float32,2})
+    h, d  = size(W1g)
+    model = Lux.Chain(
+        Lux.Dense(d => h, tanh; use_bias = false),
+        Lux.Dense(h => 1, identity; use_bias = false),
+    )
+    ps = (
+        layer_1 = (weight = W1g,),
+        layer_2 = (weight = W2g,),
+    )
+    st = Lux.initialstates(Random.default_rng(), model)
+    return model, ps, st
+end
+
+function lux_grad(model, ps, st, Xg::CuArray, yg::CuArray)
+    function loss_fn(p)
+        y_hat, _ = model(Xg, p, st)
+        return sum((y_hat .- yg) .^ 2) / size(yg, 2)
+    end
+    ∂ps = first(Zygote.gradient(loss_fn, ps))
+    return ∂ps.layer_1.weight
 end
 
 # -------------------------------------------------------------------------
@@ -314,6 +354,17 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
     grad_julia_v5 = Array(reverse_diff_v5(W1g, W2g, Xg, yg))
     CUDA.synchronize()
 
+    # Lux + Zygote warmup (first call compiles Zygote's pullback for this shape)
+    print("Lux+Zygote compile warmup for h=$h ... "); flush(stdout)
+    lux_model, lux_ps, lux_st = build_lux(W1g, W2g)
+    t_lux_compile = @elapsed begin
+        lux_grad(lux_model, lux_ps, lux_st, Xg, yg)
+        CUDA.synchronize()
+    end
+    @printf "%.2f s\n" t_lux_compile
+    grad_lux = Array(lux_grad(lux_model, lux_ps, lux_st, Xg, yg))
+    CUDA.synchronize()
+
     # ----- PyTorch -----
     W1t, W2t, Xt, yt = build_torch_tensors(W1, W2, X, y)
     grad_pytorch_eager = torch_to_julia(pytorch_grad_eager(W1t, W2t, Xt, yt))
@@ -333,6 +384,7 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
     # ----- Numerical equivalence -----
     for (name, g) in [("Julia v4 (vec=4)   ", grad_julia_v4),
                       ("Julia v5 (vec=4+SIMT)", grad_julia_v5),
+                      ("Lux + Zygote       ", grad_lux),
                       ("PyTorch eager      ", grad_pytorch_eager),
                       ("PyTorch compiled   ", grad_pytorch_compiled)]
         maxdiff = maximum(abs.(grad_julia .- g))
@@ -357,6 +409,10 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
         reverse_diff_v5($W1g, $W2g, $Xg, $yg)
         CUDA.synchronize()
     end samples=30 evals=1 seconds=10
+    bjlux = @benchmark begin
+        lux_grad($lux_model, $lux_ps, $lux_st, $Xg, $yg)
+        CUDA.synchronize()
+    end samples=30 evals=1 seconds=10
     be = @benchmark begin
         pytorch_grad_eager($W1t, $W2t, $Xt, $yt)
         $torch.cuda.synchronize()
@@ -368,6 +424,7 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
     @printf "Julia broadcast      : median %8.3f µs\n" 1e-3 * median(bj).time
     @printf "Julia vec=4          : median %8.3f µs\n" 1e-3 * median(bj4).time
     @printf "Julia vec=4 + SIMT   : median %8.3f µs\n" 1e-3 * median(bj5).time
+    @printf "Lux + Zygote         : median %8.3f µs\n" 1e-3 * median(bjlux).time
     @printf "PyTorch eager        : median %8.3f µs\n" 1e-3 * median(be).time
     @printf "PyTorch compiled     : median %8.3f µs\n" 1e-3 * median(bc).time
 
@@ -380,6 +437,9 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
 
     println("\n--- CUDA trace: Julia vec=4 + SIMT ---")
     summarize_julia_trace(stdout, julia_trace(() -> reverse_diff_v5(W1g, W2g, Xg, yg)))
+
+    println("\n--- CUDA trace: Lux + Zygote ---")
+    summarize_julia_trace(stdout, julia_trace(() -> lux_grad(lux_model, lux_ps, lux_st, Xg, yg)))
 
     println("\n--- CUDA trace: PyTorch eager ---")
     println(pytorch_trace(() -> pytorch_grad_eager(W1t, W2t, Xt, yt)))
