@@ -168,7 +168,11 @@ function _eval(model, func, x)
     mode = ArrayDiff.Mode()
     ad = ArrayDiff.model(mode)
     MOI.Nonlinear.set_objective(ad, JuMP.moi_function(func))
-    evaluator = MOI.Nonlinear.Evaluator(ad, mode, JuMP.index.(JuMP.all_variables(model)))
+    evaluator = MOI.Nonlinear.Evaluator(
+        ad,
+        mode,
+        JuMP.index.(JuMP.all_variables(model)),
+    )
     MOI.initialize(evaluator, [:Grad])
     val = MOI.eval_objective(evaluator, x)
     g = zero(x)
@@ -178,7 +182,13 @@ function _eval(model, func, x)
     return val, g
 end
 
-function _test_neural(with_norm::Bool, broadcast::Bool, plus::Bool, wrap::Bool, swap::Bool)
+function _test_neural(
+    with_norm::Bool,
+    broadcast::Bool,
+    plus::Bool,
+    wrap::Bool,
+    swap::Bool,
+)
     n = 2
     X = [1.0 0.5; 0.3 0.8]
     target = [0.5 0.2; 0.1 0.7]
