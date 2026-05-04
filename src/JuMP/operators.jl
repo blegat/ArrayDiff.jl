@@ -45,6 +45,28 @@ function Base.broadcasted(
     return _broadcast(JuMP.variable_ref_type(x), op, x, y)
 end
 
+function Base.broadcasted(op::Function, x::AbstractJuMPArray, y::Number)
+    return _broadcast(JuMP.variable_ref_type(x), op, x, y)
+end
+
+function Base.broadcasted(op::Function, x::Number, y::AbstractJuMPArray)
+    return _broadcast(JuMP.variable_ref_type(y), op, x, y)
+end
+
+function Base.broadcasted(
+    ::typeof(Base.literal_pow),
+    ::typeof(^),
+    x::AbstractJuMPArray,
+    ::Val{y},
+) where {y}
+    return Base.broadcasted(^, x, y)
+end
+
+function Base.sum(x::GenericArrayExpr)
+    V = JuMP.variable_ref_type(x)
+    return JuMP.GenericNonlinearExpr{V}(:sum, Any[x])
+end
+
 import LinearAlgebra
 
 function _array_norm(x::AbstractJuMPArray)
@@ -61,4 +83,62 @@ end
 
 function LinearAlgebra.norm(x::ArrayOfVariables)
     return _array_norm(x)
+end
+
+# Subtraction between array expressions and constant arrays
+function Base.:(-)(
+    x::AbstractJuMPArray{T,N},
+    y::AbstractArray{S,N},
+) where {S,T,N}
+    V = JuMP.variable_ref_type(x)
+    @assert size(x) == size(y)
+    return GenericArrayExpr{V,N}(:-, Any[x, y], size(x), false)
+end
+
+function Base.:(-)(
+    x::AbstractArray{S,N},
+    y::AbstractJuMPArray{T,N},
+) where {S,T,N}
+    V = JuMP.variable_ref_type(y)
+    @assert size(x) == size(y)
+    return GenericArrayExpr{V,N}(:-, Any[x, y], size(y), false)
+end
+
+function Base.:(-)(
+    x::AbstractJuMPArray{T,N},
+    y::AbstractJuMPArray{S,N},
+) where {T,S,N}
+    V = JuMP.variable_ref_type(x)
+    @assert JuMP.variable_ref_type(y) == V
+    @assert size(x) == size(y)
+    return GenericArrayExpr{V,N}(:-, Any[x, y], size(x), false)
+end
+
+# Addition between array expressions and constant arrays
+function Base.:(+)(
+    x::AbstractJuMPArray{T,N},
+    y::AbstractArray{S,N},
+) where {S,T,N}
+    V = JuMP.variable_ref_type(x)
+    @assert size(x) == size(y)
+    return GenericArrayExpr{V,N}(:+, Any[x, y], size(x), false)
+end
+
+function Base.:(+)(
+    x::AbstractArray{S,N},
+    y::AbstractJuMPArray{T,N},
+) where {S,T,N}
+    V = JuMP.variable_ref_type(y)
+    @assert size(x) == size(y)
+    return GenericArrayExpr{V,N}(:+, Any[x, y], size(y), false)
+end
+
+function Base.:(+)(
+    x::AbstractJuMPArray{T,N},
+    y::AbstractJuMPArray{S,N},
+) where {T,S,N}
+    V = JuMP.variable_ref_type(x)
+    @assert JuMP.variable_ref_type(y) == V
+    @assert size(x) == size(y)
+    return GenericArrayExpr{V,N}(:+, Any[x, y], size(x), false)
 end
