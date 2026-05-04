@@ -49,7 +49,7 @@ end
 
 function test_neural_nlopt()
     _test_neural_nlopt(true)
-    _test_neural_nlopt(false)
+    return _test_neural_nlopt(false)
 end
 
 end
