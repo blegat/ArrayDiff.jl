@@ -178,10 +178,14 @@ function _eval(model, func, x)
     return val, g
 end
 
-function _test_neural(with_norm::Bool, broadcast::Bool, plus::Bool)
+function _test_neural(with_norm::Bool, broadcast::Bool, plus::Bool, wrap::Bool, swap::Bool)
     n = 2
     X = [1.0 0.5; 0.3 0.8]
     target = [0.5 0.2; 0.1 0.7]
+    if wrap
+        X = ArrayDiff.MatrixExpr(:+, Any[X], size(X), false)
+        target = ArrayDiff.MatrixExpr(:+, Any[target], size(target), false)
+    end
     if plus
         target = -target
     end
@@ -192,15 +196,31 @@ function _test_neural(with_norm::Bool, broadcast::Bool, plus::Bool)
     Y = W2 * tanh.(W1 * X)
     if plus
         if broadcast
-            E = Y .+ target
+            if swap
+                E = -target .- Y
+            else
+                E = Y .+ target
+            end
         else
-            E = Y + target
+            if swap
+                E = -target - Y
+            else
+                E = Y + target
+            end
         end
     else
         if broadcast
-            E = Y .- target
+            if swap
+                E = target .- Y
+            else
+                E = Y .- target
+            end
         else
-            E = Y - target
+            if swap
+                E = target - Y
+            else
+                E = Y - target
+            end
         end
     end
     if with_norm
@@ -239,7 +259,11 @@ function test_neural()
     @testset "$(with_norm ? "norm" : "sum")" for with_norm in bin
         @testset "$(broadcast ? "broadcast" : "array")" for broadcast in bin
             @testset "$(plus ? "+" : "-")" for plus in bin
-                _test_neural(with_norm, broadcast, plus)
+                @testset "$(wrap ? "wrap" : "nowrap")" for wrap in bin
+                    @testset "$(swap ? "swap" : "noswap")" for swap in bin
+                        _test_neural(with_norm, broadcast, plus, wrap, swap)
+                    end
+                end
             end
         end
     end
