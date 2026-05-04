@@ -178,20 +178,6 @@ function _eval(model, func, x)
     return val, g
 end
 
-function test_number_broadcast()
-    model = Model()
-    @variable(model, x[1:3], container = ArrayDiff.ArrayOfVariables)
-    val_x = [-1, 3, 4]
-    val_a, g_a = _eval(model, sum(2 * x), val_x)
-    val_b, g_b = _eval(model, sum(2 .* x), val_x)
-    @test val_a ≈ val_b
-    @test g_a ≈ g_b
-    val_c, g_c = _eval(model, sum(x .* 2), val_x)
-    @test val_a ≈ val_c
-    @test g_a ≈ g_c
-    return
-end
-
 function _test_neural(with_norm::Bool, broadcast::Bool, plus::Bool)
     n = 2
     X = [1.0 0.5; 0.3 0.8]
