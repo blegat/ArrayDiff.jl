@@ -207,13 +207,13 @@ function _test_neural(
     if plus
         if broadcast
             if swap
-                E = -target .- Y
+                E = target .+ Y
             else
                 E = Y .+ target
             end
         else
             if swap
-                E = -target - Y
+                E = target + Y
             else
                 E = Y + target
             end
