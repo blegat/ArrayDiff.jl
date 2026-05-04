@@ -83,11 +83,11 @@ end
 # When nlp_model is an ArrayDiff.Model (created by model(::Mode)),
 # the model already has the parsed objective — just build the evaluator.
 function Nonlinear.Evaluator(
-    model::Model,
-    ::Mode,
+    model::ArrayDiff.Model,
+    mode::Mode,
     ordered_variables::Vector{MOI.VariableIndex},
 )
-    return Evaluator(model, NLPEvaluator(model, ordered_variables))
+    return Evaluator(model, mode, ordered_variables)
 end
 
 include("JuMP/JuMP.jl")
