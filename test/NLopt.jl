@@ -19,7 +19,7 @@ function runtests()
     return
 end
 
-function test_neural_nlopt()
+function _test_neural_nlopt(with_norm::Bool)
     n = 2
     X = [1.0 0.5; 0.3 0.8]
     target = [0.5 0.2; 0.1 0.7]
@@ -35,12 +35,21 @@ function test_neural_nlopt()
         set_start_value(W2[i, j], start_W2[i, j])
     end
     Y = W2 * tanh.(W1 * X)
-    loss = LinearAlgebra.norm(Y .- target)
+    if with_norm
+        loss = LinearAlgebra.norm(Y .- target)
+    else
+        loss = sum((Y .- target) .^ 2)
+    end
     @objective(model, Min, loss)
     optimize!(model)
     @test termination_status(model) == MOI.LOCALLY_SOLVED
     @test objective_value(model) < 1e-6
     return
+end
+
+function test_neural_nlopt()
+    _test_neural_nlopt(true)
+    _test_neural_nlopt(false)
 end
 
 end

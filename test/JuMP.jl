@@ -150,10 +150,17 @@ function test_parse_moi()
     snf = JuMP.moi_function(loss)
     @test snf isa MOI.ScalarNonlinearFunction
     @test snf.head == :norm
-    @test snf.args[1] isa ArrayDiff.ArrayNonlinearFunction{2}
+    @test snf.args[] isa ArrayDiff.ArrayNonlinearFunction{2}
     ad_model = ArrayDiff.Model()
     ArrayDiff.set_objective(ad_model, snf)
     @test ad_model.objective !== nothing
+    loss = sum(diff .^ 2)
+    snf = JuMP.moi_function(loss)
+    @test snf isa MOI.ScalarNonlinearFunction
+    @test snf.head == :sum
+    next = snf.args[]
+    @test next isa ArrayDiff.ArrayNonlinearFunction{2}
+    @test next.head == :^
     return
 end
 
