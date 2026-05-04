@@ -164,6 +164,34 @@ function test_parse_moi()
     return
 end
 
+function _eval(model, func, x)
+    mode = ArrayDiff.Mode()
+    ad = ArrayDiff.model(mode)
+    MOI.Nonlinear.set_objective(ad, JuMP.moi_function(func))
+    evaluator = MOI.Nonlinear.Evaluator(ad, mode, JuMP.index.(JuMP.all_variables(model)))
+    MOI.initialize(evaluator, [:Grad])
+    val = MOI.eval_objective(evaluator, x)
+    g = zero(x)
+    MOI.eval_objective_gradient(evaluator, g, Float64.(collect(1:8)))
+    MOI.Nonlinear.set_objective(ad, nothing)
+    @test isnothing(ad.objective)
+    return val, g
+end
+
+function test_number_broadcast()
+    model = Model()
+    @variable(model, x[1:3], container = ArrayDiff.ArrayOfVariables)
+    val_x = [-1, 3, 4]
+    val_a, g_a = _eval(model, sum(2 * x), val_x)
+    val_b, g_b = _eval(model, sum(2 .* x), val_x)
+    @test val_a ≈ val_b
+    @test g_a ≈ g_b
+    val_c, g_c = _eval(model, sum(x .* 2), val_x)
+    @test val_a ≈ val_c
+    @test g_a ≈ g_c
+    return
+end
+
 function _test_neural(with_norm::Bool, broadcast::Bool, plus::Bool)
     n = 2
     X = [1.0 0.5; 0.3 0.8]
@@ -194,46 +222,29 @@ function _test_neural(with_norm::Bool, broadcast::Bool, plus::Bool)
     else
         loss = sum(E .^ 2)
     end
-    mode = ArrayDiff.Mode()
-    ad = ArrayDiff.model(mode)
-    MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
-    evaluator = MOI.Nonlinear.Evaluator(ad, mode, JuMP.index.(JuMP.all_variables(model)))
-    MOI.initialize(evaluator, [:Grad])
     W1_val = [0.3 -0.2; 0.1 0.4]
     W2_val = [-0.1 0.5; 0.2 -0.3]
-    x = [vec(W1_val); vec(W2_val)]
+    obj, g = _eval(model, loss, [vec(W1_val); vec(W2_val)])
     obj_val = 0.8516435891643307
     if with_norm
         obj_val = sqrt(obj_val)
     end
-    @test MOI.eval_objective(evaluator, x) ≈ obj_val
-    g = zero(x)
-    MOI.eval_objective_gradient(evaluator, g, Float64.(collect(1:8)))
+    @test obj ≈ obj_val
+    grad = [
+        12.3913945850742
+        0.6880048864793
+        9.4322503589489
+        0.5223651220724
+        46.2269560438734
+        53.9729454980064
+        45.7401048264386
+        53.4195902684781
+    ]
     if with_norm
-        @test g ≈ [
-            0.24633385571007432
-            0.013677144672479246
-            0.1875077565314025
-            0.01038432064487417
-            0.9189655160964495
-            1.0729513677635838
-            0.9092871916169507
-            1.0619509814607189
-        ]
+        @test g ≈ grad * 0.019879429552408144
     else
-        @test g ≈ [
-            12.3913945850742
-            0.6880048864793
-            9.4322503589489
-            0.5223651220724
-            46.2269560438734
-            53.9729454980064
-            45.7401048264386
-            53.4195902684781
-        ]
+        @test g ≈ grad
     end
-    MOI.Nonlinear.set_objective(ad, nothing)
-    @test isnothing(ad.objective)
     return
 end
 

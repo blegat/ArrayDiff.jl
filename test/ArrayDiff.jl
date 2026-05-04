@@ -634,7 +634,23 @@ function test_objective_broadcasted_tanh()
     return
 end
 
-function test_objective_broadcasted_pow_vector()
+function test_objective_broadcasted_pow_vector_1()
+    model = ArrayDiff.Model()
+    x1 = MOI.VariableIndex(1)
+    x2 = MOI.VariableIndex(2)
+    ArrayDiff.set_objective(model, :(sum([$x1, $x2] .^ 1)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x1, x2])
+    MOI.initialize(evaluator, [:Grad])
+    x1v = 3.0
+    x2v = -4.0
+    @test MOI.eval_objective(evaluator, [x1v, x2v]) == x1v + x2v
+    g = zeros(2)
+    MOI.eval_objective_gradient(evaluator, g, [x1v, x2v])
+    @test g == ones(2)
+    return
+end
+
+function test_objective_broadcasted_pow_vector_2()
     model = ArrayDiff.Model()
     x1 = MOI.VariableIndex(1)
     x2 = MOI.VariableIndex(2)
