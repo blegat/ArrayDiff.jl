@@ -707,8 +707,7 @@ function test_model_typed_default_is_float64()
     @test model isa ArrayDiff.Model{Float64}
     @test model.parameters isa Vector{Float64}
     @test model.expressions isa Vector{ArrayDiff.Expression{Float64}}
-    @test model.constraints isa
-          ArrayDiff.OrderedCollections.OrderedDict{
+    @test model.constraints isa ArrayDiff.OrderedCollections.OrderedDict{
         ArrayDiff.ConstraintIndex,
         ArrayDiff.Constraint{Float64},
     }
