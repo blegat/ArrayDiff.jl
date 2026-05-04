@@ -7,15 +7,15 @@ function set_objective(model::Model, obj)
 end
 
 function add_constraint(
-    model::Model,
+    model::Model{T},
     func,
     set::Union{
-        MOI.GreaterThan{Float64},
-        MOI.LessThan{Float64},
-        MOI.Interval{Float64},
-        MOI.EqualTo{Float64},
+        MOI.GreaterThan{T},
+        MOI.LessThan{T},
+        MOI.Interval{T},
+        MOI.EqualTo{T},
     },
-)
+) where {T}
     f = parse_expression(model, func)
     model.last_constraint_index += 1
     index = ConstraintIndex(model.last_constraint_index)
@@ -23,8 +23,8 @@ function add_constraint(
     return index
 end
 
-function add_parameter(model::Model, value::Float64)
-    push!(model.parameters, value)
+function add_parameter(model::Model{T}, value::Real) where {T}
+    push!(model.parameters, convert(T, value))
     return ParameterIndex(length(model.parameters))
 end
 
