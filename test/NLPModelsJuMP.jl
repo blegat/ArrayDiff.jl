@@ -6,7 +6,6 @@ using JuMP
 using ArrayDiff
 import LinearAlgebra
 import MathOptInterface as MOI
-import NLopt
 import NLPModelsJuMP
 import NLPModelsIpopt
 
@@ -21,16 +20,16 @@ function runtests()
     return
 end
 
-function _test_neural_ipopt_nlpmodels(with_norm::Bool)
+function _test_neural_nlpmodels_jump(with_norm::Bool)
     n = 2
     X = [1.0 0.5; 0.3 0.8]
     target = [0.5 0.2; 0.1 0.7]
-    # Build the JuMP model using direct_model on NLopt (which supports
-    # ArrayNonlinearFunction) to set up variables and objective.
-    model = direct_model(NLopt.Optimizer())
-    set_attribute(model, "algorithm", :LD_LBFGS)
+    model = Model(NLPModelsJuMP.Optimizer)
+    set_attribute(model, "solver", NLPModelsIpopt.IpoptSolver)
+    set_attribute(model, MOI.AutomaticDifferentiationBackend(), ArrayDiff.Mode())
     @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
     @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    # Use distinct starting values to break symmetry
     start_W1 = [0.3 -0.2; 0.1 0.4]
     start_W2 = [-0.1 0.5; 0.2 -0.3]
     for i in 1:n, j in 1:n
@@ -44,16 +43,15 @@ function _test_neural_ipopt_nlpmodels(with_norm::Bool)
         loss = sum((Y .- target) .^ 2)
     end
     @objective(model, Min, loss)
-    nlp = NLPModelsJuMP.MathOptNLPModel(model; hessian = false)
-    stats = NLPModelsIpopt.ipopt(nlp; print_level = 0)
-    @test stats.status == :first_order
-    @test stats.objective < 1e-6
+    optimize!(model)
+    @test termination_status(model) == MOI.LOCALLY_SOLVED
+    @test objective_value(model) < 1e-6
     return
 end
 
-function test_neural_ipopt_nlpmodels()
-    _test_neural_ipopt_nlpmodels(true)
-    return _test_neural_ipopt_nlpmodels(false)
+function test_neural_nlpmodels_jump()
+    _test_neural_nlpmodels_jump(true)
+    return _test_neural_nlpmodels_jump(false)
 end
 
 end

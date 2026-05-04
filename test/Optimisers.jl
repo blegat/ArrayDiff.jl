@@ -6,10 +6,10 @@ using JuMP
 using ArrayDiff
 import LinearAlgebra
 import MathOptInterface as MOI
-import NLopt
 import NLPModels
 import NLPModelsJuMP
 import Optimisers
+import SolverCore
 
 function runtests()
     for name in names(@__MODULE__; all = true)
@@ -22,43 +22,79 @@ function runtests()
     return
 end
 
-# Simple NLPModels interface for Optimisers.jl: run an Optimisers rule on the
-# variable vector of an `AbstractNLPModel` using `obj` and `grad!`.
-function optimize_with_optimiser(
-    rule::Optimisers.AbstractRule,
+# An NLPModels solver that runs an `Optimisers.AbstractRule` (e.g. `Adam`) on
+# the variable vector of an unconstrained `AbstractNLPModel` using `obj` and
+# `grad!`. Designed to be plugged into `NLPModelsJuMP.Optimizer` via
+# `set_attribute(model, "solver", OptimisersSolver)`.
+mutable struct OptimisersSolver{R<:Optimisers.AbstractRule} <:
+               SolverCore.AbstractOptimizationSolver
+    rule::R
+    x::Vector{Float64}
+    g::Vector{Float64}
+end
+
+function OptimisersSolver(
     nlp::NLPModels.AbstractNLPModel;
-    max_iters::Int = 10_000,
-    tol::Real = 1e-6,
+    rule::Optimisers.AbstractRule = Optimisers.Adam(0.05),
 )
-    x = copy(nlp.meta.x0)
-    g = similar(x)
-    state = Optimisers.setup(rule, x)
-    for iter in 1:max_iters
-        NLPModels.grad!(nlp, x, g)
-        if LinearAlgebra.norm(g) < tol
-            return (
-                x = x,
-                objective = NLPModels.obj(nlp, x),
-                iters = iter,
-                status = :first_order,
-            )
+    nvar = NLPModels.get_nvar(nlp.meta)
+    return OptimisersSolver(rule, zeros(Float64, nvar), zeros(Float64, nvar))
+end
+
+function SolverCore.reset!(solver::OptimisersSolver)
+    fill!(solver.x, 0.0)
+    fill!(solver.g, 0.0)
+    return solver
+end
+
+function SolverCore.reset!(
+    solver::OptimisersSolver,
+    nlp::NLPModels.AbstractNLPModel,
+)
+    return SolverCore.reset!(solver)
+end
+
+function SolverCore.solve!(
+    solver::OptimisersSolver,
+    nlp::NLPModels.AbstractNLPModel,
+    stats::SolverCore.GenericExecutionStats;
+    max_iter::Int = 10_000,
+    tol::Real = 1e-6,
+    verbose::Int = 0,
+)
+    SolverCore.reset!(stats)
+    copyto!(solver.x, NLPModels.get_x0(nlp.meta))
+    state = Optimisers.setup(solver.rule, solver.x)
+    start = time()
+    iter = 0
+    status = :max_iter
+    while iter < max_iter
+        NLPModels.grad!(nlp, solver.x, solver.g)
+        if LinearAlgebra.norm(solver.g) < tol
+            status = :first_order
+            break
         end
-        state, x = Optimisers.update!(state, x, g)
+        state, solver.x = Optimisers.update!(state, solver.x, solver.g)
+        iter += 1
+        if verbose > 0 && iter % verbose == 0
+            @info "Optimisers" iter obj = NLPModels.obj(nlp, solver.x)
+        end
     end
-    return (
-        x = x,
-        objective = NLPModels.obj(nlp, x),
-        iters = max_iters,
-        status = :max_iter,
-    )
+    SolverCore.set_iter!(stats, iter)
+    SolverCore.set_status!(stats, status)
+    SolverCore.set_solution!(stats, solver.x)
+    SolverCore.set_objective!(stats, NLPModels.obj(nlp, solver.x))
+    SolverCore.set_time!(stats, time() - start)
+    return stats
 end
 
 function _test_neural_optimisers(with_norm::Bool)
     n = 2
     X = [1.0 0.5; 0.3 0.8]
     target = [0.5 0.2; 0.1 0.7]
-    model = direct_model(NLopt.Optimizer())
-    set_attribute(model, "algorithm", :LD_LBFGS)
+    model = Model(NLPModelsJuMP.Optimizer)
+    set_attribute(model, "solver", OptimisersSolver)
+    set_attribute(model, MOI.AutomaticDifferentiationBackend(), ArrayDiff.Mode())
     @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
     @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
     # Use distinct starting values to break symmetry
@@ -75,14 +111,10 @@ function _test_neural_optimisers(with_norm::Bool)
         loss = sum((Y .- target) .^ 2)
     end
     @objective(model, Min, loss)
-    nlp = NLPModelsJuMP.MathOptNLPModel(model; hessian = false)
-    stats = optimize_with_optimiser(
-        Optimisers.Adam(0.05),
-        nlp;
-        max_iters = 20_000,
-        tol = 1e-6,
-    )
-    @test stats.objective < 1e-3
+    set_attribute(model, "max_iter", 20_000)
+    set_attribute(model, "tol", 1e-6)
+    optimize!(model)
+    @test objective_value(model) < 1e-3
     return
 end
 
