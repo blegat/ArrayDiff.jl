@@ -21,7 +21,8 @@ using CUDA
 using CUDA: AS
 using BenchmarkTools
 using PythonCall
-using Lux, Zygote
+using Lux
+import Mooncake
 
 # -------------------------------------------------------------------------
 # Hardcoded CUDA.jl path
@@ -194,15 +195,182 @@ function reverse_diff_v5(W1, W2, X, y)
 end
 
 # -------------------------------------------------------------------------
-# Lux + Zygote path
+# v6: vec=4 elementwise + cuBLASLt with per-shape heuristic-picked algo
+#
+# cuBLAS's standard heuristic, even with CUBLAS_COMPUTE_32F + DEFAULT_MATH,
+# picks `cutlass_80_simt_sgemm_*` for our awkward shapes. PyTorch's process
+# happens to land on `magma_sgemmEx_kernel` for the same compute type — same
+# library, different choice. cuBLASLt exposes a fuller heuristic API with a
+# workspace budget that often unlocks better algos. We build a matmul
+# descriptor + layouts per (transA, transB, m, n, k) shape, ask cuBLASLt for
+# its best algo, and reuse the cached plan on every call.
+# -------------------------------------------------------------------------
+const _LT_WS_BYTES = Csize_t(32 * 1024 * 1024)        # 32 MiB workspace
+
+# Lazy: created on first use, kept alive for the process.
+const _LT_STATE = Ref{Any}(nothing)
+
+function _lt_state()
+    s = _LT_STATE[]
+    if s === nothing
+        h_ref = Ref{CUDA.CUBLAS.cublasLtHandle_t}(C_NULL)
+        CUDA.CUBLAS.cublasLtCreate(h_ref)
+        ws = CUDA.CuArray{UInt8}(undef, Int(_LT_WS_BYTES))
+        s = (handle = h_ref[], ws = ws)
+        _LT_STATE[] = s
+    end
+    return s::NamedTuple{(:handle, :ws)}
+end
+
+mutable struct LtPlan
+    desc::CUDA.CUBLAS.cublasLtMatmulDesc_t
+    Adesc::CUDA.CUBLAS.cublasLtMatrixLayout_t
+    Bdesc::CUDA.CUBLAS.cublasLtMatrixLayout_t
+    Cdesc::CUDA.CUBLAS.cublasLtMatrixLayout_t
+    algo::CUDA.CUBLAS.cublasLtMatmulAlgo_t
+end
+
+function _build_lt_plan(transA::Char, transB::Char,
+                        m::Int, n::Int, k::Int,
+                        lda::Int, ldb::Int, ldc::Int)
+    state  = _lt_state()
+    handle = state.handle
+    R32    = CUDA.CUDACore.R_32F     # cudaDataType for Float32
+
+    desc_ref = Ref{CUDA.CUBLAS.cublasLtMatmulDesc_t}(C_NULL)
+    CUDA.CUBLAS.cublasLtMatmulDescCreate(desc_ref, CUDA.CUBLAS.CUBLAS_COMPUTE_32F, R32)
+    desc = desc_ref[]
+
+    # Set transpose attributes.
+    tA = (transA == 'N') ? CUDA.CUBLAS.CUBLAS_OP_N : CUDA.CUBLAS.CUBLAS_OP_T
+    tB = (transB == 'N') ? CUDA.CUBLAS.CUBLAS_OP_N : CUDA.CUBLAS.CUBLAS_OP_T
+    let r = Ref(tA)
+        CUDA.CUBLAS.cublasLtMatmulDescSetAttribute(
+            desc, CUDA.CUBLAS.CUBLASLT_MATMUL_DESC_TRANSA, r, sizeof(tA))
+    end
+    let r = Ref(tB)
+        CUDA.CUBLAS.cublasLtMatmulDescSetAttribute(
+            desc, CUDA.CUBLAS.CUBLASLT_MATMUL_DESC_TRANSB, r, sizeof(tB))
+    end
+
+    # Layout shape is the *storage* shape (pre-transpose).
+    Arows = transA == 'N' ? m : k
+    Acols = transA == 'N' ? k : m
+    Brows = transB == 'N' ? k : n
+    Bcols = transB == 'N' ? n : k
+
+    Aref = Ref{CUDA.CUBLAS.cublasLtMatrixLayout_t}(C_NULL)
+    Bref = Ref{CUDA.CUBLAS.cublasLtMatrixLayout_t}(C_NULL)
+    Cref = Ref{CUDA.CUBLAS.cublasLtMatrixLayout_t}(C_NULL)
+    CUDA.CUBLAS.cublasLtMatrixLayoutCreate(Aref, R32, UInt64(Arows), UInt64(Acols), Int64(lda))
+    CUDA.CUBLAS.cublasLtMatrixLayoutCreate(Bref, R32, UInt64(Brows), UInt64(Bcols), Int64(ldb))
+    CUDA.CUBLAS.cublasLtMatrixLayoutCreate(Cref, R32, UInt64(m),     UInt64(n),     Int64(ldc))
+
+    # Preference: tell the heuristic how much workspace it can use.
+    pref_ref = Ref{CUDA.CUBLAS.cublasLtMatmulPreference_t}(C_NULL)
+    CUDA.CUBLAS.cublasLtMatmulPreferenceCreate(pref_ref)
+    pref = pref_ref[]
+    let r = Ref(_LT_WS_BYTES)
+        CUDA.CUBLAS.cublasLtMatmulPreferenceSetAttribute(
+            pref, CUDA.CUBLAS.CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
+            r, sizeof(_LT_WS_BYTES))
+    end
+
+    # Heuristic: top-1 algorithm.
+    heur     = Vector{CUDA.CUBLAS.cublasLtMatmulHeuristicResult_t}(undef, 1)
+    returned = Ref{Cint}(0)
+    CUDA.CUBLAS.cublasLtMatmulAlgoGetHeuristic(
+        handle, desc, Aref[], Bref[], Cref[], Cref[],
+        pref, Cint(1), heur, returned)
+    returned[] < 1 && error("cuBLASLt has no algo for shape (m=$m,n=$n,k=$k,trans=$transA$transB)")
+
+    return LtPlan(desc, Aref[], Bref[], Cref[], heur[1].algo)
+end
+
+function _gemm_lt!(plan::LtPlan,
+                   C::CuArray{Float32,2}, A::CuArray{Float32,2}, B::CuArray{Float32,2};
+                   alpha::Float32 = 1f0, beta::Float32 = 0f0)
+    state    = _lt_state()
+    # cuBLASLt's matmul descriptor defaults to CUBLASLT_POINTER_MODE_HOST
+    # (independent of the cuBLAS handle's pointer mode), so alpha/beta are
+    # plain host Refs here — using CuRef would trigger UVA faults.
+    α        = Ref{Float32}(alpha)
+    β        = Ref{Float32}(beta)
+    algo_ref = Ref(plan.algo)
+    CUDA.CUBLAS.cublasLtMatmul(
+        state.handle, plan.desc,
+        α, A, plan.Adesc,
+           B, plan.Bdesc,
+        β, C, plan.Cdesc,
+           C, plan.Cdesc,                # D = C in place
+        algo_ref,
+        state.ws, sizeof(state.ws),
+        CUDA.stream(),
+    )
+    return C
+end
+
+# Three plans for our specific 2-layer MLP shape.
+struct LtPlans
+    p1::LtPlan   # W1 * X      :  (h,d) * (d,n)  → (h,n)
+    p2::LtPlan   # W2' * J_2   :  store (1,h),'T' * (1,n)  → (h,n)
+    p3::LtPlan   # out * X'    :  (h,n) * store (d,n),'T'  → (h,d)
+end
+
+function build_lt_plans(W1::CuArray{Float32,2}, W2::CuArray{Float32,2},
+                        X::CuArray{Float32,2})
+    h, d = size(W1)
+    nn   = size(X, 2)
+    p1 = _build_lt_plan('N', 'N', h, nn, d, h, d, h)
+    p2 = _build_lt_plan('T', 'N', h, nn, 1, 1, 1, h)
+    p3 = _build_lt_plan('N', 'T', h, d, nn, h, d, h)
+    return LtPlans(p1, p2, p3)
+end
+
+function reverse_diff_v6(plans::LtPlans, W1, W2, X, y)
+    h, d = size(W1)
+    nn   = size(X, 2)
+
+    Z1 = CuArray{Float32}(undef, h, nn)
+    _gemm_lt!(plans.p1, Z1, W1, X)
+
+    y_1 = similar(Z1)
+    J_1 = similar(Z1)
+    tanh_and_jac!(y_1, J_1, Z1)
+
+    J_2 = 2 .* (W2 * y_1 .- y) ./ size(y, 2)
+
+    tmp = CuArray{Float32}(undef, h, nn)
+    _gemm_lt!(plans.p2, tmp, W2, J_2)
+
+    out = similar(tmp)
+    vmul!(out, J_1, tmp)
+
+    result = CuArray{Float32}(undef, h, d)
+    _gemm_lt!(plans.p3, result, out, X)
+    return result
+end
+
+# -------------------------------------------------------------------------
+# Lux + Mooncake path
 #
 # Builds an equivalent 2-layer MLP `Y = W2 * tanh(W1 * X)` (no bias) using
 # Lux, plugs in the *same* CuArray weights so the gradient is comparable,
-# and lets Zygote source-to-source the backward. This goes through the same
-# CUDA.jl + cuBLAS stack as `reverse_diff`, so we expect similar kernels —
-# the interesting thing is the AD/dispatch overhead Lux+Zygote add on top.
+# and uses Mooncake (the modern Julia 1.12-friendly reverse-mode AD) for the
+# backward. Goes through the same CUDA.jl + cuBLAS stack as `reverse_diff`,
+# so kernels should look similar — what we're measuring is the AD/dispatch
+# overhead Lux+Mooncake add on top.
 # -------------------------------------------------------------------------
-function build_lux(W1g::CuArray{Float32,2}, W2g::CuArray{Float32,2})
+struct LuxMooncake{M,P,S,L,R}
+    model::M
+    ps::P
+    st::S
+    loss_fn::L
+    rule::R
+end
+
+function build_lux(W1g::CuArray{Float32,2}, W2g::CuArray{Float32,2},
+                   Xg::CuArray, yg::CuArray)
     h, d  = size(W1g)
     model = Lux.Chain(
         Lux.Dense(d => h, tanh; use_bias = false),
@@ -213,15 +381,24 @@ function build_lux(W1g::CuArray{Float32,2}, W2g::CuArray{Float32,2})
         layer_2 = (weight = W2g,),
     )
     st = Lux.initialstates(Random.default_rng(), model)
-    return model, ps, st
+
+    # Closure captures Xg, yg, model, st — only `p` is the differentiated arg.
+    loss_fn = let model = model, st = st, Xg = Xg, yg = yg
+        p -> begin
+            y_hat, _ = model(Xg, p, st)
+            return sum((y_hat .- yg) .^ 2) / size(yg, 2)
+        end
+    end
+
+    # build_rrule is the expensive step (compiles the reverse pass for these
+    # types) — do it once at setup so the per-call cost in the benchmark is
+    # just the actual fwd+bwd execution.
+    rule = Mooncake.build_rrule(loss_fn, ps)
+    return LuxMooncake(model, ps, st, loss_fn, rule)
 end
 
-function lux_grad(model, ps, st, Xg::CuArray, yg::CuArray)
-    function loss_fn(p)
-        y_hat, _ = model(Xg, p, st)
-        return sum((y_hat .- yg) .^ 2) / size(yg, 2)
-    end
-    ∂ps = first(Zygote.gradient(loss_fn, ps))
+function lux_grad(lm::LuxMooncake)
+    _, (_, ∂ps) = Mooncake.value_and_gradient!!(lm.rule, lm.loss_fn, lm.ps)
     return ∂ps.layer_1.weight
 end
 
@@ -352,17 +529,24 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
     grad_julia    = Array(reverse_diff(W1g, W2g, Xg, yg))
     grad_julia_v4 = Array(reverse_diff_v4(W1g, W2g, Xg, yg))
     grad_julia_v5 = Array(reverse_diff_v5(W1g, W2g, Xg, yg))
+    print("cuBLASLt build_lt_plans for h=$h ... "); flush(stdout)
+    t_lt_build = @elapsed lt_plans = build_lt_plans(W1g, W2g, Xg)
+    @printf "%.3f s\n" t_lt_build
+    grad_julia_v6 = Array(reverse_diff_v6(lt_plans, W1g, W2g, Xg, yg))
     CUDA.synchronize()
 
-    # Lux + Zygote warmup (first call compiles Zygote's pullback for this shape)
-    print("Lux+Zygote compile warmup for h=$h ... "); flush(stdout)
-    lux_model, lux_ps, lux_st = build_lux(W1g, W2g)
-    t_lux_compile = @elapsed begin
-        lux_grad(lux_model, lux_ps, lux_st, Xg, yg)
-        CUDA.synchronize()
+    # Lux + Mooncake setup. build_rrule compiles the reverse pass for these
+    # types (one-time cost per shape); first call afterwards still does some
+    # JIT, so we time both separately.
+    print("Lux+Mooncake build_rrule for h=$h ... "); flush(stdout)
+    t_lux_build = @elapsed lm = build_lux(W1g, W2g, Xg, yg)
+    @printf "%.2f s, " t_lux_build
+    print("first call ... "); flush(stdout)
+    t_lux_first = @elapsed begin
+        lux_grad(lm); CUDA.synchronize()
     end
-    @printf "%.2f s\n" t_lux_compile
-    grad_lux = Array(lux_grad(lux_model, lux_ps, lux_st, Xg, yg))
+    @printf "%.2f s\n" t_lux_first
+    grad_lux = Array(lux_grad(lm))
     CUDA.synchronize()
 
     # ----- PyTorch -----
@@ -384,7 +568,8 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
     # ----- Numerical equivalence -----
     for (name, g) in [("Julia v4 (vec=4)   ", grad_julia_v4),
                       ("Julia v5 (vec=4+SIMT)", grad_julia_v5),
-                      ("Lux + Zygote       ", grad_lux),
+                      ("Julia v6 (vec=4+Lt)", grad_julia_v6),
+                      ("Lux + Mooncake     ", grad_lux),
                       ("PyTorch eager      ", grad_pytorch_eager),
                       ("PyTorch compiled   ", grad_pytorch_compiled)]
         maxdiff = maximum(abs.(grad_julia .- g))
@@ -409,8 +594,12 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
         reverse_diff_v5($W1g, $W2g, $Xg, $yg)
         CUDA.synchronize()
     end samples=30 evals=1 seconds=10
+    bj6 = @benchmark begin
+        reverse_diff_v6($lt_plans, $W1g, $W2g, $Xg, $yg)
+        CUDA.synchronize()
+    end samples=30 evals=1 seconds=10
     bjlux = @benchmark begin
-        lux_grad($lux_model, $lux_ps, $lux_st, $Xg, $yg)
+        lux_grad($lm)
         CUDA.synchronize()
     end samples=30 evals=1 seconds=10
     be = @benchmark begin
@@ -424,7 +613,8 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
     @printf "Julia broadcast      : median %8.3f µs\n" 1e-3 * median(bj).time
     @printf "Julia vec=4          : median %8.3f µs\n" 1e-3 * median(bj4).time
     @printf "Julia vec=4 + SIMT   : median %8.3f µs\n" 1e-3 * median(bj5).time
-    @printf "Lux + Zygote         : median %8.3f µs\n" 1e-3 * median(bjlux).time
+    @printf "Julia vec=4 + cuBLASLt: median %8.3f µs\n" 1e-3 * median(bj6).time
+    @printf "Lux + Mooncake       : median %8.3f µs\n" 1e-3 * median(bjlux).time
     @printf "PyTorch eager        : median %8.3f µs\n" 1e-3 * median(be).time
     @printf "PyTorch compiled     : median %8.3f µs\n" 1e-3 * median(bc).time
 
@@ -438,8 +628,11 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
     println("\n--- CUDA trace: Julia vec=4 + SIMT ---")
     summarize_julia_trace(stdout, julia_trace(() -> reverse_diff_v5(W1g, W2g, Xg, yg)))
 
-    println("\n--- CUDA trace: Lux + Zygote ---")
-    summarize_julia_trace(stdout, julia_trace(() -> lux_grad(lux_model, lux_ps, lux_st, Xg, yg)))
+    println("\n--- CUDA trace: Julia vec=4 + cuBLASLt ---")
+    summarize_julia_trace(stdout, julia_trace(() -> reverse_diff_v6(lt_plans, W1g, W2g, Xg, yg)))
+
+    println("\n--- CUDA trace: Lux + Mooncake ---")
+    summarize_julia_trace(stdout, julia_trace(() -> lux_grad(lm)))
 
     println("\n--- CUDA trace: PyTorch eager ---")
     println(pytorch_trace(() -> pytorch_grad_eager(W1t, W2t, Xt, yt)))
