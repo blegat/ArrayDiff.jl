@@ -164,19 +164,35 @@ function test_parse_moi()
     return
 end
 
-function _test_neural(with_norm::Bool)
+function _test_neural(with_norm::Bool, broadcast::Bool, plus::Bool)
     n = 2
     X = [1.0 0.5; 0.3 0.8]
     target = [0.5 0.2; 0.1 0.7]
+    if plus
+        target = -target
+    end
     model = Model()
     @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
     @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
     # Use distinct starting values to break symmetry
     Y = W2 * tanh.(W1 * X)
-    if with_norm
-        loss = LinearAlgebra.norm(Y .- target)
+    if plus
+        if broadcast
+            E = Y .+ target
+        else
+            E = Y + target
+        end
     else
-        loss = sum((Y .- target) .^ 2)
+        if broadcast
+            E = Y .- target
+        else
+            E = Y - target
+        end
+    end
+    if with_norm
+        loss = LinearAlgebra.norm(E)
+    else
+        loss = sum(E .^ 2)
     end
     mode = ArrayDiff.Mode()
     ad = ArrayDiff.model(mode)
@@ -222,8 +238,13 @@ function _test_neural(with_norm::Bool)
 end
 
 function test_neural()
-    @testset "norm ? $with_norm" for with_norm in [true, false]
-        _test_neural(with_norm)
+    bin = [false, true]
+    @testset "$(with_norm ? "norm" : "sum")" for with_norm in bin
+        @testset "$(broadcast ? "broadcast" : "array")" for broadcast in bin
+            @testset "$(plus ? "+" : "-")" for plus in bin
+                _test_neural(with_norm, broadcast, plus)
+            end
+        end
     end
 end
 
