@@ -51,7 +51,7 @@ function _parse_moi_stack!(
     ::Vector{Tuple{Int,Any}},
     data::Model,
     expr::Expression,
-    x::Union{Float64,MOI.VariableIndex},
+    x::Union{Real,MOI.VariableIndex},
     parent_index::Int,
 )
     return parse_expression(data, expr, x, parent_index)
@@ -188,7 +188,7 @@ function _parse_moi_stack!(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
     expr::Expression,
-    x::Matrix{Float64},
+    x::AbstractMatrix{<:Real},
     parent_index::Int,
 )
     m, n = size(x)
@@ -210,7 +210,7 @@ function _parse_moi_stack!(
     stack::Vector{Tuple{Int,Any}},
     data::Model,
     expr::Expression,
-    x::Vector{Float64},
+    x::AbstractVector{<:Real},
     parent_index::Int,
 )
     vect_id = data.operators.multivariate_operator_to_id[:vect]

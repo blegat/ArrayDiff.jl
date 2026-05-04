@@ -702,6 +702,91 @@ function test_objective_broadcasted_pow_cubed()
     return
 end
 
+function test_model_typed_default_is_float64()
+    model = ArrayDiff.Model()
+    @test model isa ArrayDiff.Model{Float64}
+    @test model.parameters isa Vector{Float64}
+    @test model.expressions isa Vector{ArrayDiff.Expression{Float64}}
+    @test model.constraints isa ArrayDiff.OrderedCollections.OrderedDict{
+        ArrayDiff.ConstraintIndex,
+        ArrayDiff.Constraint{Float64},
+    }
+    return
+end
+
+function test_model_typed_float32_parse_value()
+    model = ArrayDiff.Model{Float32}()
+    x = MOI.VariableIndex(1)
+    ArrayDiff.set_objective(model, :($x + 1.5))
+    obj = something(model.objective)
+    @test obj isa ArrayDiff.Expression{Float32}
+    @test obj.values isa Vector{Float32}
+    @test obj.values == Float32[1.5]
+    return
+end
+
+function test_model_typed_float32_add_parameter()
+    model = ArrayDiff.Model{Float32}()
+    p = ArrayDiff.add_parameter(model, 2.5)
+    @test p isa ArrayDiff.ParameterIndex
+    @test model.parameters isa Vector{Float32}
+    @test model.parameters == Float32[2.5]
+    return
+end
+
+function test_model_typed_float32_add_constraint()
+    model = ArrayDiff.Model{Float32}()
+    x = MOI.VariableIndex(1)
+    set = MOI.LessThan{Float32}(3.0f0)
+    idx = ArrayDiff.add_constraint(model, :($x + 1.0), set)
+    @test idx isa ArrayDiff.ConstraintIndex
+    c = model.constraints[idx]
+    @test c isa ArrayDiff.Constraint{Float32}
+    @test c.expression isa ArrayDiff.Expression{Float32}
+    @test c.expression.values == Float32[1.0]
+    @test c.set === set
+    return
+end
+
+function test_model_typed_float32_add_expression()
+    model = ArrayDiff.Model{Float32}()
+    x = MOI.VariableIndex(1)
+    idx = ArrayDiff.add_expression(model, :($x * 2.0))
+    @test idx isa ArrayDiff.ExpressionIndex
+    e = model[idx]
+    @test e isa ArrayDiff.Expression{Float32}
+    @test e.values == Float32[2.0]
+    return
+end
+
+function test_model_typed_bigfloat_constraint_set()
+    model = ArrayDiff.Model{BigFloat}()
+    x = MOI.VariableIndex(1)
+    set = MOI.GreaterThan{BigFloat}(big"1.0")
+    idx = ArrayDiff.add_constraint(model, :($x), set)
+    c = model.constraints[idx]
+    @test c isa ArrayDiff.Constraint{BigFloat}
+    @test c.set === set
+    return
+end
+
+function test_model_typed_float32_evaluator_runs()
+    # End-to-end smoke test: parsing happens in T = Float32, AD evaluation
+    # converts to Float64 internally.
+    model = ArrayDiff.Model{Float32}()
+    x = MOI.VariableIndex(1)
+    ArrayDiff.set_objective(model, :(2 * dot([$x], [$x]) + 1.0))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x])
+    @test evaluator isa ArrayDiff.Evaluator{Float32}
+    MOI.initialize(evaluator, [:Grad])
+    xv = [1.5]
+    @test MOI.eval_objective(evaluator, xv) ≈ 2 * xv[1]^2 + 1.0
+    g = ones(1)
+    MOI.eval_objective_gradient(evaluator, g, xv)
+    @test g[1] ≈ 4 * xv[1]
+    return
+end
+
 end  # module
 
 TestArrayDiff.runtests()
