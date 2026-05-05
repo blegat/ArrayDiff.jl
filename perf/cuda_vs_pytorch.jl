@@ -55,69 +55,91 @@ end
 # NTuple{4, Base.VecElement{Float32}} loads via Core.LLVMPtr lower to
 # `ld.global.v4` PTX.
 # -------------------------------------------------------------------------
-const Float4 = NTuple{4, Base.VecElement{Float32}}
+const Float4 = NTuple{4,Base.VecElement{Float32}}
 
 @inline _f4ptr(arr::CuDeviceArray{Float32}) =
-    reinterpret(Core.LLVMPtr{Float4, AS.Global}, pointer(arr))
+    reinterpret(Core.LLVMPtr{Float4,AS.Global}, pointer(arr))
 
-@inline _vec4(t1, t2, t3, t4) =
-    (Base.VecElement(t1), Base.VecElement(t2), Base.VecElement(t3), Base.VecElement(t4))
+@inline _vec4(t1, t2, t3, t4) = (
+    Base.VecElement(t1),
+    Base.VecElement(t2),
+    Base.VecElement(t3),
+    Base.VecElement(t4),
+)
 
 function _tanh_and_jac_kernel!(y, J, x, n::Int)
-    i    = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     base = 4 * (i - 1)
     if base + 4 <= n
-        v  = unsafe_load(_f4ptr(x), i, Val(16))
-        t1 = tanh(v[1].value); t2 = tanh(v[2].value)
-        t3 = tanh(v[3].value); t4 = tanh(v[4].value)
+        v = unsafe_load(_f4ptr(x), i, Val(16))
+        t1 = tanh(v[1].value);
+        t2 = tanh(v[2].value)
+        t3 = tanh(v[3].value);
+        t4 = tanh(v[4].value)
         unsafe_store!(_f4ptr(y), _vec4(t1, t2, t3, t4), i, Val(16))
-        unsafe_store!(_f4ptr(J),
-            _vec4(1f0 - t1*t1, 1f0 - t2*t2, 1f0 - t3*t3, 1f0 - t4*t4), i, Val(16))
+        unsafe_store!(
+            _f4ptr(J),
+            _vec4(1.0f0 - t1*t1, 1.0f0 - t2*t2, 1.0f0 - t3*t3, 1.0f0 - t4*t4),
+            i,
+            Val(16),
+        )
     elseif base < n
-        for k in 1:(n - base)
-            @inbounds t = tanh(x[base + k])
-            @inbounds y[base + k] = t
-            @inbounds J[base + k] = 1f0 - t*t
+        for k in 1:(n-base)
+            @inbounds t = tanh(x[base+k])
+            @inbounds y[base+k] = t
+            @inbounds J[base+k] = 1.0f0 - t*t
         end
     end
     return nothing
 end
 
-function tanh_and_jac!(y::CuArray{Float32}, J::CuArray{Float32}, x::CuArray{Float32})
-    n       = length(x)
+function tanh_and_jac!(
+    y::CuArray{Float32},
+    J::CuArray{Float32},
+    x::CuArray{Float32},
+)
+    n = length(x)
     threads = 256
-    blocks  = cld(cld(n, 4), threads)
+    blocks = cld(cld(n, 4), threads)
     @cuda threads=threads blocks=blocks _tanh_and_jac_kernel!(y, J, x, n)
     return (y, J)
 end
 
 function _vmul_kernel!(out, a, b, n::Int)
-    i    = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     base = 4 * (i - 1)
     if base + 4 <= n
         va = unsafe_load(_f4ptr(a), i, Val(16))
         vb = unsafe_load(_f4ptr(b), i, Val(16))
-        unsafe_store!(_f4ptr(out),
-            _vec4(va[1].value*vb[1].value, va[2].value*vb[2].value,
-                  va[3].value*vb[3].value, va[4].value*vb[4].value), i, Val(16))
+        unsafe_store!(
+            _f4ptr(out),
+            _vec4(
+                va[1].value*vb[1].value,
+                va[2].value*vb[2].value,
+                va[3].value*vb[3].value,
+                va[4].value*vb[4].value,
+            ),
+            i,
+            Val(16),
+        )
     elseif base < n
-        for k in 1:(n - base)
-            @inbounds out[base + k] = a[base + k] * b[base + k]
+        for k in 1:(n-base)
+            @inbounds out[base+k] = a[base+k] * b[base+k]
         end
     end
     return nothing
 end
 
 function vmul!(out::CuArray{Float32}, a::CuArray{Float32}, b::CuArray{Float32})
-    n       = length(a)
+    n = length(a)
     threads = 256
-    blocks  = cld(cld(n, 4), threads)
+    blocks = cld(cld(n, 4), threads)
     @cuda threads=threads blocks=blocks _vmul_kernel!(out, a, b, n)
     return out
 end
 
 function reverse_diff_v4(W1, W2, X, y)
-    Z1  = W1 * X                                 # GEMM (h, n)
+    Z1 = W1 * X                                 # GEMM (h, n)
     y_1 = similar(Z1)
     J_1 = similar(Z1)
     tanh_and_jac!(y_1, J_1, Z1)                  # fused tanh + (1 - y²), vec=4
@@ -138,18 +160,25 @@ end
 # slower than a SIMT FP32 GEMM. We bypass gemmExComputeType by calling
 # cublasGemmEx directly with CUBLAS_COMPUTE_32F + CUBLAS_GEMM_DEFAULT.
 # -------------------------------------------------------------------------
-function _gemm_simt!(C::CuArray{Float32,2}, transA::Char, A::CuArray{Float32,2},
-                     transB::Char, B::CuArray{Float32,2};
-                     alpha::Float32 = 1f0, beta::Float32 = 0f0)
-    m   = size(A, transA == 'N' ? 1 : 2)
-    k   = size(A, transA == 'N' ? 2 : 1)
-    n   = size(B, transB == 'N' ? 2 : 1)
+function _gemm_simt!(
+    C::CuArray{Float32,2},
+    transA::Char,
+    A::CuArray{Float32,2},
+    transB::Char,
+    B::CuArray{Float32,2};
+    alpha::Float32 = 1.0f0,
+    beta::Float32 = 0.0f0,
+)
+    m = size(A, transA == 'N' ? 1 : 2)
+    k = size(A, transA == 'N' ? 2 : 1)
+    n = size(B, transB == 'N' ? 2 : 1)
     lda = max(1, stride(A, 2))
     ldb = max(1, stride(B, 2))
     ldc = max(1, stride(C, 2))
     # CUDA.jl puts the cuBLAS handle in CUBLAS_POINTER_MODE_DEVICE, so alpha/beta
     # MUST be device pointers (host Ref triggers UVA fault handling — 100× slowdown).
-    α = CUDA.CuRef{Float32}(alpha); β = CUDA.CuRef{Float32}(beta)
+    α = CUDA.CuRef{Float32}(alpha);
+    β = CUDA.CuRef{Float32}(beta)
     h = CUDA.CUBLAS.handle()
     # Under FAST_MATH the handle's math mode is CUBLAS_TF32_TENSOR_OP_MATH, which
     # forces TF32 tensor cores even when we ask for CUBLAS_COMPUTE_32F. Flip it to
@@ -157,10 +186,23 @@ function _gemm_simt!(C::CuArray{Float32,2}, transA::Char, A::CuArray{Float32,2},
     CUDA.CUBLAS.math_mode!(h, CUDA.DEFAULT_MATH)
     try
         CUDA.CUBLAS.cublasGemmEx(
-            h, transA, transB, m, n, k,
-            α, A, Float32, lda,
-            B, Float32, ldb,
-            β, C, Float32, ldc,
+            h,
+            transA,
+            transB,
+            m,
+            n,
+            k,
+            α,
+            A,
+            Float32,
+            lda,
+            B,
+            Float32,
+            ldb,
+            β,
+            C,
+            Float32,
+            ldc,
             CUDA.CUBLAS.CUBLAS_COMPUTE_32F,
             CUDA.CUBLAS.CUBLAS_GEMM_DEFAULT,
         )
@@ -172,7 +214,7 @@ end
 
 function reverse_diff_v5(W1, W2, X, y)
     h, d = size(W1)
-    nn   = size(X, 2)
+    nn = size(X, 2)
 
     Z1 = CuArray{Float32}(undef, h, nn)
     _gemm_simt!(Z1, 'N', W1, 'N', X)              # SIMT: (h,d) * (d,n)
@@ -230,15 +272,26 @@ mutable struct LtPlan
     algo::CUDA.CUBLAS.cublasLtMatmulAlgo_t
 end
 
-function _build_lt_plan(transA::Char, transB::Char,
-                        m::Int, n::Int, k::Int,
-                        lda::Int, ldb::Int, ldc::Int)
-    state  = _lt_state()
+function _build_lt_plan(
+    transA::Char,
+    transB::Char,
+    m::Int,
+    n::Int,
+    k::Int,
+    lda::Int,
+    ldb::Int,
+    ldc::Int,
+)
+    state = _lt_state()
     handle = state.handle
-    R32    = CUDA.CUDACore.R_32F     # cudaDataType for Float32
+    R32 = CUDA.CUDACore.R_32F     # cudaDataType for Float32
 
     desc_ref = Ref{CUDA.CUBLAS.cublasLtMatmulDesc_t}(C_NULL)
-    CUDA.CUBLAS.cublasLtMatmulDescCreate(desc_ref, CUDA.CUBLAS.CUBLAS_COMPUTE_32F, R32)
+    CUDA.CUBLAS.cublasLtMatmulDescCreate(
+        desc_ref,
+        CUDA.CUBLAS.CUBLAS_COMPUTE_32F,
+        R32,
+    )
     desc = desc_ref[]
 
     # Set transpose attributes.
@@ -246,11 +299,19 @@ function _build_lt_plan(transA::Char, transB::Char,
     tB = (transB == 'N') ? CUDA.CUBLAS.CUBLAS_OP_N : CUDA.CUBLAS.CUBLAS_OP_T
     let r = Ref(tA)
         CUDA.CUBLAS.cublasLtMatmulDescSetAttribute(
-            desc, CUDA.CUBLAS.CUBLASLT_MATMUL_DESC_TRANSA, r, sizeof(tA))
+            desc,
+            CUDA.CUBLAS.CUBLASLT_MATMUL_DESC_TRANSA,
+            r,
+            sizeof(tA),
+        )
     end
     let r = Ref(tB)
         CUDA.CUBLAS.cublasLtMatmulDescSetAttribute(
-            desc, CUDA.CUBLAS.CUBLASLT_MATMUL_DESC_TRANSB, r, sizeof(tB))
+            desc,
+            CUDA.CUBLAS.CUBLASLT_MATMUL_DESC_TRANSB,
+            r,
+            sizeof(tB),
+        )
     end
 
     # Layout shape is the *storage* shape (pre-transpose).
@@ -262,9 +323,27 @@ function _build_lt_plan(transA::Char, transB::Char,
     Aref = Ref{CUDA.CUBLAS.cublasLtMatrixLayout_t}(C_NULL)
     Bref = Ref{CUDA.CUBLAS.cublasLtMatrixLayout_t}(C_NULL)
     Cref = Ref{CUDA.CUBLAS.cublasLtMatrixLayout_t}(C_NULL)
-    CUDA.CUBLAS.cublasLtMatrixLayoutCreate(Aref, R32, UInt64(Arows), UInt64(Acols), Int64(lda))
-    CUDA.CUBLAS.cublasLtMatrixLayoutCreate(Bref, R32, UInt64(Brows), UInt64(Bcols), Int64(ldb))
-    CUDA.CUBLAS.cublasLtMatrixLayoutCreate(Cref, R32, UInt64(m),     UInt64(n),     Int64(ldc))
+    CUDA.CUBLAS.cublasLtMatrixLayoutCreate(
+        Aref,
+        R32,
+        UInt64(Arows),
+        UInt64(Acols),
+        Int64(lda),
+    )
+    CUDA.CUBLAS.cublasLtMatrixLayoutCreate(
+        Bref,
+        R32,
+        UInt64(Brows),
+        UInt64(Bcols),
+        Int64(ldb),
+    )
+    CUDA.CUBLAS.cublasLtMatrixLayoutCreate(
+        Cref,
+        R32,
+        UInt64(m),
+        UInt64(n),
+        Int64(ldc),
+    )
 
     # Preference: tell the heuristic how much workspace it can use.
     pref_ref = Ref{CUDA.CUBLAS.cublasLtMatmulPreference_t}(C_NULL)
@@ -272,39 +351,66 @@ function _build_lt_plan(transA::Char, transB::Char,
     pref = pref_ref[]
     let r = Ref(_LT_WS_BYTES)
         CUDA.CUBLAS.cublasLtMatmulPreferenceSetAttribute(
-            pref, CUDA.CUBLAS.CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
-            r, sizeof(_LT_WS_BYTES))
+            pref,
+            CUDA.CUBLAS.CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
+            r,
+            sizeof(_LT_WS_BYTES),
+        )
     end
 
     # Heuristic: top-1 algorithm.
-    heur     = Vector{CUDA.CUBLAS.cublasLtMatmulHeuristicResult_t}(undef, 1)
+    heur = Vector{CUDA.CUBLAS.cublasLtMatmulHeuristicResult_t}(undef, 1)
     returned = Ref{Cint}(0)
     CUDA.CUBLAS.cublasLtMatmulAlgoGetHeuristic(
-        handle, desc, Aref[], Bref[], Cref[], Cref[],
-        pref, Cint(1), heur, returned)
-    returned[] < 1 && error("cuBLASLt has no algo for shape (m=$m,n=$n,k=$k,trans=$transA$transB)")
+        handle,
+        desc,
+        Aref[],
+        Bref[],
+        Cref[],
+        Cref[],
+        pref,
+        Cint(1),
+        heur,
+        returned,
+    )
+    returned[] < 1 && error(
+        "cuBLASLt has no algo for shape (m=$m,n=$n,k=$k,trans=$transA$transB)",
+    )
 
     return LtPlan(desc, Aref[], Bref[], Cref[], heur[1].algo)
 end
 
-function _gemm_lt!(plan::LtPlan,
-                   C::CuArray{Float32,2}, A::CuArray{Float32,2}, B::CuArray{Float32,2};
-                   alpha::Float32 = 1f0, beta::Float32 = 0f0)
-    state    = _lt_state()
+function _gemm_lt!(
+    plan::LtPlan,
+    C::CuArray{Float32,2},
+    A::CuArray{Float32,2},
+    B::CuArray{Float32,2};
+    alpha::Float32 = 1.0f0,
+    beta::Float32 = 0.0f0,
+)
+    state = _lt_state()
     # cuBLASLt's matmul descriptor defaults to CUBLASLT_POINTER_MODE_HOST
     # (independent of the cuBLAS handle's pointer mode), so alpha/beta are
     # plain host Refs here — using CuRef would trigger UVA faults.
-    α        = Ref{Float32}(alpha)
-    β        = Ref{Float32}(beta)
+    α = Ref{Float32}(alpha)
+    β = Ref{Float32}(beta)
     algo_ref = Ref(plan.algo)
     CUDA.CUBLAS.cublasLtMatmul(
-        state.handle, plan.desc,
-        α, A, plan.Adesc,
-           B, plan.Bdesc,
-        β, C, plan.Cdesc,
-           C, plan.Cdesc,                # D = C in place
+        state.handle,
+        plan.desc,
+        α,
+        A,
+        plan.Adesc,
+        B,
+        plan.Bdesc,
+        β,
+        C,
+        plan.Cdesc,
+        C,
+        plan.Cdesc,                # D = C in place
         algo_ref,
-        state.ws, sizeof(state.ws),
+        state.ws,
+        sizeof(state.ws),
         CUDA.stream(),
     )
     return C
@@ -317,10 +423,13 @@ struct LtPlans
     p3::LtPlan   # out * X'    :  (h,n) * store (d,n),'T'  → (h,d)
 end
 
-function build_lt_plans(W1::CuArray{Float32,2}, W2::CuArray{Float32,2},
-                        X::CuArray{Float32,2})
+function build_lt_plans(
+    W1::CuArray{Float32,2},
+    W2::CuArray{Float32,2},
+    X::CuArray{Float32,2},
+)
     h, d = size(W1)
-    nn   = size(X, 2)
+    nn = size(X, 2)
     p1 = _build_lt_plan('N', 'N', h, nn, d, h, d, h)
     p2 = _build_lt_plan('T', 'N', h, nn, 1, 1, 1, h)
     p3 = _build_lt_plan('N', 'T', h, d, nn, h, d, h)
@@ -329,7 +438,7 @@ end
 
 function reverse_diff_v6(plans::LtPlans, W1, W2, X, y)
     h, d = size(W1)
-    nn   = size(X, 2)
+    nn = size(X, 2)
 
     Z1 = CuArray{Float32}(undef, h, nn)
     _gemm_lt!(plans.p1, Z1, W1, X)
@@ -369,17 +478,18 @@ struct LuxMooncake{M,P,S,L,R}
     rule::R
 end
 
-function build_lux(W1g::CuArray{Float32,2}, W2g::CuArray{Float32,2},
-                   Xg::CuArray, yg::CuArray)
-    h, d  = size(W1g)
+function build_lux(
+    W1g::CuArray{Float32,2},
+    W2g::CuArray{Float32,2},
+    Xg::CuArray,
+    yg::CuArray,
+)
+    h, d = size(W1g)
     model = Lux.Chain(
         Lux.Dense(d => h, tanh; use_bias = false),
         Lux.Dense(h => 1, identity; use_bias = false),
     )
-    ps = (
-        layer_1 = (weight = W1g,),
-        layer_2 = (weight = W2g,),
-    )
+    ps = (layer_1 = (weight = W1g,), layer_2 = (weight = W2g,))
     st = Lux.initialstates(Random.default_rng(), model)
 
     # Closure captures Xg, yg, model, st — only `p` is the differentiated arg.
@@ -405,8 +515,8 @@ end
 # -------------------------------------------------------------------------
 # PyTorch path
 # -------------------------------------------------------------------------
-const torch    = pyimport("torch")
-const np       = pyimport("numpy")
+const torch = pyimport("torch")
+const np = pyimport("numpy")
 const profiler = pyimport("torch.profiler")
 
 # Build torch tensors once and reuse them across benchmark iterations,
@@ -414,12 +524,12 @@ const profiler = pyimport("torch.profiler")
 function build_torch_tensors(W1::Matrix, W2::Matrix, X::Matrix, y::Matrix)
     npW1 = np.ascontiguousarray(np.asarray(PyArray(W1)))
     npW2 = np.ascontiguousarray(np.asarray(PyArray(W2)))
-    npX  = np.ascontiguousarray(np.asarray(PyArray(X)))
-    npY  = np.ascontiguousarray(np.asarray(PyArray(y)))
+    npX = np.ascontiguousarray(np.asarray(PyArray(X)))
+    npY = np.ascontiguousarray(np.asarray(PyArray(y)))
     W1t = torch.from_numpy(npW1).to("cuda").requires_grad_(true)
     W2t = torch.from_numpy(npW2).to("cuda")
-    Xt  = torch.from_numpy(npX).to("cuda")
-    yt  = torch.from_numpy(npY).to("cuda")
+    Xt = torch.from_numpy(npX).to("cuda")
+    yt = torch.from_numpy(npY).to("cuda")
     return W1t, W2t, Xt, yt
 end
 
@@ -447,7 +557,7 @@ _compiled = torch.compile(_eager)
     (nt._eager, nt._compiled)
 end
 
-pytorch_grad_eager(W1t, W2t, Xt, yt)    = _grad_fn_eager(W1t, W2t, Xt, yt)
+pytorch_grad_eager(W1t, W2t, Xt, yt) = _grad_fn_eager(W1t, W2t, Xt, yt)
 pytorch_grad_compiled(W1t, W2t, Xt, yt) = _grad_fn_compiled(W1t, W2t, Xt, yt)
 
 torch_to_julia(t) = pyconvert(Array, t.detach().cpu().numpy())
@@ -457,7 +567,8 @@ torch_to_julia(t) = pyconvert(Array, t.detach().cpu().numpy())
 # -------------------------------------------------------------------------
 function julia_trace(f)
     # Warmup so JIT + cuBLAS handle init don't show up.
-    f(); CUDA.synchronize()
+    f();
+    CUDA.synchronize()
     return CUDA.@profile trace = true begin
         f()
         CUDA.synchronize()
@@ -471,10 +582,10 @@ function summarize_julia_trace(io::IO, trace)
     dev = trace.device
     names_ = dev.name
     starts = dev.start
-    stops  = dev.stop
+    stops = dev.stop
     counts = Dict{String,Int}()
     totals = Dict{String,Float64}()  # in seconds
-    order  = String[]
+    order = String[]
     for i in eachindex(names_)
         nm = String(names_[i])
         if !haskey(counts, nm)
@@ -495,7 +606,8 @@ function summarize_julia_trace(io::IO, trace)
 end
 
 function pytorch_trace(f)
-    f(); torch.cuda.synchronize()  # warmup
+    f();
+    torch.cuda.synchronize()  # warmup
     ProfilerActivity = profiler.ProfilerActivity
     prof = profiler.profile(activities = pylist([ProfilerActivity.CUDA]))
     prof.__enter__()
@@ -513,7 +625,7 @@ const _pygc = pyimport("gc")
 # -------------------------------------------------------------------------
 # Benchmark + verify for one (h, d, n)
 # -------------------------------------------------------------------------
-function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
+function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1.0f-3)
     println("\n" * "="^72)
     @printf "h = %d, d = %d, n = %d\n" h d n
     println("="^72)
@@ -521,15 +633,19 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
     Random.seed!(0)
     W1 = randn(Float32, h, d)
     W2 = randn(Float32, 1, h)
-    X  = randn(Float32, d, n)
-    y  = randn(Float32, 1, n)
+    X = randn(Float32, d, n)
+    y = randn(Float32, 1, n)
 
     # ----- Julia / CUDA.jl -----
-    W1g = CuArray(W1); W2g = CuArray(W2); Xg = CuArray(X); yg = CuArray(y)
-    grad_julia    = Array(reverse_diff(W1g, W2g, Xg, yg))
+    W1g = CuArray(W1);
+    W2g = CuArray(W2);
+    Xg = CuArray(X);
+    yg = CuArray(y)
+    grad_julia = Array(reverse_diff(W1g, W2g, Xg, yg))
     grad_julia_v4 = Array(reverse_diff_v4(W1g, W2g, Xg, yg))
     grad_julia_v5 = Array(reverse_diff_v5(W1g, W2g, Xg, yg))
-    print("cuBLASLt build_lt_plans for h=$h ... "); flush(stdout)
+    print("cuBLASLt build_lt_plans for h=$h ... ");
+    flush(stdout)
     t_lt_build = @elapsed lt_plans = build_lt_plans(W1g, W2g, Xg)
     @printf "%.3f s\n" t_lt_build
     grad_julia_v6 = Array(reverse_diff_v6(lt_plans, W1g, W2g, Xg, yg))
@@ -538,12 +654,15 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
     # Lux + Mooncake setup. build_rrule compiles the reverse pass for these
     # types (one-time cost per shape); first call afterwards still does some
     # JIT, so we time both separately.
-    print("Lux+Mooncake build_rrule for h=$h ... "); flush(stdout)
+    print("Lux+Mooncake build_rrule for h=$h ... ");
+    flush(stdout)
     t_lux_build = @elapsed lm = build_lux(W1g, W2g, Xg, yg)
     @printf "%.2f s, " t_lux_build
-    print("first call ... "); flush(stdout)
+    print("first call ... ");
+    flush(stdout)
     t_lux_first = @elapsed begin
-        lux_grad(lm); CUDA.synchronize()
+        lux_grad(lm);
+        CUDA.synchronize()
     end
     @printf "%.2f s\n" t_lux_first
     grad_lux = Array(lux_grad(lm))
@@ -556,25 +675,29 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
 
     # First call to the compiled fn for this shape triggers Inductor codegen
     # (can take seconds). Time it so the user knows.
-    print("torch.compile codegen for h=$h ... "); flush(stdout)
+    print("torch.compile codegen for h=$h ... ");
+    flush(stdout)
     t_compile = @elapsed begin
         pytorch_grad_compiled(W1t, W2t, Xt, yt)
         torch.cuda.synchronize()
     end
     @printf "%.2f s\n" t_compile
-    grad_pytorch_compiled = torch_to_julia(pytorch_grad_compiled(W1t, W2t, Xt, yt))
+    grad_pytorch_compiled =
+        torch_to_julia(pytorch_grad_compiled(W1t, W2t, Xt, yt))
     torch.cuda.synchronize()
 
     # ----- Numerical equivalence -----
-    for (name, g) in [("Julia v4 (vec=4)   ", grad_julia_v4),
-                      ("Julia v5 (vec=4+SIMT)", grad_julia_v5),
-                      ("Julia v6 (vec=4+Lt)", grad_julia_v6),
-                      ("Lux + Mooncake     ", grad_lux),
-                      ("PyTorch eager      ", grad_pytorch_eager),
-                      ("PyTorch compiled   ", grad_pytorch_compiled)]
+    for (name, g) in [
+        ("Julia v4 (vec=4)   ", grad_julia_v4),
+        ("Julia v5 (vec=4+SIMT)", grad_julia_v5),
+        ("Julia v6 (vec=4+Lt)", grad_julia_v6),
+        ("Lux + Mooncake     ", grad_lux),
+        ("PyTorch eager      ", grad_pytorch_eager),
+        ("PyTorch compiled   ", grad_pytorch_compiled),
+    ]
         maxdiff = maximum(abs.(grad_julia .- g))
-        relmag  = maxdiff / max(maximum(abs.(grad_julia)), eps(Float32))
-        ok      = isapprox(grad_julia, g; rtol = rtol, atol = 1f-4)
+        relmag = maxdiff / max(maximum(abs.(grad_julia)), eps(Float32))
+        ok = isapprox(grad_julia, g; rtol = rtol, atol = 1.0f-4)
         @printf "%s vs Julia broadcast: max|Δ| = %.3e (rel %.2e)  match=%s\n" name maxdiff relmag ok
     end
 
@@ -605,11 +728,17 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
     be = @benchmark begin
         pytorch_grad_eager($W1t, $W2t, $Xt, $yt)
         $torch.cuda.synchronize()
-    end samples=30 evals=1 seconds=10 setup=($(_pygc).collect(); $torch.cuda.empty_cache())
+    end samples=30 evals=1 seconds=10 setup=(
+        $(_pygc).collect();
+        $torch.cuda.empty_cache()
+    )
     bc = @benchmark begin
         pytorch_grad_compiled($W1t, $W2t, $Xt, $yt)
         $torch.cuda.synchronize()
-    end samples=30 evals=1 seconds=10 setup=($(_pygc).collect(); $torch.cuda.empty_cache())
+    end samples=30 evals=1 seconds=10 setup=(
+        $(_pygc).collect();
+        $torch.cuda.empty_cache()
+    )
     @printf "Julia broadcast      : median %8.3f µs\n" 1e-3 * median(bj).time
     @printf "Julia vec=4          : median %8.3f µs\n" 1e-3 * median(bj4).time
     @printf "Julia vec=4 + SIMT   : median %8.3f µs\n" 1e-3 * median(bj5).time
@@ -620,16 +749,28 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
 
     # ----- CUDA traces -----
     println("\n--- CUDA trace: Julia broadcast ---")
-    summarize_julia_trace(stdout, julia_trace(() -> reverse_diff(W1g, W2g, Xg, yg)))
+    summarize_julia_trace(
+        stdout,
+        julia_trace(() -> reverse_diff(W1g, W2g, Xg, yg)),
+    )
 
     println("\n--- CUDA trace: Julia vec=4 ---")
-    summarize_julia_trace(stdout, julia_trace(() -> reverse_diff_v4(W1g, W2g, Xg, yg)))
+    summarize_julia_trace(
+        stdout,
+        julia_trace(() -> reverse_diff_v4(W1g, W2g, Xg, yg)),
+    )
 
     println("\n--- CUDA trace: Julia vec=4 + SIMT ---")
-    summarize_julia_trace(stdout, julia_trace(() -> reverse_diff_v5(W1g, W2g, Xg, yg)))
+    summarize_julia_trace(
+        stdout,
+        julia_trace(() -> reverse_diff_v5(W1g, W2g, Xg, yg)),
+    )
 
     println("\n--- CUDA trace: Julia vec=4 + cuBLASLt ---")
-    summarize_julia_trace(stdout, julia_trace(() -> reverse_diff_v6(lt_plans, W1g, W2g, Xg, yg)))
+    summarize_julia_trace(
+        stdout,
+        julia_trace(() -> reverse_diff_v6(lt_plans, W1g, W2g, Xg, yg)),
+    )
 
     println("\n--- CUDA trace: Lux + Mooncake ---")
     summarize_julia_trace(stdout, julia_trace(() -> lux_grad(lm)))
@@ -657,8 +798,15 @@ function main()
     # Julia versions equally, so the broadcast-vs-vec=4 comparison still
     # isolates the kernel-design effect.
     CUDA.math_mode!(CUDA.FAST_MATH)
-    println("CUDA.jl device : ", CUDA.name(CUDA.device()), "  (math_mode=FAST_MATH)")
-    println("PyTorch device : ", pyconvert(String, torch.cuda.get_device_name(0)))
+    println(
+        "CUDA.jl device : ",
+        CUDA.name(CUDA.device()),
+        "  (math_mode=FAST_MATH)",
+    )
+    println(
+        "PyTorch device : ",
+        pyconvert(String, torch.cuda.get_device_name(0)),
+    )
 
     for h in (16, 256, 4096)
         run_one(; h = h)
