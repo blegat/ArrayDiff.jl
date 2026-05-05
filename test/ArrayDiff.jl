@@ -796,7 +796,7 @@ function test_residual_with_subexpression()
     x2 = MOI.VariableIndex(2)
     e = ArrayDiff.add_expression(model, :($x1 * $x2))
     # F = [x1 + e, x2 - e]
-    ArrayDiff.set_residual!(model, :([$x1 + $e, $x2 - $e]))
+    ArrayDiff.set_residual(model, :([$x1 + $e, $x2 - $e]))
     evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x1, x2])
     MOI.initialize(evaluator, [:Grad, :Jac, :JacVec])
     @test ArrayDiff.residual_dimension(evaluator) == 2

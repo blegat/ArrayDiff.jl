@@ -6,7 +6,7 @@ function set_objective(model::Model, obj)
     return
 end
 
-function set_residual!(model::Model, residual)
+function set_residual(model::Model, residual)
     model.residual = parse_expression(model, residual)
     return
 end
