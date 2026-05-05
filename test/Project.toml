@@ -1,6 +1,8 @@
 [deps]
 ArrayDiff = "c45fa1ca-6901-44ac-ae5b-5513a4852d50"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 Calculus = "49dc2e85-a5d0-5ad3-a950-438e2897f1b9"
+JLArrays = "27aeb0d3-9eb9-45fb-866b-73c2ecf80fcb"
 GenOpt = "f2c049d8-7489-4223-990c-4f1c121a4cde"
 JSOSolvers = "10dff2fc-5484-5881-a0e0-c90441020f8a"
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
@@ -16,6 +18,13 @@ SolverCore = "ff4d7338-4cf1-434d-91df-b86cb86fb843"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+# NLPModelsModifiers (a transitive dep of JSOSolvers) calls
+# `@default_counters Model inner (excluded,)`, which only became a 3-arg
+# macro in NLPModels 0.21.12. Older 0.21.x versions only define the 2-arg
+# form and break precompilation.
+NLPModels = "0.21.12"
 
 [sources]
 ArrayDiff = {path = ".."}

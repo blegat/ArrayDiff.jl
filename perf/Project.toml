@@ -1,0 +1,15 @@
+name = "ArrayDiffPerf"
+uuid = "00000000-0000-0000-0000-000000000001"
+authors = ["Benoît Legat <benoit.legat@gmail.com>"]
+version = "0.0.0"
+
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CondaPkg = "992eb4ea-22a4-4c89-a5bb-47a3300528ab"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Lux = "b2108857-7c20-44ae-9111-449ecde12c47"
+Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
