@@ -19,5 +19,5 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [sources]
 ArrayDiff = {path = ".."}
-NLopt = {url = "https://github.com/jump-dev/NLopt.jl/", ref = "bl/diff_backend"}
-NLPModelsJuMP = {url = "https://github.com/JuliaSmoothOptimizers/NLPModelsJuMP.jl", ref = "bl/nonlinear_model"}
+NLopt = {url = "https://github.com/jump-dev/NLopt.jl/", rev = "bl/diff_backend"}
+NLPModelsJuMP = {url = "https://github.com/JuliaSmoothOptimizers/NLPModelsJuMP.jl", rev = "bl/nonlinear_model"}
