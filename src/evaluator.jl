@@ -60,7 +60,9 @@ function MOI.eval_constraint(evaluator::Evaluator, g, x)
     return
 end
 
-eval_residual!(evaluator::Evaluator, F, x) = eval_residual!(evaluator.backend, F, x)
+function eval_residual!(evaluator::Evaluator, F, x)
+    return eval_residual!(evaluator.backend, F, x)
+end
 
 function eval_residual_jtprod!(evaluator::Evaluator, Jtv, x, v)
     return eval_residual_jtprod!(evaluator.backend, Jtv, x, v)
