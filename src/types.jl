@@ -295,7 +295,8 @@ interface.
 !!! warning
     Before using, you must initialize the evaluator using `MOI.initialize`.
 """
-mutable struct NLPEvaluator{S<:AbstractVector{Float64}} <: MOI.AbstractNLPEvaluator
+mutable struct NLPEvaluator{S<:AbstractVector{Float64}} <:
+               MOI.AbstractNLPEvaluator
     data::Model
     ordered_variables::Vector{MOI.VariableIndex}
 
@@ -340,5 +341,6 @@ mutable struct NLPEvaluator{S<:AbstractVector{Float64}} <: MOI.AbstractNLPEvalua
     end
 end
 
-NLPEvaluator(data::Model, ordered_variables::Vector{MOI.VariableIndex}) =
-    NLPEvaluator{Vector{Float64}}(data, ordered_variables)
+function NLPEvaluator(data::Model, ordered_variables::Vector{MOI.VariableIndex})
+    return NLPEvaluator{Vector{Float64}}(data, ordered_variables)
+end

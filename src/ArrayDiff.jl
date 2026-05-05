@@ -23,7 +23,8 @@ partials, and reverse storage of each subexpression). It must satisfy
 `S<:AbstractVector{Float64}`. Defaults to `Vector{Float64}`. Pass a different
 `S` (for example `CuVector{Float64}`) to keep the tape on a GPU.
 """
-struct Mode{S<:AbstractVector{Float64}} <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
+struct Mode{S<:AbstractVector{Float64}} <:
+       MOI.Nonlinear.AbstractAutomaticDifferentiation end
 
 Mode() = Mode{Vector{Float64}}()
 

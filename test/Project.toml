@@ -19,6 +19,13 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
+[compat]
+# NLPModelsModifiers (a transitive dep of JSOSolvers) calls
+# `@default_counters Model inner (excluded,)`, which only became a 3-arg
+# macro in NLPModels 0.21.12. Older 0.21.x versions only define the 2-arg
+# form and break precompilation.
+NLPModels = "0.21.12"
+
 [sources]
 ArrayDiff = {path = ".."}
 NLopt = {url = "https://github.com/jump-dev/NLopt.jl/", rev = "bl/diff_backend"}

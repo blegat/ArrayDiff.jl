@@ -462,7 +462,10 @@ function _forward_eval(
                 @inbounds ix1 = children_arr[idx1]
                 @inbounds ix2 = children_arr[idx2]
                 @assert f.sizes.ndims[ix2] == 0 "Broadcasted ^ requires scalar exponent"
-                exponent = _scalar_load(f.forward_storage, f.sizes.storage_offset[ix2]+1)
+                exponent = _scalar_load(
+                    f.forward_storage,
+                    f.sizes.storage_offset[ix2]+1,
+                )
                 out = _view_array(f.forward_storage, f.sizes, k)
                 inp = _view_array(f.forward_storage, f.sizes, ix1)
                 partials = _view_array(f.partials_storage, f.sizes, ix1)

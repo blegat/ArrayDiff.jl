@@ -19,7 +19,10 @@ function MOI.features_available(d::NLPEvaluator)
     return [:Grad, :Jac, :JacVec, :Hess, :HessVec]
 end
 
-function MOI.initialize(d::NLPEvaluator{S}, requested_features::Vector{Symbol}) where {S<:AbstractVector{Float64}}
+function MOI.initialize(
+    d::NLPEvaluator{S},
+    requested_features::Vector{Symbol},
+) where {S<:AbstractVector{Float64}}
     # Check that we support the features requested by the user.
     available_features = MOI.features_available(d)
     for feature in requested_features
@@ -63,7 +66,8 @@ function MOI.initialize(d::NLPEvaluator{S}, requested_features::Vector{Symbol}) 
     subexpression_variables = Vector{Vector{Int}}(undef, num_subexpressions)
     subexpression_edgelist =
         Vector{Set{Tuple{Int,Int}}}(undef, num_subexpressions)
-    d.subexpressions = Vector{_SubexpressionStorage{S}}(undef, num_subexpressions)
+    d.subexpressions =
+        Vector{_SubexpressionStorage{S}}(undef, num_subexpressions)
     d.subexpression_forward_values = zeros(num_subexpressions)
     d.subexpression_reverse_values = zeros(num_subexpressions)
     for k in d.subexpression_order
