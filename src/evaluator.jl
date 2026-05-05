@@ -60,6 +60,18 @@ function MOI.eval_constraint(evaluator::Evaluator, g, x)
     return
 end
 
+eval_residual!(evaluator::Evaluator, F, x) = eval_residual!(evaluator.backend, F, x)
+
+function eval_residual_jtprod!(evaluator::Evaluator, Jtv, x, v)
+    return eval_residual_jtprod!(evaluator.backend, Jtv, x, v)
+end
+
+function eval_residual_jprod!(evaluator::Evaluator, Jv, x, v)
+    return eval_residual_jprod!(evaluator.backend, Jv, x, v)
+end
+
+residual_dimension(evaluator::Evaluator) = residual_dimension(evaluator.backend)
+
 function MOI.jacobian_structure(evaluator::Evaluator)
     return MOI.jacobian_structure(evaluator.backend)
 end
