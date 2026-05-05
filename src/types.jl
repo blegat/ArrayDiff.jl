@@ -195,7 +195,7 @@ It has the following fields:
 mutable struct Model{T}
     objective::Union{Nothing,Expression{T}}
     # Vector residual for nonlinear least-squares objectives. When set, callers
-    # can query its value, J*v, J'*v, etc. via the evaluator.
+    # can query its value, `J*v`, `J'*v`, etc. via the evaluator.
     residual::Union{Nothing,Expression{T}}
     expressions::Vector{Expression{T}}
     constraints::OrderedCollections.OrderedDict{ConstraintIndex,Constraint{T}}
