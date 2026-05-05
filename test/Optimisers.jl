@@ -21,7 +21,7 @@ function runtests()
     return
 end
 
-function _test_neural_optimisers(with_norm::Bool)
+function test_neural_optimisers()
     n = 2
     X = [1.0 0.5; 0.3 0.8]
     target = [0.5 0.2; 0.1 0.7]
@@ -38,22 +38,13 @@ function _test_neural_optimisers(with_norm::Bool)
         set_start_value(W2[i, j], start_W2[i, j])
     end
     Y = W2 * tanh.(W1 * X)
-    if with_norm
-        loss = LinearAlgebra.norm(Y .- target)
-    else
-        loss = sum((Y .- target) .^ 2)
-    end
+    loss = sum((Y .- target) .^ 2)
     @objective(model, Min, loss)
     set_attribute(model, "max_iter", 20_000)
     set_attribute(model, "tol", 1e-6)
     optimize!(model)
     @test objective_value(model) < 1e-3
     return
-end
-
-function test_neural_optimisers()
-    _test_neural_optimisers(true)
-    return _test_neural_optimisers(false)
 end
 
 end

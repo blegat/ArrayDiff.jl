@@ -70,6 +70,31 @@ function Nonlinear.set_objective(model::Model, ::Nothing)
     return
 end
 
+# Extend MOI.Nonlinear.add_constraint and register_operator so that callers
+# (e.g. NLPModelsJuMP's `_nlp_model`) dispatch to the ArrayDiff implementations
+# when the model is an `ArrayDiff.Model`.
+function Nonlinear.add_constraint(
+    model::Model{T},
+    func,
+    set::Union{
+        MOI.GreaterThan{T},
+        MOI.LessThan{T},
+        MOI.Interval{T},
+        MOI.EqualTo{T},
+    },
+) where {T}
+    return add_constraint(model, func, set)
+end
+
+function Nonlinear.register_operator(
+    model::Model,
+    op::Symbol,
+    nargs::Int,
+    f::Function...,
+)
+    return register_operator(model, op, nargs, f...)
+end
+
 # Create an ArrayDiff Evaluator from an ArrayDiff Model.
 function Evaluator(
     model::ArrayDiff.Model,
