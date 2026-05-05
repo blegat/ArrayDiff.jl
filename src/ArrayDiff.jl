@@ -66,7 +66,6 @@ include("array_nonlinear_function.jl")
 include("parse_moi.jl")
 
 model(::Mode{S}) where {S} = Model()
-storage_type(::Mode{S}) where {S} = S
 
 # Extend MOI.Nonlinear.set_objective so that solvers calling
 # MOI.Nonlinear.set_objective(arraydiff_model, snf) dispatch here.

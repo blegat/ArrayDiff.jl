@@ -340,7 +340,3 @@ mutable struct NLPEvaluator{S<:AbstractVector{Float64}} <:
         return new{S}(data, ordered_variables)
     end
 end
-
-function NLPEvaluator(data::Model, ordered_variables::Vector{MOI.VariableIndex})
-    return NLPEvaluator{Vector{Float64}}(data, ordered_variables)
-end
