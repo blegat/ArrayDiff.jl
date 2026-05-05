@@ -2,15 +2,22 @@
 ArrayDiff = "c45fa1ca-6901-44ac-ae5b-5513a4852d50"
 Calculus = "49dc2e85-a5d0-5ad3-a950-438e2897f1b9"
 GenOpt = "f2c049d8-7489-4223-990c-4f1c121a4cde"
+JSOSolvers = "10dff2fc-5484-5881-a0e0-c90441020f8a"
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
+NLPModels = "a4795742-8479-5a88-8948-cc11e1c8c1a6"
+NLPModelsJuMP = "792afdf1-32c1-5681-94e0-d7bf7a5df49e"
 NLopt = "76087f3c-5699-56af-9a33-bf431cd00edd"
+Optimisers = "3bd65402-5787-11e9-1adc-39752487f4e2"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
+SolverCore = "ff4d7338-4cf1-434d-91df-b86cb86fb843"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [sources]
 ArrayDiff = {path = ".."}
+NLopt = {url = "https://github.com/jump-dev/NLopt.jl/", rev = "bl/diff_backend"}
+NLPModelsJuMP = {url = "https://github.com/JuliaSmoothOptimizers/NLPModelsJuMP.jl", rev = "bl/arraydiff"}
