@@ -25,7 +25,11 @@ function test_neural_nlpmodels_jump()
     target = [0.5 0.2; 0.1 0.7]
     model = Model(NLPModelsJuMP.Optimizer)
     set_attribute(model, "solver", JSOSolvers.LBFGSSolver)
-    set_attribute(model, MOI.AutomaticDifferentiationBackend(), ArrayDiff.Mode())
+    set_attribute(
+        model,
+        MOI.AutomaticDifferentiationBackend(),
+        ArrayDiff.Mode(),
+    )
     @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
     @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
     # Use distinct starting values to break symmetry
