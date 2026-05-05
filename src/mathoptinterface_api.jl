@@ -268,9 +268,7 @@ end
 Forward-evaluate the residual at `x` and write the values into `F`.
 """
 function eval_residual!(d::NLPEvaluator, F::AbstractVector, x::AbstractVector)
-    if d.residual === nothing
-        error("No nonlinear residual.")
-    end
+    @assert !isnothing(d.residual)
     _forward_pass_residual!(d, x)
     _read_residual!(F, d)
     return F
@@ -288,9 +286,7 @@ function eval_residual_jtprod!(
     x::AbstractVector,
     v::AbstractVector,
 )
-    if d.residual === nothing
-        error("No nonlinear residual.")
-    end
+    @assert !isnothing(d.residual)
     res = something(d.residual)
     _forward_pass_residual!(d, x)
     for k in d.subexpression_order
@@ -324,9 +320,7 @@ function eval_residual_jprod!(
     x::AbstractVector,
     v::AbstractVector,
 )
-    if d.residual === nothing
-        error("No nonlinear residual.")
-    end
+    @assert !isnothing(d.residual)
     res = something(d.residual)
     nresid = residual_dimension(d)
     _forward_pass_residual!(d, x)

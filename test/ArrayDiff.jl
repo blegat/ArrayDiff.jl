@@ -787,6 +787,36 @@ function test_model_typed_float32_evaluator_runs()
     return
 end
 
+function test_residual_with_subexpression()
+    # Residual references a subexpression `e = x1 * x2`, so the evaluator's
+    # subexpression-iteration loops in `_forward_pass_residual!` and
+    # `eval_residual_jprod!` are exercised.
+    model = ArrayDiff.Model()
+    x1 = MOI.VariableIndex(1)
+    x2 = MOI.VariableIndex(2)
+    e = ArrayDiff.add_expression(model, :($x1 * $x2))
+    # F = [x1 + e, x2 - e]
+    ArrayDiff.set_residual!(model, :([$x1 + $e, $x2 - $e]))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x1, x2])
+    MOI.initialize(evaluator, [:Grad, :Jac, :JacVec])
+    @test ArrayDiff.residual_dimension(evaluator) == 2
+    x = [3.0, 4.0]
+    # e = 12, F = [3 + 12, 4 - 12] = [15, -8]
+    F = zeros(2)
+    ArrayDiff.eval_residual!(evaluator, F, x)
+    @test F == [15.0, -8.0]
+    # J = [1+x2  x1 ; -x2  1-x1] = [5 3 ; -4 -2]
+    Jtv = zeros(2)
+    ArrayDiff.eval_residual_jtprod!(evaluator, Jtv, x, [1.0, 1.0])
+    @test Jtv == [1.0, 1.0]
+    Jv = zeros(2)
+    ArrayDiff.eval_residual_jprod!(evaluator, Jv, x, [1.0, 0.0])
+    @test Jv == [5.0, -4.0]
+    ArrayDiff.eval_residual_jprod!(evaluator, Jv, x, [0.0, 1.0])
+    @test Jv == [3.0, -2.0]
+    return
+end
+
 end  # module
 
 TestArrayDiff.runtests()
