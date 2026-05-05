@@ -125,6 +125,18 @@ function _forward_eval(
             #     f.forward_storage[k] = x[node.index]
         elseif node.type == NODE_VALUE
             f.forward_storage[j] = f.const_values[node.index]
+        elseif node.type == NODE_VARIABLE_BLOCK
+            # Contiguous-to-contiguous copy from `x` into the tape: on CPU a
+            # `copyto!`, on GPU a single `cudaMemcpy`. This is the fast path
+            # for matrix variables from `ArrayOfContiguousVariables{2}`.
+            tape_range = _storage_range(f.sizes, k)
+            len = length(tape_range)
+            copyto!(
+                view(f.forward_storage, tape_range),
+                view(x, node.index:(node.index + len - 1)),
+            )
+        elseif node.type == NODE_VALUE_BLOCK
+            # Pre-loaded into `forward_storage` at construction.
         elseif node.type == NODE_SUBEXPRESSION
             f.forward_storage[j] = d.subexpression_forward_values[node.index]
         elseif node.type == NODE_PARAMETER
@@ -791,11 +803,21 @@ function _reverse_eval(
                     end
                     continue
                 elseif op == :sum
-                    rev_parent = @s f.reverse_storage[k]
+                    # `sum` is rank-reducing (1 → 0): reverse-mode broadcasts
+                    # the parent's scalar adjoint to every child slot. Avoid
+                    # the scalar read of `reverse_storage[k]` (which fails on
+                    # GPU storage) by indexing with a 0-dim index — the view
+                    # is then 0-dim at the outermost type, which the
+                    # broadcast machinery specializes as a scalar source. On
+                    # GPU this lowers to a single fill-kernel; no D2H
+                    # round-trip.
                     ix = children_arr[children_indices[1]]
-                    for j in _eachindex(f.sizes, ix)
-                        @j f.reverse_storage[ix] = rev_parent
-                    end
+                    pos = _scalar_pos(f.sizes, k)
+                    rev_parent_view =
+                        view(f.reverse_storage, reshape(pos:pos, ()))
+                    rev_children_view =
+                        _view_array(f.reverse_storage, f.sizes, ix)
+                    rev_children_view .= rev_parent_view
                     continue
                 elseif op == :row
                     for j in _eachindex(f.sizes, k)
@@ -842,33 +864,34 @@ function _reverse_eval(
                         continue
                     end
                 elseif op == :^
-                    # Broadcasted array .^ scalar: per-j reverse for the base,
-                    # and a sum-reduced reverse for the (scalar) exponent.
+                    # Broadcasted array .^ scalar: vectorize the per-element
+                    # base reverse (with 0*Inf guard preserved) and reduce
+                    # the exponent contribution as a single `sum` over GPU
+                    # arrays.
                     @assert length(children_indices) == 2
                     idx1 = first(children_indices)
                     idx2 = last(children_indices)
                     @inbounds ix1 = children_arr[idx1]
                     @inbounds ix2 = children_arr[idx2]
-                    for j in _eachindex(f.sizes, k)
-                        rev_parent = @j f.reverse_storage[k]
-                        partial = @j f.partials_storage[ix1]
-                        val = ifelse(
-                            rev_parent == 0.0 && !isfinite(partial),
-                            rev_parent,
-                            rev_parent * partial,
-                        )
-                        @j f.reverse_storage[ix1] = val
-                    end
-                    rev_exp = zero(Float64)
-                    for j in _eachindex(f.sizes, k)
-                        rev_parent = @j f.reverse_storage[k]
-                        base = @j f.forward_storage[ix1]
-                        out = @j f.forward_storage[k]
-                        if base > 0
-                            rev_exp += rev_parent * out * log(base)
-                        end
-                    end
-                    @s f.reverse_storage[ix2] = rev_exp
+                    rev_parent = _view_array(f.reverse_storage, f.sizes, k)
+                    rev_v1 = _view_array(f.reverse_storage, f.sizes, ix1)
+                    partial = _view_array(f.partials_storage, f.sizes, ix1)
+                    rev_v1 .= ifelse.(
+                        (rev_parent .== 0) .& .!isfinite.(partial),
+                        rev_parent,
+                        rev_parent .* partial,
+                    )
+                    base_view = _view_array(f.forward_storage, f.sizes, ix1)
+                    out_view = _view_array(f.forward_storage, f.sizes, k)
+                    rev_exp_total = sum(
+                        ifelse.(
+                            base_view .> 0,
+                            rev_parent .* out_view .* log.(abs.(base_view)),
+                            zero(Float64),
+                        ),
+                    )
+                    pos2 = _scalar_pos(f.sizes, ix2)
+                    view(f.reverse_storage, pos2:pos2) .= rev_exp_total
                     continue
                 end
             end
@@ -945,7 +968,18 @@ function _extract_reverse_pass_inner(
 ) where {T}
     @assert length(f.reverse_storage) >= _length(f.sizes)
     for (k, node) in enumerate(f.nodes)
-        if node.type == NODE_VARIABLE
+        if node.type == NODE_VARIABLE_BLOCK
+            # Each block has a contiguous tape range and a contiguous `output`
+            # range: gather the adjoint, transfer to host in one memcpy, and
+            # accumulate into the matching slice of `output`.
+            tape_range = _storage_range(f.sizes, k)
+            len = length(tape_range)
+            x_range = node.index:(node.index + len - 1)
+            cpu_buf =
+                convert(Vector{T}, view(f.reverse_storage, tape_range))
+            view(output, x_range) .+= scale .* cpu_buf
+        elseif node.type == NODE_VARIABLE
+            # Per-leaf scalar — rare, so the per-leaf `cudaMemcpy` is fine.
             output[node.index] += scale * @s f.reverse_storage[k]
         elseif node.type == NODE_SUBEXPRESSION
             subexpressions[node.index] += scale * @s f.reverse_storage[k]

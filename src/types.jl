@@ -8,20 +8,33 @@
     struct Expression
         nodes::Vector{Node}
         values::Vector{Float64}
+        block_shapes::Dict{Int,Vector{Int}}
     end
 
 The core type that represents a nonlinear expression. See the MathOptInterface
 documentation for information on how the nodes and values form an expression
 tree.
+
+`block_shapes[k]` is the shape of node `k` (as a `Vector{Int}` of dimensions:
+`[m]` for a 1D vector block, `[m, n]` for a 2D matrix block, `[m, n, p]` for a
+3D tensor block, ...) when `nodes[k]` is one of `NODE_MOI_VARIABLE_BLOCK`,
+`NODE_VARIABLE_BLOCK`, or `NODE_VALUE_BLOCK`. Block nodes are leaves that
+stand in for an entire `prod(shape)`-element array of variables (or
+constants), preserving contiguity end-to-end so the AD tape can be filled and
+gathered with single contiguous bulk operations.
 """
 struct Expression{T}
     nodes::Vector{Node}
     values::Vector{T}
-    Expression{T}() where {T} = new{T}(Node[], T[])
+    block_shapes::Dict{Int,Vector{Int}}
+    Expression{T}() where {T} =
+        new{T}(Node[], T[], Dict{Int,Vector{Int}}())
 end
 
 function Base.:(==)(x::Expression, y::Expression)
-    return x.nodes == y.nodes && x.values == y.values
+    return x.nodes == y.nodes &&
+           x.values == y.values &&
+           x.block_shapes == y.block_shapes
 end
 
 """
@@ -103,6 +116,7 @@ function _subexpression_and_linearity(
         nodes,
         adj,
         convert(Vector{Float64}, expr.values),
+        copy(expr.block_shapes),
         partials_storage_ϵ,
         linearity[1],
         S,
@@ -133,12 +147,9 @@ struct _FunctionStorage{S<:AbstractVector{Float64}}
         linearity::Vector{Linearity},
     ) where {S<:AbstractVector{Float64}}
         empty!(coloring_storage)
-        _compute_gradient_sparsity!(coloring_storage, expr.nodes)
+        _compute_gradient_sparsity!(coloring_storage, expr)
         for k in dependent_subexpressions
-            _compute_gradient_sparsity!(
-                coloring_storage,
-                subexpressions[k].nodes,
-            )
+            _compute_gradient_sparsity!(coloring_storage, subexpressions[k])
         end
         grad_sparsity = sort!(collect(coloring_storage))
         empty!(coloring_storage)
