@@ -58,6 +58,40 @@ function _setindex!(x, value, sizes::Sizes, k::Int, j)
 end
 
 """
+    _scalar_load(storage, idx) -> Float64
+
+Read a single Float64 from `storage` at linear index `idx`. The default
+implementation just calls `getindex`; this is a hook for storage backends
+(such as `CuVector`) that disallow scalar indexing and need to dispatch to a
+1-element transfer instead.
+"""
+_scalar_load(storage::AbstractVector, idx::Int) = @inbounds storage[idx]
+
+"""
+    _view_array(storage, sizes, k) -> AbstractArray
+
+Return a view of the slice of `storage` that holds node `k`'s array value,
+reshaped to that node's natural shape. The view aliases the underlying
+`storage` (no copy), so mutating the returned array writes back into the tape.
+For a scalar (`ndims[k] == 0`) node this returns a length-1 vector view.
+"""
+function _view_array(storage::AbstractVector, sizes::Sizes, k::Int)
+    nd = sizes.ndims[k]
+    offset = sizes.storage_offset[k]
+    if nd == 0
+        return view(storage, (offset+1):(offset+1))
+    elseif nd == 1
+        n = sizes.size[sizes.size_offset[k]+1]
+        return view(storage, (offset+1):(offset+n))
+    else
+        N = _length(sizes, k)
+        v = view(storage, (offset+1):(offset+N))
+        szs = ntuple(d -> sizes.size[sizes.size_offset[k]+d], nd)
+        return reshape(v, szs)
+    end
+end
+
+"""
     @s(storage[node]) -> _getscalar(storage, f.sizes, node)
     @s(storage[node] = value) -> _setscalar!(storage, value, f.sizes, node)
 
@@ -366,14 +400,14 @@ function _infer_sizes(
     return sizes
 end
 
-struct _SubexpressionStorage
+struct _SubexpressionStorage{S<:AbstractVector{Float64}}
     nodes::Vector{Node}
     adj::SparseArrays.SparseMatrixCSC{Bool,Int}
     sizes::Sizes
     const_values::Vector{Float64}
-    forward_storage::Vector{Float64}
-    partials_storage::Vector{Float64}
-    reverse_storage::Vector{Float64}
+    forward_storage::S
+    partials_storage::S
+    reverse_storage::S
     partials_storage_ϵ::Vector{Float64}
     linearity::Linearity
 
@@ -383,17 +417,18 @@ struct _SubexpressionStorage
         const_values::Vector{Float64},
         partials_storage_ϵ::Vector{Float64},
         linearity::Linearity,
-    )
+        ::Type{S} = Vector{Float64},
+    ) where {S<:AbstractVector{Float64}}
         sizes = _infer_sizes(nodes, adj)
         N = _length(sizes)
-        return new(
+        return new{S}(
             nodes,
             adj,
-            _infer_sizes(nodes, adj),
+            sizes,
             const_values,
-            zeros(N),  # forward_storage,
-            zeros(N),  # partials_storage,
-            zeros(N),  # reverse_storage,
+            fill!(S(undef, N), 0.0),  # forward_storage,
+            fill!(S(undef, N), 0.0),  # partials_storage,
+            fill!(S(undef, N), 0.0),  # reverse_storage,
             partials_storage_ϵ,
             linearity,
         )

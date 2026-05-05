@@ -7,17 +7,25 @@
 module ArrayDiff
 
 import ForwardDiff
+import LinearAlgebra
 import MathOptInterface as MOI
 const Nonlinear = MOI.Nonlinear
 import SparseArrays
 import OrderedCollections
 
 """
-    Mode() <: MOI.Nonlinear.AbstractAutomaticDifferentiation
+    Mode{S}() <: MOI.Nonlinear.AbstractAutomaticDifferentiation
 
 Fork of `MOI.Nonlinear.SparseReverseMode` to add array support.
+
+The type parameter `S` is the storage type used for the AD tape (forward,
+partials, and reverse storage of each subexpression). It must satisfy
+`S<:AbstractVector{Float64}`. Defaults to `Vector{Float64}`. Pass a different
+`S` (for example `CuVector{Float64}`) to keep the tape on a GPU.
 """
-struct Mode <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
+struct Mode{S<:AbstractVector{Float64}} <: MOI.Nonlinear.AbstractAutomaticDifferentiation end
+
+Mode() = Mode{Vector{Float64}}()
 
 # Override basic math functions to return NaN instead of throwing errors.
 # This is what NLP solvers expect, and sometimes the results aren't needed
@@ -56,7 +64,8 @@ include("evaluator.jl")
 include("array_nonlinear_function.jl")
 include("parse_moi.jl")
 
-model(::Mode) = Model()
+model(::Mode{S}) where {S} = Model()
+storage_type(::Mode{S}) where {S} = S
 
 # Extend MOI.Nonlinear.set_objective so that solvers calling
 # MOI.Nonlinear.set_objective(arraydiff_model, snf) dispatch here.
@@ -73,10 +82,10 @@ end
 # Create an ArrayDiff Evaluator from an ArrayDiff Model.
 function Evaluator(
     model::ArrayDiff.Model,
-    ::Mode,
+    ::Mode{S},
     ordered_variables::Vector{MOI.VariableIndex},
-)
-    return Evaluator(model, NLPEvaluator(model, ordered_variables))
+) where {S<:AbstractVector{Float64}}
+    return Evaluator(model, NLPEvaluator{S}(model, ordered_variables))
 end
 
 # Called by solvers via MOI.Nonlinear.Evaluator(nlp_model, ad_backend, vars).

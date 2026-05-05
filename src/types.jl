@@ -90,7 +90,8 @@ function _subexpression_and_linearity(
     moi_index_to_consecutive_index,
     partials_storage_ϵ::Vector{Float64},
     d,
-)
+    ::Type{S} = Vector{Float64},
+) where {S<:AbstractVector{Float64}}
     nodes = _replace_moi_variables(expr.nodes, moi_index_to_consecutive_index)
     adj = adjacency_matrix(nodes)
     linearity = if d.want_hess
@@ -104,12 +105,13 @@ function _subexpression_and_linearity(
         convert(Vector{Float64}, expr.values),
         partials_storage_ϵ,
         linearity[1],
+        S,
     ),
     linearity
 end
 
-struct _FunctionStorage
-    expr::_SubexpressionStorage
+struct _FunctionStorage{S<:AbstractVector{Float64}}
+    expr::_SubexpressionStorage{S}
     grad_sparsity::Vector{Int}
     # Nonzero pattern of Hessian matrix
     hess_I::Vector{Int}
@@ -120,16 +122,16 @@ struct _FunctionStorage
     dependent_subexpressions::Vector{Int}
 
     function _FunctionStorage(
-        expr::_SubexpressionStorage,
+        expr::_SubexpressionStorage{S},
         num_variables,
         coloring_storage::Coloring.IndexedSet,
         want_hess::Bool,
-        subexpressions::Vector{_SubexpressionStorage},
+        subexpressions::Vector{_SubexpressionStorage{S}},
         dependent_subexpressions,
         subexpression_edgelist,
         subexpression_variables,
         linearity::Vector{Linearity},
-    )
+    ) where {S<:AbstractVector{Float64}}
         empty!(coloring_storage)
         _compute_gradient_sparsity!(coloring_storage, expr.nodes)
         for k in dependent_subexpressions
@@ -154,7 +156,7 @@ struct _FunctionStorage
                 coloring_storage,
             )
             seed_matrix = Coloring.seed_matrix(rinfo)
-            return new(
+            return new{S}(
                 expr,
                 grad_sparsity,
                 hess_I,
@@ -164,7 +166,7 @@ struct _FunctionStorage
                 dependent_subexpressions,
             )
         else
-            return new(
+            return new{S}(
                 expr,
                 grad_sparsity,
                 Int[],
@@ -293,14 +295,14 @@ interface.
 !!! warning
     Before using, you must initialize the evaluator using `MOI.initialize`.
 """
-mutable struct NLPEvaluator <: MOI.AbstractNLPEvaluator
+mutable struct NLPEvaluator{S<:AbstractVector{Float64}} <: MOI.AbstractNLPEvaluator
     data::Model
     ordered_variables::Vector{MOI.VariableIndex}
 
-    objective::Union{Nothing,_FunctionStorage}
-    residual::Union{Nothing,_FunctionStorage}
-    constraints::Vector{_FunctionStorage}
-    subexpressions::Vector{_SubexpressionStorage}
+    objective::Union{Nothing,_FunctionStorage{S}}
+    residual::Union{Nothing,_FunctionStorage{S}}
+    constraints::Vector{_FunctionStorage{S}}
+    subexpressions::Vector{_SubexpressionStorage{S}}
     subexpression_order::Vector{Int}
     # Storage for the subexpressions in reverse-mode automatic differentiation.
     subexpression_forward_values::Vector{Float64}
@@ -330,10 +332,13 @@ mutable struct NLPEvaluator <: MOI.AbstractNLPEvaluator
     hessian_sparsity::Vector{Tuple{Int64,Int64}}
     max_chunk::Int # chunk size for which we've allocated storage
 
-    function NLPEvaluator(
+    function NLPEvaluator{S}(
         data::Model,
         ordered_variables::Vector{MOI.VariableIndex},
-    )
-        return new(data, ordered_variables)
+    ) where {S<:AbstractVector{Float64}}
+        return new{S}(data, ordered_variables)
     end
 end
+
+NLPEvaluator(data::Model, ordered_variables::Vector{MOI.VariableIndex}) =
+    NLPEvaluator{Vector{Float64}}(data, ordered_variables)
