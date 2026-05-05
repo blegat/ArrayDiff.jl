@@ -36,6 +36,7 @@ function MOI.initialize(d::NLPEvaluator, requested_features::Vector{Symbol})
         largest_user_input_dimension = max(largest_user_input_dimension, op.N)
     end
     d.objective = nothing
+    d.residual = nothing
     d.user_output_buffer = zeros(largest_user_input_dimension)
     d.jac_storage = zeros(max(N, largest_user_input_dimension))
     d.constraints = _FunctionStorage[]
@@ -47,6 +48,9 @@ function MOI.initialize(d::NLPEvaluator, requested_features::Vector{Symbol})
     max_expr_with_sub_length = 0
     #
     main_expressions = [c.expression.nodes for (_, c) in d.data.constraints]
+    if d.data.residual !== nothing
+        pushfirst!(main_expressions, something(d.data.residual).nodes)
+    end
     if d.data.objective !== nothing
         pushfirst!(main_expressions, something(d.data.objective).nodes)
     end
@@ -102,7 +106,9 @@ function MOI.initialize(d::NLPEvaluator, requested_features::Vector{Symbol})
     end
     max_chunk = 1
     shared_partials_storage_ϵ = Float64[]
+    main_offset = 0
     if d.data.objective !== nothing
+        main_offset += 1
         expr = something(d.data.objective)
         subexpr, linearity = _subexpression_and_linearity(
             expr,
@@ -116,7 +122,7 @@ function MOI.initialize(d::NLPEvaluator, requested_features::Vector{Symbol})
             coloring_storage,
             d.want_hess,
             d.subexpressions,
-            individual_order[1],
+            individual_order[main_offset],
             subexpression_edgelist,
             subexpression_variables,
             linearity,
@@ -125,8 +131,32 @@ function MOI.initialize(d::NLPEvaluator, requested_features::Vector{Symbol})
         max_chunk = max(max_chunk, size(objective.seed_matrix, 2))
         d.objective = objective
     end
+    if d.data.residual !== nothing
+        main_offset += 1
+        expr = something(d.data.residual)
+        subexpr, linearity = _subexpression_and_linearity(
+            expr,
+            moi_index_to_consecutive_index,
+            shared_partials_storage_ϵ,
+            d,
+        )
+        residual = _FunctionStorage(
+            subexpr,
+            N,
+            coloring_storage,
+            d.want_hess,
+            d.subexpressions,
+            individual_order[main_offset],
+            subexpression_edgelist,
+            subexpression_variables,
+            linearity,
+        )
+        max_expr_length = max(max_expr_length, length(expr.nodes))
+        max_chunk = max(max_chunk, size(residual.seed_matrix, 2))
+        d.residual = residual
+    end
     for (k, (_, constraint)) in enumerate(d.data.constraints)
-        idx = d.data.objective !== nothing ? k + 1 : k
+        idx = main_offset + k
         expr = constraint.expression
         subexpr, linearity = _subexpression_and_linearity(
             expr,
@@ -209,6 +239,110 @@ function MOI.eval_constraint(d::NLPEvaluator, g, x)
         g[i] = d.constraints[i].expr.forward_storage[1]
     end
     return
+end
+
+# Forward-evaluate subexpressions and the residual at `x`.
+function _forward_pass_residual!(d::NLPEvaluator, x)
+    for k in d.subexpression_order
+        d.subexpression_forward_values[k] =
+            _forward_eval(d.subexpressions[k], d, x)
+    end
+    _forward_eval(something(d.residual).expr, d, x)
+    return
+end
+
+# Read the residual values from forward storage into `F`.
+function _read_residual!(F::AbstractVector, d::NLPEvaluator)
+    res = something(d.residual)
+    range = _storage_range(res.expr.sizes, 1)
+    @assert length(F) == length(range)
+    for (i, j) in enumerate(range)
+        F[i] = res.expr.forward_storage[j]
+    end
+    return
+end
+
+"""
+    eval_residual!(d::NLPEvaluator, F, x)
+
+Forward-evaluate the residual at `x` and write the values into `F`.
+"""
+function eval_residual!(d::NLPEvaluator, F::AbstractVector, x::AbstractVector)
+    @assert !isnothing(d.residual)
+    _forward_pass_residual!(d, x)
+    _read_residual!(F, d)
+    return F
+end
+
+"""
+    eval_residual_jtprod!(d::NLPEvaluator, Jtv, x, v)
+
+Compute `J(x)' * v` for the residual `F`, writing the result into `Jtv`.
+This is one reverse-mode pass with `v` as the seed at the residual root.
+"""
+function eval_residual_jtprod!(
+    d::NLPEvaluator,
+    Jtv::AbstractVector,
+    x::AbstractVector,
+    v::AbstractVector,
+)
+    @assert !isnothing(d.residual)
+    res = something(d.residual)
+    _forward_pass_residual!(d, x)
+    for k in d.subexpression_order
+        _reverse_eval(d.subexpressions[k])
+    end
+    _reverse_eval(res.expr, v)
+    fill!(Jtv, 0.0)
+    _extract_reverse_pass(Jtv, d, res)
+    return Jtv
+end
+
+"""
+    residual_dimension(d::NLPEvaluator) -> Int
+
+Number of residual components (i.e. the length of the residual vector).
+"""
+function residual_dimension(d::NLPEvaluator)
+    return length(_storage_range(something(d.residual).expr.sizes, 1))
+end
+
+"""
+    eval_residual_jprod!(d::NLPEvaluator, Jv, x, v)
+
+Compute `J(x) * v` for the residual `F`. ArrayDiff doesn't yet have a
+forward-mode JVP, so this materializes the Jacobian via `nresid` reverse-mode
+passes (each with a unit-basis seed) and then takes `J * v`.
+"""
+function eval_residual_jprod!(
+    d::NLPEvaluator,
+    Jv::AbstractVector,
+    x::AbstractVector,
+    v::AbstractVector,
+)
+    @assert !isnothing(d.residual)
+    res = something(d.residual)
+    nresid = residual_dimension(d)
+    _forward_pass_residual!(d, x)
+    for k in d.subexpression_order
+        _reverse_eval(d.subexpressions[k])
+    end
+    seed = zeros(Float64, nresid)
+    row = zeros(Float64, length(v))
+    fill!(Jv, 0.0)
+    for i in 1:nresid
+        fill!(seed, 0.0)
+        seed[i] = 1.0
+        _reverse_eval(res.expr, seed)
+        fill!(row, 0.0)
+        _extract_reverse_pass(row, d, res)
+        s = 0.0
+        for j in eachindex(v)
+            s += row[j] * v[j]
+        end
+        Jv[i] = s
+    end
+    return Jv
 end
 
 function MOI.jacobian_structure(d::NLPEvaluator)

@@ -194,6 +194,9 @@ It has the following fields:
 """
 mutable struct Model{T}
     objective::Union{Nothing,Expression{T}}
+    # Vector residual for nonlinear least-squares objectives. When set, callers
+    # can query its value, `J*v`, `J'*v`, etc. via the evaluator.
+    residual::Union{Nothing,Expression{T}}
     expressions::Vector{Expression{T}}
     constraints::OrderedCollections.OrderedDict{ConstraintIndex,Constraint{T}}
     parameters::Vector{T}
@@ -202,6 +205,7 @@ mutable struct Model{T}
     last_constraint_index::Int64
     function Model{T}() where {T}
         return new{T}(
+            nothing,
             nothing,
             Expression{T}[],
             OrderedCollections.OrderedDict{ConstraintIndex,Constraint{T}}(),
@@ -294,6 +298,7 @@ mutable struct NLPEvaluator <: MOI.AbstractNLPEvaluator
     ordered_variables::Vector{MOI.VariableIndex}
 
     objective::Union{Nothing,_FunctionStorage}
+    residual::Union{Nothing,_FunctionStorage}
     constraints::Vector{_FunctionStorage}
     subexpressions::Vector{_SubexpressionStorage}
     subexpression_order::Vector{Int}

@@ -19,12 +19,12 @@ function runtests()
     return
 end
 
-function test_neural_nlpmodels_jump()
+function _test_neural_nlpmodels_jump(solver)
     n = 2
     X = [1.0 0.5; 0.3 0.8]
     target = [0.5 0.2; 0.1 0.7]
     model = Model(NLPModelsJuMP.Optimizer)
-    set_attribute(model, "solver", JSOSolvers.LBFGSSolver)
+    set_attribute(model, "solver", solver)
     set_attribute(
         model,
         MOI.AutomaticDifferentiationBackend(),
@@ -46,6 +46,18 @@ function test_neural_nlpmodels_jump()
     @test termination_status(model) == MOI.LOCALLY_SOLVED
     @test objective_value(model) < 1e-6
     return
+end
+
+function test_neural_lbfgs()
+    return _test_neural_nlpmodels_jump(JSOSolvers.LBFGSSolver)
+end
+
+function test_neural_trunkls()
+    return _test_neural_nlpmodels_jump(JSOSolvers.TrunkSolverNLS)
+end
+
+function test_neural_tronls()
+    return _test_neural_nlpmodels_jump(JSOSolvers.TronSolverNLS)
 end
 
 end
