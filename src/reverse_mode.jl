@@ -792,19 +792,19 @@ function _reverse_eval(
                     continue
                 elseif op == :sum
                     # `sum` is rank-reducing (1 → 0): reverse-mode broadcasts
-                    # the parent's scalar adjoint to every child slot. Avoid
-                    # the scalar read of `reverse_storage[k]` (which fails on
-                    # GPU storage) by indexing with a 0-dim index — the view
-                    # is then 0-dim at the outermost type, which the
-                    # broadcast machinery specializes as a scalar source. On
-                    # GPU this lowers to a single fill-kernel; no D2H
-                    # round-trip.
+                    # the parent's scalar adjoint to every child slot.
                     ix = children_arr[children_indices[1]]
                     pos = _scalar_pos(f.sizes, k)
+                    # Avoid the scalar read of `reverse_storage[k]` (which fails
+                    # on # GPU storage) by indexing with a 0-dim index, the view
+                    # is then 0-dim at the outermost type, which the
+                    # broadcast machinery specializes as a scalar source.
                     rev_parent_view =
                         view(f.reverse_storage, reshape(pos:pos, ()))
                     rev_children_view =
                         _view_linear(f.reverse_storage, f.sizes, ix)
+                    # On GPU this lowers to a single fill-kernel; no
+                    # Device-to-Host round-trip.
                     rev_children_view .= rev_parent_view
                     continue
                 elseif op == :row
