@@ -168,7 +168,7 @@ end
 # -------------------------------------------------------------------------
 # One (h, d, n) sweep.
 # -------------------------------------------------------------------------
-function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
+function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1.0f-3)
     println("\n" * "="^72)
     @printf "h = %d, d = %d, n = %d  (Float32)\n" h d n
     println("="^72)
@@ -198,8 +198,7 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float32 = 1f-3)
     # Hand-CUDA preallocated. Same arithmetic, but every intermediate is
     # owned by `hand_buf` and reused across calls.
     hand_buf = HandPrealloc{T}(h, d, n, out_dim)
-    grad_prealloc =
-        Array(reverse_diff_prealloc!(hand_buf, W1g, W2g, Xg, yg))
+    grad_prealloc = Array(reverse_diff_prealloc!(hand_buf, W1g, W2g, Xg, yg))
     CUDA.synchronize()
 
     # ArrayDiff CPU.
