@@ -43,7 +43,11 @@ function MOI.initialize(
     d.user_output_buffer = zeros(T, largest_user_input_dimension)
     d.jac_storage = zeros(T, max(N, largest_user_input_dimension))
     d.constraints = _FunctionStorage{T,S}[]
-    d.last_x = fill(T(NaN), N)
+    # Allocate `last_x` on the same device as the AD tape (S = Vector for the
+    # CPU path, S = CuVector for GPU). Filling with NaN forces the
+    # short-circuit check `last_x == x` to take the recompute branch on the
+    # first call.
+    d.last_x = fill!(S(undef, N), T(NaN))
     d.want_hess = :Hess in requested_features
     want_hess_storage = (:HessVec in requested_features) || d.want_hess
     coloring_storage = Coloring.IndexedSet(N)
