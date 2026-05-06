@@ -82,20 +82,28 @@ function neural(
         x = vec(state.W1)
         g = zeros(T, h * d)
     end
-    return @benchmark begin
-        if $gpu
-            # `@allowscalar` covers residual scalar leaves the BLOCK rewrite
-            # can't fold; the hot path is bulk.
-            CUDA.@allowscalar MOI.eval_objective_gradient(
-                $state.evaluator,
-                $g,
-                $x,
-            )
-            CUDA.synchronize()
-        else
-            MOI.eval_objective_gradient($state.evaluator, $g, $x)
-        end
-    end
+    # `_reverse_mode` short-circuits when `last_x == x`, so without `setup`
+    # the first benchmark sample runs the full forward+reverse pass and every
+    # subsequent sample exits immediately — the reported timing would just
+    # measure the equality check. Reset `last_x` to NaN before each iteration
+    # so every sample re-runs the AD pipeline.
+    return @benchmark(
+        begin
+            if $gpu
+                # `@allowscalar` covers residual scalar leaves the BLOCK
+                # rewrite can't fold; the hot path is bulk.
+                CUDA.@allowscalar MOI.eval_objective_gradient(
+                    $state.evaluator,
+                    $g,
+                    $x,
+                )
+                CUDA.synchronize()
+            else
+                MOI.eval_objective_gradient($state.evaluator, $g, $x)
+            end
+        end,
+        setup = (fill!($state.evaluator.backend.last_x, NaN)),
+    )
 end
 
 end # module
