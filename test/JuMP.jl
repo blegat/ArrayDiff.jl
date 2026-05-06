@@ -302,7 +302,14 @@ function test_neural()
                 @testset "$(wrap ? "wrap" : "nowrap")" for wrap in bin
                     @testset "$(swap ? "swap" : "noswap")" for swap in bin
                         @testset "$T" for T in [Float64, Float32]
-                            _test_neural(with_norm, broadcast, plus, wrap, swap, T)
+                            _test_neural(
+                                with_norm,
+                                broadcast,
+                                plus,
+                                wrap,
+                                swap,
+                                T,
+                            )
                         end
                     end
                 end
