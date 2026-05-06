@@ -102,10 +102,10 @@ Forward-mode evaluation of an expression tree given in `f`.
    associate storage with each edge of the DAG.
 """
 function _forward_eval(
-    f::_SubexpressionStorage,
-    d::NLPEvaluator,
+    f::_SubexpressionStorage{S},
+    d::NLPEvaluator{S},
     x::AbstractVector{T},
-)::T where {T}
+)::T where {S<:AbstractVector{Float64},T}
     @assert length(f.forward_storage) >= length(f.nodes)
     @assert length(f.partials_storage) >= length(f.nodes)
     operators = d.data.operators
@@ -177,9 +177,9 @@ function _forward_eval(
                     idx2 = last(children_indices)
                     @inbounds ix1 = children_arr[idx1]
                     @inbounds ix2 = children_arr[idx2]
-                    v1 = _view_array(f.forward_storage, f.sizes, ix1)
-                    v2 = _view_array(f.forward_storage, f.sizes, ix2)
-                    out = _view_array(f.forward_storage, f.sizes, k)
+                    v1 = _view_2d(f.forward_storage, f.sizes, ix1)
+                    v2 = _view_2d(f.forward_storage, f.sizes, ix2)
+                    out = _view_2d(f.forward_storage, f.sizes, k)
                     LinearAlgebra.mul!(out, v1, v2)
                     # We deliberately don't write v1/v2 into partials_storage
                     # here: the matmul reverse branch reads forward_storage
@@ -355,8 +355,8 @@ function _forward_eval(
             elseif node.index == 15 # sum
                 @assert N == 1
                 ix = children_arr[first(children_indices)]
-                inp = _view_array(f.forward_storage, f.sizes, ix)
-                fill!(_view_array(f.partials_storage, f.sizes, ix), one(T))
+                inp = _view_2d(f.forward_storage, f.sizes, ix)
+                fill!(_view_2d(f.partials_storage, f.sizes, ix), one(T))
                 @s f.forward_storage[k] = sum(inp)
             elseif node.index == 16 # row
                 for j in _eachindex(f.sizes, k)
@@ -405,12 +405,12 @@ function _forward_eval(
                 child1 = first(children_indices)
                 @inbounds ix1 = children_arr[child1]
                 @inbounds ix2 = children_arr[child1+1]
-                out = _view_array(f.forward_storage, f.sizes, k)
-                v1 = _view_array(f.forward_storage, f.sizes, ix1)
-                v2 = _view_array(f.forward_storage, f.sizes, ix2)
+                out = _view_2d(f.forward_storage, f.sizes, k)
+                v1 = _view_2d(f.forward_storage, f.sizes, ix1)
+                v2 = _view_2d(f.forward_storage, f.sizes, ix2)
                 out .= v1 .- v2
-                fill!(_view_array(f.partials_storage, f.sizes, ix1), one(T))
-                fill!(_view_array(f.partials_storage, f.sizes, ix2), -one(T))
+                fill!(_view_2d(f.partials_storage, f.sizes, ix1), one(T))
+                fill!(_view_2d(f.partials_storage, f.sizes, ix2), -one(T))
             elseif node.index == 3 # :*  (broadcasted)
                 # Node `k` is not scalar, so we do matrix multiplication
                 if f.sizes.ndims[k] != 0
@@ -478,9 +478,9 @@ function _forward_eval(
                     f.forward_storage,
                     f.sizes.storage_offset[ix2]+1,
                 )
-                out = _view_array(f.forward_storage, f.sizes, k)
-                inp = _view_array(f.forward_storage, f.sizes, ix1)
-                partials = _view_array(f.partials_storage, f.sizes, ix1)
+                out = _view_2d(f.forward_storage, f.sizes, k)
+                inp = _view_2d(f.forward_storage, f.sizes, ix1)
+                partials = _view_2d(f.partials_storage, f.sizes, ix1)
                 if exponent == 2
                     out .= inp .* inp
                     partials .= 2 .* inp
@@ -530,9 +530,9 @@ function _forward_eval(
                     @j f.forward_storage[k] = -val
                 end
             elseif operators.univariate_operators[node.index] === :tanh
-                out = _view_array(f.forward_storage, f.sizes, k)
-                inp = _view_array(f.forward_storage, f.sizes, child_idx)
-                partials = _view_array(f.partials_storage, f.sizes, child_idx)
+                out = _view_2d(f.forward_storage, f.sizes, k)
+                inp = _view_2d(f.forward_storage, f.sizes, child_idx)
+                partials = _view_2d(f.partials_storage, f.sizes, child_idx)
                 out .= tanh.(inp)
                 partials .= one(T) .- out .* out
             else
@@ -592,9 +592,9 @@ Reverse-mode evaluation of an expression tree given in `f`.
  * This function assumes that `f.reverse_storage` has been initialized with 0.0.
 """
 function _reverse_eval(
-    f::_SubexpressionStorage,
+    f::_SubexpressionStorage{S},
     seed::Union{Nothing,AbstractVector{Float64}} = nothing,
-)
+) where {S<:AbstractVector{Float64}}
     @assert length(f.reverse_storage) >= _length(f.sizes)
     @assert length(f.partials_storage) >= _length(f.sizes)
     # f.nodes is already in order such that parents always appear before
@@ -630,11 +630,11 @@ function _reverse_eval(
                         idx2 = last(children_indices)
                         ix1 = children_arr[idx1]
                         ix2 = children_arr[idx2]
-                        v1 = _view_array(f.forward_storage, f.sizes, ix1)
-                        v2 = _view_array(f.forward_storage, f.sizes, ix2)
-                        rev_parent = _view_array(f.reverse_storage, f.sizes, k)
-                        rev_v1 = _view_array(f.reverse_storage, f.sizes, ix1)
-                        rev_v2 = _view_array(f.reverse_storage, f.sizes, ix2)
+                        v1 = _view_2d(f.forward_storage, f.sizes, ix1)
+                        v2 = _view_2d(f.forward_storage, f.sizes, ix2)
+                        rev_parent = _view_2d(f.reverse_storage, f.sizes, k)
+                        rev_v1 = _view_2d(f.reverse_storage, f.sizes, ix1)
+                        rev_v2 = _view_2d(f.reverse_storage, f.sizes, ix2)
                         LinearAlgebra.mul!(rev_v1, rev_parent, v2')
                         LinearAlgebra.mul!(rev_v2, v1', rev_parent)
                         continue
@@ -816,7 +816,7 @@ function _reverse_eval(
                     rev_parent_view =
                         view(f.reverse_storage, reshape(pos:pos, ()))
                     rev_children_view =
-                        _view_array(f.reverse_storage, f.sizes, ix)
+                        _view_2d(f.reverse_storage, f.sizes, ix)
                     rev_children_view .= rev_parent_view
                     continue
                 elseif op == :row
@@ -873,23 +873,29 @@ function _reverse_eval(
                     idx2 = last(children_indices)
                     @inbounds ix1 = children_arr[idx1]
                     @inbounds ix2 = children_arr[idx2]
-                    rev_parent = _view_array(f.reverse_storage, f.sizes, k)
-                    rev_v1 = _view_array(f.reverse_storage, f.sizes, ix1)
-                    partial = _view_array(f.partials_storage, f.sizes, ix1)
+                    rev_parent = _view_2d(f.reverse_storage, f.sizes, k)
+                    rev_v1 = _view_2d(f.reverse_storage, f.sizes, ix1)
+                    partial = _view_2d(f.partials_storage, f.sizes, ix1)
                     rev_v1 .= ifelse.(
                         (rev_parent .== 0) .& .!isfinite.(partial),
                         rev_parent,
                         rev_parent .* partial,
                     )
-                    base_view = _view_array(f.forward_storage, f.sizes, ix1)
-                    out_view = _view_array(f.forward_storage, f.sizes, k)
-                    rev_exp_total = sum(
-                        ifelse.(
-                            base_view .> 0,
-                            rev_parent .* out_view .* log.(abs.(base_view)),
-                            zero(Float64),
-                        ),
-                    )
+                    base_view = _view_2d(f.forward_storage, f.sizes, ix1)
+                    out_view = _view_2d(f.forward_storage, f.sizes, k)
+                    # Manual loop instead of `sum(ifelse.(...))`: the latter
+                    # materializes a temporary `Matrix{Float64}` from the
+                    # broadcast tree before summing. The base > 0 guard
+                    # prevents `log` of a non-positive (whose contribution
+                    # to the exponent gradient is zero anyway).
+                    rev_exp_total = 0.0
+                    @inbounds for i in eachindex(base_view, rev_parent, out_view)
+                        b = base_view[i]
+                        if b > 0
+                            rev_exp_total +=
+                                rev_parent[i] * out_view[i] * log(b)
+                        end
+                    end
                     pos2 = _scalar_pos(f.sizes, ix2)
                     view(f.reverse_storage, pos2:pos2) .= rev_exp_total
                     continue
@@ -904,12 +910,12 @@ function _reverse_eval(
         # diagonal entries are stored in `f.partials_storage`. We broadcast
         # `rev_child .= rev_parent .* partial` over the whole array (with the
         # 0 * Inf guard preserved).
-        rev_parent = _view_array(f.reverse_storage, f.sizes, k)
+        rev_parent = _view_2d(f.reverse_storage, f.sizes, k)
         for child_idx in children_indices
             ix = children_arr[child_idx]
             @assert _size(f.sizes, k) == _size(f.sizes, ix)
-            rev_child = _view_array(f.reverse_storage, f.sizes, ix)
-            partial = _view_array(f.partials_storage, f.sizes, ix)
+            rev_child = _view_2d(f.reverse_storage, f.sizes, ix)
+            partial = _view_2d(f.partials_storage, f.sizes, ix)
             rev_child .= ifelse.(
                 (rev_parent .== 0) .& .!isfinite.(partial),
                 rev_parent,
@@ -970,14 +976,15 @@ function _extract_reverse_pass_inner(
     for (k, node) in enumerate(f.nodes)
         if node.type == NODE_VARIABLE_BLOCK
             # Each block has a contiguous tape range and a contiguous `output`
-            # range: gather the adjoint, transfer to host in one memcpy, and
-            # accumulate into the matching slice of `output`.
+            # range, so the gather + accumulate is a single broadcast `.+=`
+            # over views into both. On CPU storage this is allocation-free.
+            # (A CUDA package extension can add a specialization that
+            # materializes the GPU view onto a host buffer first.)
             tape_range = _storage_range(f.sizes, k)
             len = length(tape_range)
             x_range = node.index:(node.index + len - 1)
-            cpu_buf =
-                convert(Vector{T}, view(f.reverse_storage, tape_range))
-            view(output, x_range) .+= scale .* cpu_buf
+            view(output, x_range) .+=
+                scale .* view(f.reverse_storage, tape_range)
         elseif node.type == NODE_VARIABLE
             # Per-leaf scalar — rare, so the per-leaf `cudaMemcpy` is fine.
             output[node.index] += scale * @s f.reverse_storage[k]

@@ -82,27 +82,99 @@ implementation just calls `getindex`; this is a hook for storage backends
 _scalar_load(storage::AbstractVector, idx::Int) = @inbounds storage[idx]
 
 """
-    _view_array(storage, sizes, k) -> AbstractArray
+    _view_array(storage, sizes, k, ::Val{N}) -> AbstractArray{T,N}
 
-Return a view of the slice of `storage` that holds node `k`'s array value,
-reshaped to that node's natural shape. The view aliases the underlying
-`storage` (no copy), so mutating the returned array writes back into the tape.
-For a scalar (`ndims[k] == 0`) node this returns a length-1 vector view.
+Type-stable view of node `k`'s tape slice as an `N`-dimensional array. `N`
+must be a compile-time constant — pass `Val(2)` for a matrix, `Val(1)` for
+a vector, etc. The wrapper has a single concrete return type for each `N`,
+so callers stay allocation-free as long as the call site can specialize on
+`N`. Use the [`@specialize_dim`](@ref) macro to peel a runtime
+`sizes.ndims[k]` into a small if/elseif chain that gives each branch a
+literal `Val{N}`.
 """
-function _view_array(storage::AbstractVector, sizes::Sizes, k::Int)
-    nd = sizes.ndims[k]
+@inline function _view_array(
+    storage::AbstractVector,
+    sizes::Sizes,
+    k::Int,
+    ::Val{0},
+)
     offset = sizes.storage_offset[k]
-    if nd == 0
-        return view(storage, (offset+1):(offset+1))
-    elseif nd == 1
-        n = sizes.size[sizes.size_offset[k]+1]
-        return view(storage, (offset+1):(offset+n))
-    else
-        N = _length(sizes, k)
-        v = view(storage, (offset+1):(offset+N))
-        szs = ntuple(d -> sizes.size[sizes.size_offset[k]+d], nd)
-        return reshape(v, szs)
+    return view(storage, (offset + 1):(offset + 1))
+end
+
+@inline function _view_array(
+    storage::AbstractVector,
+    sizes::Sizes,
+    k::Int,
+    ::Val{1},
+)
+    offset = sizes.storage_offset[k]
+    n = sizes.size[sizes.size_offset[k] + 1]
+    return view(storage, (offset + 1):(offset + n))
+end
+
+@inline function _view_array(
+    storage::AbstractVector,
+    sizes::Sizes,
+    k::Int,
+    ::Val{2},
+)
+    offset = sizes.storage_offset[k]
+    so = sizes.size_offset[k]
+    m = sizes.size[so + 1]
+    n = sizes.size[so + 2]
+    return reshape(view(storage, (offset + 1):(offset + m * n)), m, n)
+end
+
+@inline function _view_array(
+    storage::AbstractVector,
+    sizes::Sizes,
+    k::Int,
+    ::Val{N},
+) where {N}
+    offset = sizes.storage_offset[k]
+    so = sizes.size_offset[k]
+    szs = ntuple(d -> sizes.size[so + d], Val(N))
+    return reshape(view(storage, (offset + 1):(offset + prod(szs))), szs)
+end
+
+# Convenience alias for the common 2D case — equivalent to
+# `_view_array(storage, sizes, k, Val(2))`.
+@inline _view_2d(storage::AbstractVector, sizes::Sizes, k::Int) =
+    _view_array(storage, sizes, k, Val(2))
+
+"""
+    @specialize_dim nd code
+
+Expand `code` once per supported `nd` value (currently `0..3`), introducing a
+local `K = Val(N)` in each branch — `code` references that `K`. This is a
+manual specialization workaround for the fact that `Val(nd)` for a runtime
+`nd` is type-unstable, so a single call to `_view_array(..., Val(nd))` would
+fall back to dynamic dispatch.
+
+```julia
+nd = f.sizes.ndims[k]
+@specialize_dim nd begin
+    v = _view_array(f.forward_storage, f.sizes, k, K)
+    # `K` is `Val{0}`, `Val{1}`, `Val{2}`, or `Val{3}` here (literal in each
+    # branch), so `_view_array` dispatches to the corresponding type-stable
+    # method and the surrounding code stays allocation-free.
+end
+```
+"""
+macro specialize_dim(nd_var, code)
+    if !(nd_var isa Symbol)
+        error("@specialize_dim expects a variable name as its first argument")
     end
+    expr = :(error("@specialize_dim: unsupported ndim ", $(esc(nd_var))))
+    for n in 3:-1:0
+        branch = quote
+            $(esc(:K)) = Val($n)
+            $(esc(code))
+        end
+        expr = Expr(:if, :($(esc(nd_var)) == $n), branch, expr)
+    end
+    return expr
 end
 
 """
