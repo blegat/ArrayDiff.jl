@@ -1,0 +1,25 @@
+include("lux.jl")
+include("hand_cuda.jl")
+include("pytorch.jl")
+include("arraydiff.jl")
+
+function compare(T, h, d, n; gpu)
+    println("Lux")
+    display(LuxNeural.neural(T, h, d, n; gpu))
+    println("Hand-CUDA without prealloc")
+    display(HandCuda.neural(T, h, d, n; prealloc = false, gpu))
+    println("Hand-CUDA with prealloc")
+    display(HandCuda.neural(T, h, d, n; prealloc = true, gpu))
+    println("PyTorch eager")
+    display(PyTorchNeural.neural(T, h, d, n; eager=true, gpu))
+    println("PyTorch compiled")
+    display(PyTorchNeural.neural(T, h, d, n; eager=false, gpu))
+    println("ArrayDiff")
+    display(ArrayDiffNeural.neural(T, h, d, n; gpu))
+end
+
+T, h, d, n = Float32, 4096, 13, 178
+println("CPU")
+compare(T, h, d, n; gpu = false)
+println("GPU")
+compare(T, h, d, n; gpu = true)
