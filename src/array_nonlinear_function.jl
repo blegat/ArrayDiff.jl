@@ -87,7 +87,7 @@ function _map_indices_arg(index_map::F, x::ArrayOfContiguousVariables) where {F}
     return MOI.Utilities.map_indices(index_map, x)
 end
 
-function _map_indices_arg(::F, x::Matrix{Float64}) where {F}
+function _map_indices_arg(::F, x::Matrix{<:Real}) where {F}
     return x
 end
 

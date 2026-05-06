@@ -20,10 +20,11 @@ Fork of `MOI.Nonlinear.SparseReverseMode` to add array support.
 
 The type parameter `S` is the storage type used for the AD tape (forward,
 partials, and reverse storage of each subexpression). It must satisfy
-`S<:AbstractVector{Float64}`. Defaults to `Vector{Float64}`. Pass a different
-`S` (for example `CuVector{Float64}`) to keep the tape on a GPU.
+`S<:AbstractVector{<:Real}`. Defaults to `Vector{Float64}`. Pass a different
+`S` (for example `Vector{Float32}` or `CuVector{Float64}`) to run AD in
+another precision or keep the tape on a GPU.
 """
-struct Mode{S<:AbstractVector{Float64}} <:
+struct Mode{S<:AbstractVector{<:Real}} <:
        MOI.Nonlinear.AbstractAutomaticDifferentiation end
 
 Mode() = Mode{Vector{Float64}}()
@@ -65,7 +66,7 @@ include("evaluator.jl")
 include("array_nonlinear_function.jl")
 include("parse_moi.jl")
 
-model(::Mode{S}) where {S} = Model()
+model(::Mode{S}) where {S} = Model{eltype(S)}()
 
 # Extend MOI.Nonlinear.set_objective so that solvers calling
 # MOI.Nonlinear.set_objective(arraydiff_model, snf) dispatch here.
@@ -84,8 +85,8 @@ function Evaluator(
     model::ArrayDiff.Model,
     ::Mode{S},
     ordered_variables::Vector{MOI.VariableIndex},
-) where {S<:AbstractVector{Float64}}
-    return Evaluator(model, NLPEvaluator{S}(model, ordered_variables))
+) where {S<:AbstractVector{<:Real}}
+    return Evaluator(model, NLPEvaluator{eltype(S),S}(model, ordered_variables))
 end
 
 # Called by solvers via MOI.Nonlinear.Evaluator(nlp_model, ad_backend, vars).

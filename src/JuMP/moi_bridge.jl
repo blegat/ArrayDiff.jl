@@ -12,9 +12,9 @@ function _to_moi_arg(x::GenericArrayExpr{V,N}) where {V,N}
     return ArrayNonlinearFunction{N}(x.head, args, x.size, x.broadcasted)
 end
 
-_to_moi_arg(x::Matrix{Float64}) = x
+_to_moi_arg(x::Matrix{<:Real}) = x
 
-_to_moi_arg(x::Real) = Float64(x)
+_to_moi_arg(x::Real) = x
 
 function JuMP.moi_function(x::GenericArrayExpr{V,N}) where {V,N}
     return _to_moi_arg(x)
