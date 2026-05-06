@@ -64,11 +64,7 @@ function neural(
 ) where {T<:Real}
     state = _build(T, h, d, n, gpu)
     return @benchmark begin
-        Mooncake.value_and_gradient!!(
-            $state.rule,
-            $state.loss_fn,
-            $state.ps,
-        )
+        Mooncake.value_and_gradient!!($state.rule, $state.loss_fn, $state.ps)
         if $gpu
             CUDA.synchronize()
         end

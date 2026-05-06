@@ -40,10 +40,8 @@ _compiled = torch.compile(_eager)
     (nt._eager, nt._compiled)
 end
 
-const _torch_dtype = Dict{DataType,Py}(
-    Float32 => torch.float32,
-    Float64 => torch.float64,
-)
+const _torch_dtype =
+    Dict{DataType,Py}(Float32 => torch.float32, Float64 => torch.float64)
 
 # Julia is column-major, NumPy is row-major. `PyArray(::Matrix)` exposes the
 # same memory as an F-contiguous numpy view; `np.ascontiguousarray` copies it

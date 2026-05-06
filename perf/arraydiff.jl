@@ -46,9 +46,8 @@ function _build(::Type{T}, h::Int, d::Int, n::Int, gpu::Bool) where {T<:Real}
     diff = Y .- y_64
     loss = sum(diff .^ 2)
 
-    mode = gpu ?
-        ArrayDiff.Mode{CUDA.CuVector{T}}() :
-        ArrayDiff.Mode{Vector{T}}()
+    mode =
+        gpu ? ArrayDiff.Mode{CUDA.CuVector{T}}() : ArrayDiff.Mode{Vector{T}}()
     ad = ArrayDiff.model(mode)
     MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
     ev = MOI.Nonlinear.Evaluator(

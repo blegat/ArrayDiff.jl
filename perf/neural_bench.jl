@@ -11,11 +11,11 @@ function compare(T, h, d, n; gpu)
     println("Hand-CUDA with prealloc")
     display(HandCuda.neural(T, h, d, n; prealloc = true, gpu))
     println("PyTorch eager")
-    display(PyTorchNeural.neural(T, h, d, n; eager=true, gpu))
+    display(PyTorchNeural.neural(T, h, d, n; eager = true, gpu))
     println("PyTorch compiled")
-    display(PyTorchNeural.neural(T, h, d, n; eager=false, gpu))
+    display(PyTorchNeural.neural(T, h, d, n; eager = false, gpu))
     println("ArrayDiff")
-    display(ArrayDiffNeural.neural(T, h, d, n; gpu))
+    return display(ArrayDiffNeural.neural(T, h, d, n; gpu))
 end
 
 T, h, d, n = Float32, 4096, 13, 178
