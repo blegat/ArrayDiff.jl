@@ -620,8 +620,7 @@ function _reverse_eval(
                         ix2 = children_arr[idx2]
                         v1 = _view_matrix(f.forward_storage, f.sizes, ix1)
                         v2 = _view_matrix(f.forward_storage, f.sizes, ix2)
-                        rev_parent =
-                            _view_matrix(f.reverse_storage, f.sizes, k)
+                        rev_parent = _view_matrix(f.reverse_storage, f.sizes, k)
                         rev_v1 = _view_matrix(f.reverse_storage, f.sizes, ix1)
                         rev_v2 = _view_matrix(f.reverse_storage, f.sizes, ix2)
                         LinearAlgebra.mul!(rev_v1, rev_parent, v2')
