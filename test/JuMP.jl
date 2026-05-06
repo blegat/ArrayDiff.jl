@@ -260,9 +260,8 @@ function _test_neural(
     if with_norm
         # `d/dx ‖E‖₂ = (1/(2‖E‖₂)) · d/dx ‖E‖₂² = grad_sumsq / (2 sqrt(sumsq))`,
         # taken at the gradient evaluation point.
-        norm_at_grad = sqrt(
-            _ref_objective(W1_at_grad, W2_at_grad, X_const, target_const),
-        )
+        norm_at_grad =
+            sqrt(_ref_objective(W1_at_grad, W2_at_grad, X_const, target_const))
         @test g ≈ grad_sumsq ./ (2 * norm_at_grad)
     else
         @test g ≈ grad_sumsq
