@@ -861,16 +861,16 @@ function _reverse_eval(
                     idx2 = last(children_indices)
                     @inbounds ix1 = children_arr[idx1]
                     @inbounds ix2 = children_arr[idx2]
-                    rev_parent = _view_array(f.reverse_storage, f.sizes, k)
-                    rev_v1 = _view_array(f.reverse_storage, f.sizes, ix1)
-                    partial = _view_array(f.partials_storage, f.sizes, ix1)
+                    rev_parent = _view_linear(f.reverse_storage, f.sizes, k)
+                    rev_v1 = _view_linear(f.reverse_storage, f.sizes, ix1)
+                    partial = _view_linear(f.partials_storage, f.sizes, ix1)
                     rev_v1 .= ifelse.(
                         (rev_parent .== 0) .& .!isfinite.(partial),
                         rev_parent,
                         rev_parent .* partial,
                     )
-                    base_view = _view_array(f.forward_storage, f.sizes, ix1)
-                    out_view = _view_array(f.forward_storage, f.sizes, k)
+                    base_view = _view_linear(f.forward_storage, f.sizes, ix1)
+                    out_view = _view_linear(f.forward_storage, f.sizes, k)
                     rev_exp_total = sum(
                         ifelse.(
                             base_view .> 0,
