@@ -68,27 +68,41 @@ implementation just calls `getindex`; this is a hook for storage backends
 _scalar_load(storage::AbstractVector, idx::Int) = @inbounds storage[idx]
 
 """
-    _view_array(storage, sizes, k) -> AbstractArray
+    _view_linear(storage, sizes, k) -> SubArray
 
-Return a view of the slice of `storage` that holds node `k`'s array value,
-reshaped to that node's natural shape. The view aliases the underlying
-`storage` (no copy), so mutating the returned array writes back into the tape.
-For a scalar (`ndims[k] == 0`) node this returns a length-1 vector view.
+Return a flat 1-D view of the slice of `storage` that holds node `k`'s array
+value. The view aliases the underlying `storage` (no copy), so mutating it
+writes back into the tape. For a scalar (`ndims[k] == 0`) node this returns
+a length-1 vector view.
+
+Use this for elementwise (broadcasted) operations and reductions that don't
+need the array's natural shape — keeping the return type-stable
+(`SubArray{T,1,...}`) avoids the heap-boxing that a multi-shape return type
+would force.
 """
-function _view_array(storage::AbstractVector, sizes::Sizes, k::Int)
-    nd = sizes.ndims[k]
+function _view_linear(storage::AbstractVector, sizes::Sizes, k::Int)
     offset = sizes.storage_offset[k]
-    if nd == 0
-        return view(storage, (offset+1):(offset+1))
-    elseif nd == 1
-        n = sizes.size[sizes.size_offset[k]+1]
-        return view(storage, (offset+1):(offset+n))
-    else
-        N = _length(sizes, k)
-        v = view(storage, (offset+1):(offset+N))
-        szs = ntuple(d -> sizes.size[sizes.size_offset[k]+d], nd)
-        return reshape(v, szs)
-    end
+    N = _length(sizes, k)
+    return view(storage, (offset+1):(offset+N))
+end
+
+"""
+    _view_matrix(storage, sizes, k) -> ReshapedArray
+
+Return a 2-D view of the slice of `storage` that holds node `k`'s array
+value. A 1-D node is treated as a column vector `(n, 1)` and a 0-D node as
+`(1, 1)`. Always returns a 2-D `Base.ReshapedArray`, which is what callers
+like `LinearAlgebra.mul!` need; keeping the return type-stable avoids
+heap-boxing.
+"""
+function _view_matrix(storage::AbstractVector, sizes::Sizes, k::Int)
+    @assert sizes.ndims[k] == 2
+    offset = sizes.storage_offset[k]
+    size_off = sizes.size_offset[k]
+    m = sizes.size[size_off+1]
+    n = sizes.size[size_off+2]
+    v = view(storage, (offset+1):(offset+m*n))
+    return reshape(v, (m, n))
 end
 
 """
