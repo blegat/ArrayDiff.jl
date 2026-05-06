@@ -314,6 +314,9 @@ end
 # is the path that actually re-runs forward+reverse, not the
 # `last_x == x` short-circuit).
 function test_neural_allocations()
+    if VERSION < v"1.12"
+        return
+    end
     n = 2
     X = [1.0 0.5; 0.3 0.8]
     target = [0.5 0.2; 0.1 0.7]
