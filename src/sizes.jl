@@ -179,7 +179,7 @@ macro j(expr)
 end
 
 # /!\ Can only be called in decreasing `k` order
-function _add_size!(sizes::Sizes, k::Int, size::Tuple)
+function _add_size!(sizes::Sizes, k::Int, size)
     sizes.ndims[k] = length(size)
     sizes.size_offset[k] = length(sizes.size)
     append!(sizes.size, size)
@@ -207,6 +207,7 @@ end
 function _infer_sizes(
     nodes::Vector{Node},
     adj::SparseArrays.SparseMatrixCSC{Bool,Int},
+    block_shapes::Dict{Int,Vector{Int}} = Dict{Int,Vector{Int}}(),
 )
     sizes = Sizes(
         zeros(Int, length(nodes)),
@@ -217,6 +218,15 @@ function _infer_sizes(
     children_arr = SparseArrays.rowvals(adj)
     for k in length(nodes):-1:1
         node = nodes[k]
+        # Block leaves carry their shape in `block_shapes`; they're 2D (m, n)
+        # by construction.
+        if node.type == NODE_VARIABLE_BLOCK ||
+           node.type == NODE_VALUE_BLOCK ||
+           node.type == NODE_MOI_VARIABLE_BLOCK
+            shape = block_shapes[k]
+            _add_size!(sizes, k, shape)
+            continue
+        end
         children_indices = SparseArrays.nzrange(adj, k)
         N = length(children_indices)
         if node.type == NODE_CALL_MULTIVARIATE
@@ -438,18 +448,34 @@ struct _SubexpressionStorage{S<:AbstractVector{Float64}}
         nodes::Vector{Node},
         adj::SparseArrays.SparseMatrixCSC{Bool,Int},
         const_values::Vector{Float64},
+        block_shapes::Dict{Int,Vector{Int}},
         partials_storage_ϵ::Vector{Float64},
         linearity::Linearity,
         ::Type{S} = Vector{Float64},
     ) where {S<:AbstractVector{Float64}}
-        sizes = _infer_sizes(nodes, adj)
+        sizes = _infer_sizes(nodes, adj, block_shapes)
         N = _length(sizes)
+        # Pre-load value blocks into forward_storage once at construction;
+        # each block is a contiguous-to-contiguous bulk copy. Individual
+        # `NODE_VALUE` scalars (rare — exponents, constant divisors, etc) and
+        # variable nodes are loaded by `_forward_eval` in the per-node loop.
+        cpu_buffer = zeros(N)
+        for k in 1:length(nodes)
+            node = nodes[k]
+            if node.type == NODE_VALUE_BLOCK
+                j = sizes.storage_offset[k] + 1
+                len = _length(sizes, k)
+                cpu_buffer[j:(j + len - 1)] .=
+                    view(const_values, node.index:(node.index + len - 1))
+            end
+        end
+        forward_storage = convert(S, cpu_buffer)
         return new{S}(
             nodes,
             adj,
             sizes,
             const_values,
-            fill!(S(undef, N), 0.0),  # forward_storage,
+            forward_storage,
             fill!(S(undef, N), 0.0),  # partials_storage,
             fill!(S(undef, N), 0.0),  # reverse_storage,
             partials_storage_ϵ,

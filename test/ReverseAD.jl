@@ -562,7 +562,15 @@ function test_linearity()
         end
         if length(indices) > 0
             empty!(indexed_set)
-            ArrayDiff._compute_gradient_sparsity!(indexed_set, nodes)
+            f = ArrayDiff._SubexpressionStorage(
+                nodes,
+                adj,
+                convert(Vector{Float64}, expr.values),
+                expr.block_shapes,
+                Float64[],
+                ret[1],
+            )
+            ArrayDiff._compute_gradient_sparsity!(indexed_set, f)
             ix = sort(collect(indexed_set))
             @test indices == ix
         end
