@@ -279,6 +279,58 @@ function test_neural()
     end
 end
 
+# Builds the same `sum((W2*tanh.(W1*X) - target)^2)` MLP that `test_neural`
+# exercises and checks that, after warmup, both `eval_objective` and
+# `eval_objective_gradient` are allocation-free on the CPU `Vector{Float64}`
+# tape — including when the input `x` has changed since the last call (which
+# is the path that actually re-runs forward+reverse, not the
+# `last_x == x` short-circuit).
+function test_neural_allocations()
+    n = 2
+    X = [1.0 0.5; 0.3 0.8]
+    target = [0.5 0.2; 0.1 0.7]
+    model = Model()
+    @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    Y = W2 * tanh.(W1 * X)
+    loss = sum((Y .- target) .^ 2)
+    mode = ArrayDiff.Mode()
+    ad = ArrayDiff.model(mode)
+    MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
+    evaluator = MOI.Nonlinear.Evaluator(
+        ad,
+        mode,
+        JuMP.index.(JuMP.all_variables(model)),
+    )
+    MOI.initialize(evaluator, [:Grad])
+    x1 = Float64.(collect(1:8))
+    x2 = Float64.(collect(2:9))
+    g = zeros(8)
+    # Wrapped in typed functions so `@allocated` doesn't capture the
+    # return-value boxing that happens when calling `eval_objective`
+    # directly from the macro's untyped scope (each `MOI.eval_objective`
+    # returns a `Float64` which then escapes into `Any`-typed scope).
+    _obj(ev, x) = MOI.eval_objective(ev, x)
+    function _grad!(ev, g, x)
+        MOI.eval_objective_gradient(ev, g, x)
+        return nothing
+    end
+    # Warmup: trigger JIT compilation for both `eval_objective` and
+    # `eval_objective_gradient`. Two distinct inputs so `_reverse_mode`'s
+    # `last_x == x` short-circuit doesn't elide the work on the second call.
+    _obj(evaluator, x1)
+    _obj(evaluator, x2)
+    _grad!(evaluator, g, x1)
+    _grad!(evaluator, g, x2)
+    # Now alternate: each measured call sees `last_x ≠ x`, so it actually
+    # runs the full forward + reverse passes through the block tape.
+    @test 0 == @allocated _obj(evaluator, x1)
+    @test 0 == @allocated _obj(evaluator, x2)
+    @test 0 == @allocated _grad!(evaluator, g, x1)
+    @test 0 == @allocated _grad!(evaluator, g, x2)
+    return
+end
+
 function test_moi_function()
     model = Model()
     @variable(model, W[1:2, 1:2], container = ArrayDiff.ArrayOfVariables)
