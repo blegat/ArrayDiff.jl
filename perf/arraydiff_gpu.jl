@@ -141,9 +141,10 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float64 = 1e-6)
     CUDA.synchronize()
 
     # ArrayDiff CPU.
-    print("ArrayDiff CPU build (h=$h) ... "); flush(stdout)
-    t_cpu_build = @elapsed ev_cpu =
-        build_arraydiff(W2, X, y, h, d, n, ArrayDiff.Mode())
+    print("ArrayDiff CPU build (h=$h) ... ");
+    flush(stdout)
+    t_cpu_build =
+        @elapsed ev_cpu = build_arraydiff(W2, X, y, h, d, n, ArrayDiff.Mode())
     @printf "%.2f s\n" t_cpu_build
     x_cpu = vec(W1)
     g_cpu = zeros(Float64, length(x_cpu))
@@ -154,7 +155,8 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float64 = 1e-6)
     # GPU-resident solver (e.g. one whose ADAM step is on `CuVector`) would
     # use: the AD tape, the input vector, and the gradient buffer all stay
     # on the device, so there's no D2H round-trip on the gradient hot path.
-    print("ArrayDiff GPU build (h=$h) ... "); flush(stdout)
+    print("ArrayDiff GPU build (h=$h) ... ");
+    flush(stdout)
     t_gpu_build = @elapsed ev_gpu = build_arraydiff(
         W2,
         X,
@@ -172,10 +174,7 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float64 = 1e-6)
     grad_gpu = reshape(Array(g_gpu), h, d)
 
     # Numerical equivalence.
-    for (name, g) in [
-        ("ArrayDiff CPU", grad_cpu),
-        ("ArrayDiff GPU", grad_gpu),
-    ]
+    for (name, g) in [("ArrayDiff CPU", grad_cpu), ("ArrayDiff GPU", grad_gpu)]
         maxdiff = maximum(abs.(grad_ref .- g))
         relmag = maxdiff / max(maximum(abs.(grad_ref)), eps(Float64))
         ok = isapprox(grad_ref, g; rtol = rtol)
@@ -212,7 +211,11 @@ function main()
         error("CUDA is not functional in this environment.")
     end
     CUDA.math_mode!(CUDA.FAST_MATH)
-    println("CUDA.jl device : ", CUDA.name(CUDA.device()), "  (math_mode=FAST_MATH)")
+    println(
+        "CUDA.jl device : ",
+        CUDA.name(CUDA.device()),
+        "  (math_mode=FAST_MATH)",
+    )
     for h in (16, 256, 4096)
         run_one(; h = h)
         GC.gc(true)
