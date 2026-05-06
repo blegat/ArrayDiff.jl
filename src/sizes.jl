@@ -49,6 +49,15 @@ function _setscalar!(x, value, sizes::Sizes, k::Int)
     return x[sizes.storage_offset[k]+1] = value
 end
 
+"""
+    _scalar_pos(sizes, k) -> Int
+
+Tape index of node `k`'s single scalar slot. Useful when callers want to build
+a 1-element view onto `forward_storage`/`reverse_storage` to do a
+broadcast-style read or write that's safe on a GPU array.
+"""
+@inline _scalar_pos(sizes::Sizes, k::Int) = sizes.storage_offset[k] + 1
+
 function _getindex(x, sizes::Sizes, k::Int, j)
     return x[sizes.storage_offset[k]+j]
 end
