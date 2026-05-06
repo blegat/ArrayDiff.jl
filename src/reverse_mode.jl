@@ -125,6 +125,18 @@ function _forward_eval(
             #     f.forward_storage[k] = x[node.index]
         elseif node.type == NODE_VALUE
             f.forward_storage[j] = f.const_values[node.index]
+        elseif node.type == NODE_VARIABLE_BLOCK
+            # Contiguous-to-contiguous copy from `x` into the tape: on CPU a
+            # `copyto!`, on GPU a single `cudaMemcpy`. This is the fast path
+            # for matrix variables from `ArrayOfContiguousVariables{2}`.
+            tape_range = _storage_range(f.sizes, k)
+            len = length(tape_range)
+            copyto!(
+                view(f.forward_storage, tape_range),
+                view(x, node.index:(node.index+len-1)),
+            )
+        elseif node.type == NODE_VALUE_BLOCK
+            # Pre-loaded into `forward_storage` at construction.
         elseif node.type == NODE_SUBEXPRESSION
             f.forward_storage[j] = d.subexpression_forward_values[node.index]
         elseif node.type == NODE_PARAMETER
@@ -965,7 +977,14 @@ function _extract_reverse_pass_inner(
 ) where {T}
     @assert length(f.reverse_storage) >= _length(f.sizes)
     for (k, node) in enumerate(f.nodes)
-        if node.type == NODE_VARIABLE
+        if node.type == NODE_VARIABLE_BLOCK
+            tape_range = _storage_range(f.sizes, k)
+            len = length(tape_range)
+            x_range = node.index:(node.index+len-1)
+            view(output, x_range) .+=
+                scale .* view(f.reverse_storage, tape_range)
+        elseif node.type == NODE_VARIABLE
+            # Per-leaf scalar — rare, so the per-leaf `cudaMemcpy` is fine.
             output[node.index] += scale * @s f.reverse_storage[k]
         elseif node.type == NODE_SUBEXPRESSION
             subexpressions[node.index] += scale * @s f.reverse_storage[k]

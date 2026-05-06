@@ -140,98 +140,38 @@ end
 # ── ArrayOfContiguousVariables ───────────────────────────────────────────────────
 
 function _parse_moi_stack!(
-    stack::Vector{Tuple{Int,Any}},
-    data::Model,
+    ::Vector{Tuple{Int,Any}},
+    ::Model,
     expr::Expression,
-    x::ArrayOfContiguousVariables{2},
+    x::ArrayOfContiguousVariables,
     parent_index::Int,
 )
-    m, n = x.size
-    # Build vcat(row(v11, v12, ...), row(v21, v22, ...), ...).
-    #
-    # The outer loop is `1:m` (forward order), NOT `m:-1:1`. The `:row` nodes
-    # we push end up at consecutive positions in `expr.nodes`, and `:vcat`
-    # later reads its children in tape-index order (CSC `nzrange`) — so the
-    # row with the smallest tape index becomes row 1 of the output matrix.
-    # If the outer loop ran in reverse, `row_m` would land at the smallest
-    # tape index and `:vcat` would silently place it as row 1, producing a
-    # row-flipped matrix on the tape (a latent bug, fixed here).
-    #
-    # The inner loop stays `n:-1:1` because the items go on the stack and pop
-    # in LIFO order — pushing in reverse j order gives forward j-order on
-    # pop, which matches the column-major layout below.
-    vcat_id = data.operators.multivariate_operator_to_id[:vcat]
-    row_id = data.operators.multivariate_operator_to_id[:row]
-    push!(expr.nodes, Node(NODE_CALL_MULTIVARIATE, vcat_id, parent_index))
-    vcat_idx = length(expr.nodes)
-    for i in 1:m
-        push!(expr.nodes, Node(NODE_CALL_MULTIVARIATE, row_id, vcat_idx))
-        row_idx = length(expr.nodes)
-        for j in n:-1:1
-            vi = MOI.VariableIndex(x.offset + (j - 1) * m + i)
-            push!(stack, (row_idx, vi))
-        end
-    end
+    # Emit a single block node. The block represents the contiguous range of
+    # MOI variable indices `x.offset+1, ...`, laid out in
+    # column-major order (matching `Array{Float64}` and `Base.LinearIndices`),
+    # which is the layout `_view_array` will see at evaluation time.
+    push!(expr.nodes, Node(NODE_MOI_VARIABLE_BLOCK, x.offset + 1, parent_index))
+    expr.block_shapes[length(expr.nodes)] = collect(x.size)
     return
 end
 
-function _parse_moi_stack!(
-    stack::Vector{Tuple{Int,Any}},
-    data::Model,
-    expr::Expression,
-    x::ArrayOfContiguousVariables{1},
-    parent_index::Int,
-)
-    m = x.size[1]
-    vect_id = data.operators.multivariate_operator_to_id[:vect]
-    push!(expr.nodes, Node(NODE_CALL_MULTIVARIATE, vect_id, parent_index))
-    vect_idx = length(expr.nodes)
-    for i in m:-1:1
-        vi = MOI.VariableIndex(x.offset + i)
-        push!(stack, (vect_idx, vi))
-    end
-    return
-end
-
-# ── Constant matrices and vectors ────────────────────────────────────────────
+# ── Constant arrays ────────────────────────────────────────────
 
 function _parse_moi_stack!(
-    stack::Vector{Tuple{Int,Any}},
-    data::Model,
+    ::Vector{Tuple{Int,Any}},
+    ::Model,
     expr::Expression,
-    x::AbstractMatrix{<:Real},
+    x::AbstractArray{<:Real},
     parent_index::Int,
 )
-    m, n = size(x)
-    # See the `ArrayOfContiguousVariables{2}` overload for the rationale on
-    # the `1:m` outer loop (the previous `m:-1:1` produced a row-flipped
-    # matrix on the tape).
-    vcat_id = data.operators.multivariate_operator_to_id[:vcat]
-    row_id = data.operators.multivariate_operator_to_id[:row]
-    push!(expr.nodes, Node(NODE_CALL_MULTIVARIATE, vcat_id, parent_index))
-    vcat_idx = length(expr.nodes)
-    for i in 1:m
-        push!(expr.nodes, Node(NODE_CALL_MULTIVARIATE, row_id, vcat_idx))
-        row_idx = length(expr.nodes)
-        for j in n:-1:1
-            push!(stack, (row_idx, x[i, j]))
-        end
-    end
-    return
-end
-
-function _parse_moi_stack!(
-    stack::Vector{Tuple{Int,Any}},
-    data::Model,
-    expr::Expression,
-    x::AbstractVector{<:Real},
-    parent_index::Int,
-)
-    vect_id = data.operators.multivariate_operator_to_id[:vect]
-    push!(expr.nodes, Node(NODE_CALL_MULTIVARIATE, vect_id, parent_index))
-    vect_idx = length(expr.nodes)
-    for i in length(x):-1:1
-        push!(stack, (vect_idx, x[i]))
-    end
+    # Emit a single value block. We push the flat values to
+    # `expr.values` in column-major order (matching `Array{Float64}`'s memory
+    # layout); `node.index` records the start of that contiguous range so
+    # `_SubexpressionStorage` can copy it into the tape in one block at
+    # construction time.
+    start_idx = length(expr.values) + 1
+    append!(expr.values, x)
+    push!(expr.nodes, Node(NODE_VALUE_BLOCK, start_idx, parent_index))
+    expr.block_shapes[length(expr.nodes)] = collect(size(x))
     return
 end

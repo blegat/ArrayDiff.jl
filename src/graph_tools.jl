@@ -23,6 +23,16 @@ field, which should be interpreted as follows:
  * `NODE_CALL_UNIVARIATE_BROADCASTED`: the index into `operators.univariate_operators`
  * `NODE_CALL_MULTIVARIATE_BROADCASTED`: the index into `operators.multivariate_operators`
  * `NODE_CALL_REDUCE`: the index into `operators.multivariate_operators`
+ * `NODE_MOI_VARIABLE_BLOCK`: a contiguous block of `MOI.VariableIndex`. The
+   `index` field is the value of the FIRST `MOI.VariableIndex` in the block;
+   the shape `(m, n)` is stored in `Expression.block_shapes`. The block holds
+   `m * n` variables in column-major order.
+ * `NODE_VARIABLE_BLOCK`: same as `NODE_MOI_VARIABLE_BLOCK` but after MOI
+   variable indices have been remapped to consecutive 1-based internal
+   indices. `index` is the FIRST internal index of the block.
+ * `NODE_VALUE_BLOCK`: a contiguous block of constants. `index` is the start
+   index in the `.values` field; the next `m * n` entries (column-major) are
+   the block's data. Shape stored in `Expression.block_shapes`.
 """
 @enum(
     NodeType,
@@ -51,6 +61,12 @@ field, which should be interpreted as follows:
     NODE_CALL_MULTIVARIATE_BROADCASTED,
     # Index into the multivariate operators, with reduction
     NODE_CALL_REDUCE,
+    # Block-of-variables node, before MOI → internal index remap.
+    NODE_MOI_VARIABLE_BLOCK,
+    # Block-of-variables node, after MOI → internal index remap.
+    NODE_VARIABLE_BLOCK,
+    # Block-of-constants node.
+    NODE_VALUE_BLOCK,
 )
 
 @enum(Linearity, CONSTANT, LINEAR, PIECEWISE_LINEAR, NONLINEAR)
@@ -96,6 +112,16 @@ function _replace_moi_variables(
                 moi_index_to_consecutive_index[MOI.VariableIndex(node.index)],
                 node.parent,
             )
+        elseif node.type == NODE_MOI_VARIABLE_BLOCK
+            # `node.index` is the FIRST MOI variable index in the block. For an
+            # `ArrayOfContiguousVariables`, all variables in the block are
+            # contiguous in MOI's ordering, so we just remap the first index
+            # and reuse it as the consecutive offset. The block's length comes
+            # from `Expression.block_shapes[i]`, which the caller threads
+            # through separately.
+            first_consec =
+                moi_index_to_consecutive_index[MOI.VariableIndex(node.index)]
+            new_nodes[i] = Node(NODE_VARIABLE_BLOCK, first_consec, node.parent)
         else
             new_nodes[i] = node
         end
@@ -122,10 +148,10 @@ function _classify_linearity(
     children_arr = SparseArrays.rowvals(adj)
     for k in length(nodes):-1:1
         node = nodes[k]
-        if node.type == NODE_VARIABLE
+        if node.type == NODE_VARIABLE || node.type == NODE_VARIABLE_BLOCK
             linearity[k] = LINEAR
             continue
-        elseif node.type == NODE_VALUE
+        elseif node.type == NODE_VALUE || node.type == NODE_VALUE_BLOCK
             linearity[k] = CONSTANT
             continue
         elseif node.type == NODE_PARAMETER
@@ -218,24 +244,30 @@ function _classify_linearity(
 end
 
 """
-    _compute_gradient_sparsity!(
-        indices::Coloring.IndexedSet,
-        nodes::Vector{Nonlinear.Node},
-    )
+    _compute_gradient_sparsity!(indices::Coloring.IndexedSet, f)
 
-Compute the sparsity pattern of the gradient of an expression (that is, a list of
-which variable indices are present).
+Compute the sparsity pattern of the gradient of an expression (that is, a list
+of which variable indices are present).
+
+`f` is duck-typed (as its type is defined later) to a
+`_SubexpressionStorage`-like object exposing `f.nodes` and `f.sizes`.
+For `NODE_VARIABLE_BLOCK` nodes, the block's length is read from `f.sizes`
+(via `_length`), and the block contributes that many consecutive variable
+indices starting at `nodes[k].index`.
 """
-function _compute_gradient_sparsity!(
-    indices::Coloring.IndexedSet,
-    nodes::Vector{Node},
-)
-    for node in nodes
+function _compute_gradient_sparsity!(indices::Coloring.IndexedSet, f)
+    for (k, node) in enumerate(f.nodes)
         if node.type == NODE_VARIABLE
             push!(indices, node.index)
-        elseif node.type == NODE_MOI_VARIABLE
+        elseif node.type == NODE_VARIABLE_BLOCK
+            len = _length(f.sizes, k)
+            for i in 0:(len-1)
+                push!(indices, node.index + i)
+            end
+        elseif node.type == NODE_MOI_VARIABLE ||
+               node.type == NODE_MOI_VARIABLE_BLOCK
             error(
-                "Internal error: Invalid to compute sparsity if NODE_MOI_VARIABLE " *
+                "Internal error: Invalid to compute sparsity if $(node.type) " *
                 "nodes are present.",
             )
         end
@@ -341,6 +373,7 @@ function _compute_hessian_sparsity(
     child_group_variables = Dict{Int,Set{Int}}()
     for (k, node) in enumerate(nodes)
         @assert node.type != NODE_MOI_VARIABLE
+        @assert node.type != NODE_MOI_VARIABLE_BLOCK
         if input_linearity[k] == CONSTANT
             continue  # No hessian contribution from constant nodes
         end
@@ -375,6 +408,13 @@ function _compute_hessian_sparsity(
                     push!(
                         child_group_variables[child_group_idx],
                         nodes[r].index,
+                    )
+                elseif nodes[r].type == NODE_VARIABLE_BLOCK
+                    # TODO `NODE_VARIABLE_BLOCK` would need its block shape to
+                    # enumerate the variable indices.
+                    error(
+                        "Internal error: Hessian sparsity for " *
+                        "NODE_VARIABLE_BLOCK is not yet supported.",
                     )
                 elseif nodes[r].type == NODE_SUBEXPRESSION
                     sub_vars = subexpression_variables[nodes[r].index]

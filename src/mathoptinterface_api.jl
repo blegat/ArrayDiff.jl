@@ -87,7 +87,7 @@ function MOI.initialize(
             max(max_expr_with_sub_length, length(subex.nodes))
         if d.want_hess
             empty!(coloring_storage)
-            _compute_gradient_sparsity!(coloring_storage, subex.nodes)
+            _compute_gradient_sparsity!(coloring_storage, subex)
             # union with all dependent expressions
             for idx in _list_subexpressions(subex.nodes)
                 union!(coloring_storage, subexpression_variables[idx])
