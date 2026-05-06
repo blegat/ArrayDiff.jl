@@ -49,8 +49,8 @@ function _setscalar!(x, value, sizes::Sizes, k::Int)
     # Use a 1-element view + broadcast so this works on GPU storage as well as
     # `Vector{Float64}`. Direct `x[idx] = value` is a scalar setindex which
     # GPUArrays disallows by default.
-    pos = sizes.storage_offset[k] + 1
-    view(x, pos:pos) .= value
+    pos = _scalar_pos(sizes, k)
+    view(x, reshape(pos:pos, ())) .= value
     return value
 end
 
