@@ -939,7 +939,7 @@ end
 
 function _extract_reverse_pass_inner(
     output::AbstractVector{T},
-    f::Union{_FunctionStorage,_SubexpressionStorage},
+    f::_SubexpressionStorage,
     subexpressions::AbstractVector{T},
     scale::T,
 ) where {T}
