@@ -241,27 +241,55 @@ function _test_neural(
     W1_val = [0.3 -0.2; 0.1 0.4]
     W2_val = [-0.1 0.5; 0.2 -0.3]
     obj, g = _eval(model, loss, [vec(W1_val); vec(W2_val)])
-    obj_val = 0.8516435891643307
+    # Reference computed from the same hand-written forward/reverse formulas
+    # as `perf/cuda_vs_pytorch.jl::forward_pass`/`reverse_diff`, adapted to
+    # this test's loss `sum((Y - target).^2)` (no `/ n` scaling, full gradient
+    # over both `W1` and `W2`). `_eval` evaluates the objective at `xstart`
+    # and the gradient at `x = [1, ..., 8]`, so we need the references at the
+    # corresponding inputs.
+    X_const = [1.0 0.5; 0.3 0.8]
+    target_const = [0.5 0.2; 0.1 0.7]
+    obj_val = _ref_objective(W1_val, W2_val, X_const, target_const)
     if with_norm
         obj_val = sqrt(obj_val)
     end
     @test obj ≈ obj_val
-    grad = [
-        12.3913945850742
-        0.6880048864793
-        9.4322503589489
-        0.5223651220724
-        46.2269560438734
-        53.9729454980064
-        45.7401048264386
-        53.4195902684781
-    ]
+    W1_at_grad = reshape([1.0, 2.0, 3.0, 4.0], 2, 2)
+    W2_at_grad = reshape([5.0, 6.0, 7.0, 8.0], 2, 2)
+    grad_sumsq = _ref_gradient(W1_at_grad, W2_at_grad, X_const, target_const)
     if with_norm
-        @test g ≈ grad * 0.019879429552408144
+        # `d/dx ‖E‖₂ = (1/(2‖E‖₂)) · d/dx ‖E‖₂² = grad_sumsq / (2 sqrt(sumsq))`,
+        # taken at the gradient evaluation point.
+        norm_at_grad =
+            sqrt(_ref_objective(W1_at_grad, W2_at_grad, X_const, target_const))
+        @test g ≈ grad_sumsq ./ (2 * norm_at_grad)
     else
-        @test g ≈ grad
+        @test g ≈ grad_sumsq
     end
     return
+end
+
+# Hand-written forward + reverse for the 2-layer MLP `loss = sum((W2 *
+# tanh.(W1 * X) - target).^2)`. Same shape as `perf/cuda_vs_pytorch.jl`'s
+# `forward_pass` / `reverse_diff` but adapted to this test (no `/ n` scaling
+# and gradient over both `W1` and `W2`). Returned gradient is flattened with
+# the JuMP variable convention `[vec(grad_W1); vec(grad_W2)]`.
+function _ref_forward(W1, W2, X, target)
+    y_1 = tanh.(W1 * X)
+    J_1 = 1 .- y_1 .^ 2
+    J_2 = 2 .* (W2 * y_1 .- target)
+    return y_1, J_1, J_2
+end
+
+function _ref_objective(W1, W2, X, target)
+    return sum((W2 * tanh.(W1 * X) .- target) .^ 2)
+end
+
+function _ref_gradient(W1, W2, X, target)
+    y_1, J_1, J_2 = _ref_forward(W1, W2, X, target)
+    grad_W1 = (J_1 .* (W2' * J_2)) * X'
+    grad_W2 = J_2 * y_1'
+    return [vec(grad_W1); vec(grad_W2)]
 end
 
 function test_neural()
