@@ -7,8 +7,10 @@ using ArrayDiff
 import LinearAlgebra
 import MathOptInterface as MOI
 
+include("Transformer.jl")
+
 function runtests()
-    for name in names(@__MODULE__; all = true)
+    for name in names(@__MODULE__; all=true)
         if startswith("$(name)", "test_")
             @testset "$(name)" begin
                 getfield(@__MODULE__, name)()
@@ -486,6 +488,57 @@ function test_broadcast_scalar_matrix_size_inference()
         @test sizes.size[broadcast_size_off+2] == 3
         # And the scalar leaf among the children stays ndims=0.
         @test 0 in sizes.ndims[3:4]
+    end
+    return
+end
+
+# Plug JuMP variable matrices into the Transformer's `MLP` building block
+# (`gelu(x * c_fc) * c_proj`) and confirm the forward+reverse pass runs
+# end-to-end through the ArrayDiff evaluator.
+#
+# `eval_objective` / `eval_objective_gradient` are currently `@test_broken`
+# because `gelu` contains scalar-on-the-left broadcasts (`0.5 * x`,
+# `0.044715 .* x.^3`, `1 .+ tanh.(...)`) and ArrayDiff stores a leading
+# `Number` argument as a `(1, 1)` constant block. The broadcast against a
+# matrix-shaped `MatrixExpr` then dies with `BoundsError`/`AssertionError`
+# at tape evaluation time. Tape construction (parsing + `MOI.initialize`)
+# succeeds, so the `@test`s above the evaluation calls cover what does
+# work today.
+function test_transformer_mlp_gradient()
+    d_emb, d_hidden, seq = 2, 3, 2
+    model = Model()
+    @variable(
+        model,
+        c_fc[1:d_emb, 1:d_hidden],
+        container = ArrayDiff.ArrayOfVariables,
+    )
+    @variable(
+        model,
+        c_proj[1:d_hidden, 1:d_emb],
+        container = ArrayDiff.ArrayOfVariables,
+    )
+    mlp = MLP(c_fc, c_proj)
+    x = rand(seq, d_emb)
+    loss = sum(mlp(x) .^ 2)
+    mode = ArrayDiff.Mode()
+    ad = ArrayDiff.model(mode)
+    MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
+    evaluator = MOI.Nonlinear.Evaluator(
+        ad,
+        mode,
+        JuMP.index.(JuMP.all_variables(model)),
+    )
+    MOI.initialize(evaluator, [:Grad])
+    nvar = JuMP.num_variables(model)
+    @test nvar == 2 * d_emb * d_hidden
+    x_pt = randn(nvar)
+    g = zeros(nvar)
+    @test_broken try
+        MOI.eval_objective(evaluator, x_pt)
+        MOI.eval_objective_gradient(evaluator, g, x_pt)
+        true
+    catch
+        false
     end
     return
 end
