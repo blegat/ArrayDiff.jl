@@ -150,7 +150,10 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float64 = 1e-6)
     arraydiff_grad_cpu!(g_cpu, ev_cpu, x_cpu)
     grad_cpu = reshape(g_cpu, h, d)
 
-    # ArrayDiff GPU.
+    # ArrayDiff GPU. Both `x` and `g` live on the GPU — same convention a
+    # GPU-resident solver (e.g. one whose ADAM step is on `CuVector`) would
+    # use: the AD tape, the input vector, and the gradient buffer all stay
+    # on the device, so there's no D2H round-trip on the gradient hot path.
     print("ArrayDiff GPU build (h=$h) ... "); flush(stdout)
     t_gpu_build = @elapsed ev_gpu = build_arraydiff(
         W2,
@@ -162,11 +165,11 @@ function run_one(; h::Int, d::Int = 13, n::Int = 178, rtol::Float64 = 1e-6)
         ArrayDiff.Mode{CUDA.CuVector{Float64}}(),
     )
     @printf "%.2f s\n" t_gpu_build
-    x_gpu = vec(W1)
-    g_gpu = zeros(Float64, length(x_gpu))
+    x_gpu = CUDA.CuVector{Float64}(vec(W1))
+    g_gpu = CUDA.zeros(Float64, length(x_gpu))
     arraydiff_grad_gpu!(g_gpu, ev_gpu, x_gpu)
     CUDA.synchronize()
-    grad_gpu = reshape(g_gpu, h, d)
+    grad_gpu = reshape(Array(g_gpu), h, d)
 
     # Numerical equivalence.
     for (name, g) in [

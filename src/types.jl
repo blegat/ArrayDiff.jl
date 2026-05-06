@@ -320,9 +320,12 @@ mutable struct NLPEvaluator{T<:Real,S<:AbstractVector{T}} <:
     subexpression_reverse_values::Vector{T}
     subexpression_linearity::Vector{Linearity}
 
-    # A cache of the last x. This is used to guide whether we need to re-run
-    # reverse-mode automatic differentiation.
-    last_x::Vector{T}
+    # A cache of the last x. Used to short-circuit `_reverse_mode` when the
+    # primal hasn't changed. Matches the storage type so the comparison
+    # `last_x == x` and the `copyto!(last_x, x)` below stay device-local —
+    # otherwise the gradient hot path would do a full D2H + H2D round-trip
+    # of `x` on every call when the AD tape is on a `CuVector`.
+    last_x::S
 
     # Temporary storage for computing Jacobians. This is also used as temporary
     # storage for the input of multivariate functions.
