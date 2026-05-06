@@ -968,14 +968,11 @@ function _extract_reverse_pass_inner(
     @assert length(f.reverse_storage) >= _length(f.sizes)
     for (k, node) in enumerate(f.nodes)
         if node.type == NODE_VARIABLE_BLOCK
-            # Each block has a contiguous tape range and a contiguous `output`
-            # range: gather the adjoint, transfer to host in one memcpy, and
-            # accumulate into the matching slice of `output`.
             tape_range = _storage_range(f.sizes, k)
             len = length(tape_range)
             x_range = node.index:(node.index+len-1)
-            cpu_buf = convert(Vector{T}, view(f.reverse_storage, tape_range))
-            view(output, x_range) .+= scale .* cpu_buf
+            view(output, x_range) .+=
+                scale .* view(f.reverse_storage, tape_range)
         elseif node.type == NODE_VARIABLE
             # Per-leaf scalar — rare, so the per-leaf `cudaMemcpy` is fine.
             output[node.index] += scale * @s f.reverse_storage[k]
