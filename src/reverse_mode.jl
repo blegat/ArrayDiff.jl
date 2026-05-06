@@ -871,13 +871,22 @@ function _reverse_eval(
                     )
                     base_view = _view_linear(f.forward_storage, f.sizes, ix1)
                     out_view = _view_linear(f.forward_storage, f.sizes, k)
-                    rev_exp_total = sum(
-                        ifelse.(
-                            base_view .> 0,
-                            rev_parent .* out_view .* log.(abs.(base_view)),
-                            zero(Float64),
-                        ),
-                    )
+                    # `mapreduce(f, +, base_view, rev_parent, out_view)`
+                    # would express this directly, but multi-iterable
+                    # `mapreduce` materializes an intermediate today
+                    # (JuliaLang/julia#53417). Wrap the inputs in `zip` so
+                    # the single-iterable specialization fires and the
+                    # reduction stays allocation-free. Once
+                    # https://github.com/JuliaLang/julia/pull/55301 lands
+                    # we can drop the `zip` and use the multi-arg form.
+                    T = eltype(rev_parent)
+                    rev_exp_total = mapreduce(
+                        +,
+                        zip(base_view, rev_parent, out_view);
+                        init = zero(T),
+                    ) do (b, rp, o)
+                        return b > 0 ? rp * o * log(b) : zero(T)
+                    end
                     pos2 = _scalar_pos(f.sizes, ix2)
                     view(f.reverse_storage, pos2:pos2) .= rev_exp_total
                     continue
