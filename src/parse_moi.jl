@@ -147,13 +147,24 @@ function _parse_moi_stack!(
     parent_index::Int,
 )
     m, n = x.size
-    # Build vcat(row(v11, v12, ...), row(v21, v22, ...), ...)
+    # Build vcat(row(v11, v12, ...), row(v21, v22, ...), ...).
+    #
+    # The outer loop is `1:m` (forward order), NOT `m:-1:1`. The `:row` nodes
+    # we push end up at consecutive positions in `expr.nodes`, and `:vcat`
+    # later reads its children in tape-index order (CSC `nzrange`) — so the
+    # row with the smallest tape index becomes row 1 of the output matrix.
+    # If the outer loop ran in reverse, `row_m` would land at the smallest
+    # tape index and `:vcat` would silently place it as row 1, producing a
+    # row-flipped matrix on the tape (a latent bug, fixed here).
+    #
+    # The inner loop stays `n:-1:1` because the items go on the stack and pop
+    # in LIFO order — pushing in reverse j order gives forward j-order on
+    # pop, which matches the column-major layout below.
     vcat_id = data.operators.multivariate_operator_to_id[:vcat]
     row_id = data.operators.multivariate_operator_to_id[:row]
     push!(expr.nodes, Node(NODE_CALL_MULTIVARIATE, vcat_id, parent_index))
     vcat_idx = length(expr.nodes)
-    # Push rows in reverse order for stack processing
-    for i in m:-1:1
+    for i in 1:m
         push!(expr.nodes, Node(NODE_CALL_MULTIVARIATE, row_id, vcat_idx))
         row_idx = length(expr.nodes)
         for j in n:-1:1
@@ -192,11 +203,14 @@ function _parse_moi_stack!(
     parent_index::Int,
 )
     m, n = size(x)
+    # See the `ArrayOfContiguousVariables{2}` overload for the rationale on
+    # the `1:m` outer loop (the previous `m:-1:1` produced a row-flipped
+    # matrix on the tape).
     vcat_id = data.operators.multivariate_operator_to_id[:vcat]
     row_id = data.operators.multivariate_operator_to_id[:row]
     push!(expr.nodes, Node(NODE_CALL_MULTIVARIATE, vcat_id, parent_index))
     vcat_idx = length(expr.nodes)
-    for i in m:-1:1
+    for i in 1:m
         push!(expr.nodes, Node(NODE_CALL_MULTIVARIATE, row_id, vcat_idx))
         row_idx = length(expr.nodes)
         for j in n:-1:1
