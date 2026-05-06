@@ -804,7 +804,7 @@ function _reverse_eval(
                     rev_parent_view =
                         view(f.reverse_storage, reshape(pos:pos, ()))
                     rev_children_view =
-                        _view_array(f.reverse_storage, f.sizes, ix)
+                        _view_linear(f.reverse_storage, f.sizes, ix)
                     rev_children_view .= rev_parent_view
                     continue
                 elseif op == :row
