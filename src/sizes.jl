@@ -96,19 +96,11 @@ like `LinearAlgebra.mul!` need; keeping the return type-stable avoids
 heap-boxing.
 """
 function _view_matrix(storage::AbstractVector, sizes::Sizes, k::Int)
-    nd = sizes.ndims[k]
+    @assert sizes.ndims[k] == 2
     offset = sizes.storage_offset[k]
     size_off = sizes.size_offset[k]
-    if nd == 2
-        m = sizes.size[size_off+1]
-        n = sizes.size[size_off+2]
-    elseif nd == 1
-        m = sizes.size[size_off+1]
-        n = 1
-    else
-        m = 1
-        n = 1
-    end
+    m = sizes.size[size_off+1]
+    n = sizes.size[size_off+2]
     v = view(storage, (offset+1):(offset+m*n))
     return reshape(v, (m, n))
 end
