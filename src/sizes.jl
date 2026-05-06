@@ -438,11 +438,11 @@ function _infer_sizes(
     return sizes
 end
 
-struct _SubexpressionStorage{S<:AbstractVector{Float64}}
+struct _SubexpressionStorage{T<:Real,S<:AbstractVector{T}}
     nodes::Vector{Node}
     adj::SparseArrays.SparseMatrixCSC{Bool,Int}
     sizes::Sizes
-    const_values::Vector{Float64}
+    const_values::Vector{T}
     forward_storage::S
     partials_storage::S
     reverse_storage::S
@@ -452,19 +452,19 @@ struct _SubexpressionStorage{S<:AbstractVector{Float64}}
     function _SubexpressionStorage(
         nodes::Vector{Node},
         adj::SparseArrays.SparseMatrixCSC{Bool,Int},
-        const_values::Vector{Float64},
+        const_values::Vector{T},
         block_shapes::Dict{Int,Vector{Int}},
         partials_storage_ϵ::Vector{Float64},
         linearity::Linearity,
-        ::Type{S} = Vector{Float64},
-    ) where {S<:AbstractVector{Float64}}
+        ::Type{S} = Vector{T},
+    ) where {T<:Real,S<:AbstractVector{T}}
         sizes = _infer_sizes(nodes, adj, block_shapes)
         N = _length(sizes)
         # Pre-load value blocks into forward_storage once at construction;
         # each block is a contiguous-to-contiguous bulk copy. Individual
         # `NODE_VALUE` scalars (rare — exponents, constant divisors, etc) and
         # variable nodes are loaded by `_forward_eval` in the per-node loop.
-        cpu_buffer = zeros(N)
+        cpu_buffer = zeros(T, N)
         for k in 1:length(nodes)
             node = nodes[k]
             if node.type == NODE_VALUE_BLOCK
@@ -475,14 +475,14 @@ struct _SubexpressionStorage{S<:AbstractVector{Float64}}
             end
         end
         forward_storage = convert(S, cpu_buffer)
-        return new{S}(
+        return new{T,S}(
             nodes,
             adj,
             sizes,
             const_values,
             forward_storage,
-            fill!(S(undef, N), 0.0),  # partials_storage,
-            fill!(S(undef, N), 0.0),  # reverse_storage,
+            fill!(S(undef, N), zero(T)),  # partials_storage,
+            fill!(S(undef, N), zero(T)),  # reverse_storage,
             partials_storage_ϵ,
             linearity,
         )

@@ -945,9 +945,9 @@ function _extract_reverse_pass(
     f::_FunctionStorage,
 ) where {T}
     for i in f.dependent_subexpressions
-        d.subexpression_reverse_values[i] = 0.0
+        d.subexpression_reverse_values[i] = zero(T)
     end
-    _extract_reverse_pass_inner(g, f, d.subexpression_reverse_values, 1.0)
+    _extract_reverse_pass_inner(g, f, d.subexpression_reverse_values, one(T))
     for i in length(f.dependent_subexpressions):-1:1
         k = f.dependent_subexpressions[i]
         _extract_reverse_pass_inner(

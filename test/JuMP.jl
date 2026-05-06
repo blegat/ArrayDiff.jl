@@ -164,8 +164,8 @@ function test_parse_moi()
     return
 end
 
-function _eval(model, func, x)
-    mode = ArrayDiff.Mode()
+function _eval(model::JuMP.GenericModel{T}, func, x) where {T}
+    mode = ArrayDiff.Mode{Vector{T}}()
     ad = ArrayDiff.model(mode)
     MOI.Nonlinear.set_objective(ad, JuMP.moi_function(func))
     evaluator = MOI.Nonlinear.Evaluator(
@@ -176,7 +176,7 @@ function _eval(model, func, x)
     MOI.initialize(evaluator, [:Grad])
     val = MOI.eval_objective(evaluator, x)
     g = zero(x)
-    MOI.eval_objective_gradient(evaluator, g, Float64.(collect(1:8)))
+    MOI.eval_objective_gradient(evaluator, g, T.(collect(1:8)))
     MOI.Nonlinear.set_objective(ad, nothing)
     @test isnothing(ad.objective)
     return val, g
@@ -188,18 +188,20 @@ function _test_neural(
     plus::Bool,
     wrap::Bool,
     swap::Bool,
+    T::Type,
 )
     n = 2
-    X = [1.0 0.5; 0.3 0.8]
-    target = [0.5 0.2; 0.1 0.7]
+    X = T[1.0 0.5; 0.3 0.8]
+    target = T[0.5 0.2; 0.1 0.7]
     if wrap
-        X = ArrayDiff.MatrixExpr(:+, Any[X], size(X), false)
-        target = ArrayDiff.MatrixExpr(:+, Any[target], size(target), false)
+        ME = ArrayDiff.GenericMatrixExpr{JuMP.GenericVariableRef{T}}
+        X = ME(:+, Any[X], size(X), false)
+        target = ME(:+, Any[target], size(target), false)
     end
     if plus
         target = -target
     end
-    model = Model()
+    model = GenericModel{T}()
     @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
     @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
     # Use distinct starting values to break symmetry
@@ -238,8 +240,8 @@ function _test_neural(
     else
         loss = sum(E .^ 2)
     end
-    W1_val = [0.3 -0.2; 0.1 0.4]
-    W2_val = [-0.1 0.5; 0.2 -0.3]
+    W1_val = T[0.3 -0.2; 0.1 0.4]
+    W2_val = T[-0.1 0.5; 0.2 -0.3]
     obj, g = _eval(model, loss, [vec(W1_val); vec(W2_val)])
     # Reference computed from the same hand-written forward/reverse formulas
     # as `perf/cuda_vs_pytorch.jl::forward_pass`/`reverse_diff`, adapted to
@@ -247,15 +249,15 @@ function _test_neural(
     # over both `W1` and `W2`). `_eval` evaluates the objective at `xstart`
     # and the gradient at `x = [1, ..., 8]`, so we need the references at the
     # corresponding inputs.
-    X_const = [1.0 0.5; 0.3 0.8]
-    target_const = [0.5 0.2; 0.1 0.7]
+    X_const = T[1.0 0.5; 0.3 0.8]
+    target_const = T[0.5 0.2; 0.1 0.7]
     obj_val = _ref_objective(W1_val, W2_val, X_const, target_const)
     if with_norm
         obj_val = sqrt(obj_val)
     end
     @test obj ≈ obj_val
-    W1_at_grad = reshape([1.0, 2.0, 3.0, 4.0], 2, 2)
-    W2_at_grad = reshape([5.0, 6.0, 7.0, 8.0], 2, 2)
+    W1_at_grad = reshape(T[1.0, 2.0, 3.0, 4.0], 2, 2)
+    W2_at_grad = reshape(T[5.0, 6.0, 7.0, 8.0], 2, 2)
     grad_sumsq = _ref_gradient(W1_at_grad, W2_at_grad, X_const, target_const)
     if with_norm
         # `d/dx ‖E‖₂ = (1/(2‖E‖₂)) · d/dx ‖E‖₂² = grad_sumsq / (2 sqrt(sumsq))`,
@@ -299,7 +301,9 @@ function test_neural()
             @testset "$(plus ? "+" : "-")" for plus in bin
                 @testset "$(wrap ? "wrap" : "nowrap")" for wrap in bin
                     @testset "$(swap ? "swap" : "noswap")" for swap in bin
-                        _test_neural(with_norm, broadcast, plus, wrap, swap)
+                        @testset "$T" for T in [Float64, Float32]
+                            _test_neural(with_norm, broadcast, plus, wrap, swap, T)
+                        end
                     end
                 end
             end

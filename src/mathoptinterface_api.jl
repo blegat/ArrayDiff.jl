@@ -20,9 +20,9 @@ function MOI.features_available(d::NLPEvaluator)
 end
 
 function MOI.initialize(
-    d::NLPEvaluator{S},
+    d::NLPEvaluator{T,S},
     requested_features::Vector{Symbol},
-) where {S<:AbstractVector{Float64}}
+) where {T<:Real,S<:AbstractVector{T}}
     # Check that we support the features requested by the user.
     available_features = MOI.features_available(d)
     for feature in requested_features
@@ -40,10 +40,10 @@ function MOI.initialize(
     end
     d.objective = nothing
     d.residual = nothing
-    d.user_output_buffer = zeros(largest_user_input_dimension)
-    d.jac_storage = zeros(max(N, largest_user_input_dimension))
-    d.constraints = _FunctionStorage{S}[]
-    d.last_x = fill(NaN, N)
+    d.user_output_buffer = zeros(T, largest_user_input_dimension)
+    d.jac_storage = zeros(T, max(N, largest_user_input_dimension))
+    d.constraints = _FunctionStorage{T,S}[]
+    d.last_x = fill(T(NaN), N)
     d.want_hess = :Hess in requested_features
     want_hess_storage = (:HessVec in requested_features) || d.want_hess
     coloring_storage = Coloring.IndexedSet(N)
@@ -67,9 +67,9 @@ function MOI.initialize(
     subexpression_edgelist =
         Vector{Set{Tuple{Int,Int}}}(undef, num_subexpressions)
     d.subexpressions =
-        Vector{_SubexpressionStorage{S}}(undef, num_subexpressions)
-    d.subexpression_forward_values = zeros(num_subexpressions)
-    d.subexpression_reverse_values = zeros(num_subexpressions)
+        Vector{_SubexpressionStorage{T,S}}(undef, num_subexpressions)
+    d.subexpression_forward_values = zeros(T, num_subexpressions)
+    d.subexpression_reverse_values = zeros(T, num_subexpressions)
     for k in d.subexpression_order
         # Only load expressions which actually are used
         d.subexpression_forward_values[k] = NaN
@@ -145,6 +145,7 @@ function MOI.initialize(
             moi_index_to_consecutive_index,
             shared_partials_storage_ϵ,
             d,
+            S,
         )
         residual = _FunctionStorage(
             subexpr,
@@ -235,7 +236,7 @@ function MOI.eval_objective_gradient(d::NLPEvaluator, g, x)
         error("No nonlinear objective.")
     end
     _reverse_mode(d, x)
-    fill!(g, 0.0)
+    fill!(g, zero(eltype(g)))
     _extract_reverse_pass(g, d, something(d.objective))
     return
 end
