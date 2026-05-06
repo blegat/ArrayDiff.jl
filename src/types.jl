@@ -27,8 +27,7 @@ struct Expression{T}
     nodes::Vector{Node}
     values::Vector{T}
     block_shapes::Dict{Int,Vector{Int}}
-    Expression{T}() where {T} =
-        new{T}(Node[], T[], Dict{Int,Vector{Int}}())
+    Expression{T}() where {T} = new{T}(Node[], T[], Dict{Int,Vector{Int}}())
 end
 
 function Base.:(==)(x::Expression, y::Expression)

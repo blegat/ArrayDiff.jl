@@ -133,7 +133,7 @@ function _forward_eval(
             len = length(tape_range)
             copyto!(
                 view(f.forward_storage, tape_range),
-                view(x, node.index:(node.index + len - 1)),
+                view(x, node.index:(node.index+len-1)),
             )
         elseif node.type == NODE_VALUE_BLOCK
             # Pre-loaded into `forward_storage` at construction.
@@ -973,9 +973,8 @@ function _extract_reverse_pass_inner(
             # accumulate into the matching slice of `output`.
             tape_range = _storage_range(f.sizes, k)
             len = length(tape_range)
-            x_range = node.index:(node.index + len - 1)
-            cpu_buf =
-                convert(Vector{T}, view(f.reverse_storage, tape_range))
+            x_range = node.index:(node.index+len-1)
+            cpu_buf = convert(Vector{T}, view(f.reverse_storage, tape_range))
             view(output, x_range) .+= scale .* cpu_buf
         elseif node.type == NODE_VARIABLE
             # Per-leaf scalar — rare, so the per-leaf `cudaMemcpy` is fine.

@@ -261,10 +261,11 @@ function _compute_gradient_sparsity!(indices::Coloring.IndexedSet, f)
             push!(indices, node.index)
         elseif node.type == NODE_VARIABLE_BLOCK
             len = _length(f.sizes, k)
-            for i in 0:(len - 1)
+            for i in 0:(len-1)
                 push!(indices, node.index + i)
             end
-        elseif node.type == NODE_MOI_VARIABLE || node.type == NODE_MOI_VARIABLE_BLOCK
+        elseif node.type == NODE_MOI_VARIABLE ||
+               node.type == NODE_MOI_VARIABLE_BLOCK
             error(
                 "Internal error: Invalid to compute sparsity if $(node.type) " *
                 "nodes are present.",
