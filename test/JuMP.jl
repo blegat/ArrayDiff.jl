@@ -494,16 +494,10 @@ end
 
 # Plug JuMP variable matrices into the Transformer's `MLP` building block
 # (`gelu(x * c_fc) * c_proj`) and confirm the forward+reverse pass runs
-# end-to-end through the ArrayDiff evaluator.
-#
-# `eval_objective` / `eval_objective_gradient` are currently `@test_broken`
-# because `gelu` contains scalar-on-the-left broadcasts (`0.5 * x`,
-# `0.044715 .* x.^3`, `1 .+ tanh.(...)`) and ArrayDiff stores a leading
-# `Number` argument as a `(1, 1)` constant block. The broadcast against a
-# matrix-shaped `MatrixExpr` then dies with `BoundsError`/`AssertionError`
-# at tape evaluation time. Tape construction (parsing + `MOI.initialize`)
-# succeeds, so the `@test`s above the evaluation calls cover what does
-# work today.
+# end-to-end through the ArrayDiff evaluator. `gelu` exercises every
+# scalar-broadcast pattern that ArrayDiff supports for `MatrixExpr`:
+# `Number * matrix` scaling, `Number .* matrix`, and `Number .+ matrix`.
+# We finite-difference the analytic gradient as a sanity check.
 function test_transformer_mlp_gradient()
     d_emb, d_hidden, seq = 2, 3, 2
     model = Model()
@@ -532,14 +526,26 @@ function test_transformer_mlp_gradient()
     nvar = JuMP.num_variables(model)
     @test nvar == 2 * d_emb * d_hidden
     x_pt = randn(nvar)
+    val = MOI.eval_objective(evaluator, x_pt)
+    @test isfinite(val)
+    @test val >= 0
     g = zeros(nvar)
-    @test_broken try
-        MOI.eval_objective(evaluator, x_pt)
-        MOI.eval_objective_gradient(evaluator, g, x_pt)
-        true
-    catch
-        false
+    MOI.eval_objective_gradient(evaluator, g, x_pt)
+    @test all(isfinite, g)
+    @test !all(iszero, g)
+    # Central finite differences on the AD-built objective.
+    h = 1e-6
+    g_fd = zeros(nvar)
+    for i in 1:nvar
+        xp = copy(x_pt)
+        xp[i] += h
+        xm = copy(x_pt)
+        xm[i] -= h
+        g_fd[i] =
+            (MOI.eval_objective(evaluator, xp) -
+             MOI.eval_objective(evaluator, xm)) / (2h)
     end
+    @test isapprox(g, g_fd; rtol = 1e-4)
     return
 end
 
