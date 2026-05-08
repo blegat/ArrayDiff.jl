@@ -29,10 +29,7 @@ function compare(T, h, d, n; gpu)
         "PyTorch compiled",
         PyTorchNeural.neural(T, h, d, n; eager = false, gpu),
     )
-    _display(
-        "ArrayDiff",
-        ArrayDiffNeural.neural(T, h, d, n; gpu),
-    )
+    _display("ArrayDiff", ArrayDiffNeural.neural(T, h, d, n; gpu))
     return
 end
 
