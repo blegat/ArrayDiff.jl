@@ -345,6 +345,64 @@ function test_moi_function()
     return
 end
 
+# Build the non-broadcasted `:*` size-inference cases the HEAD commit fixed.
+# JuMP's surface syntax always lowers `c * W` to a broadcasted node, so to
+# exercise the non-broadcasted code path we build the `MatrixExpr` directly
+# (same pattern `_test_neural` uses for `wrap`). Before the fix, scalar-first
+# returned `(1, 1)` and scalar-last produced an out-of-range `_size` read; the
+# fix copies the matrix child's full shape in both orderings.
+#
+# The runtime forward/reverse pass for non-broadcasted scalar*matrix isn't
+# wired up yet, so this test only asserts the inferred shape — that's exactly
+# what the commit changed.
+function test_size_inference_scalar_times_matrix()
+    mode = ArrayDiff.Mode()
+    ME = ArrayDiff.GenericMatrixExpr{VariableRef}
+    @testset "$(rows)x$(cols)" for (rows, cols) in [(2, 3), (3, 2), (2, 2)]
+        model = Model()
+        @variable(
+            model,
+            W[1:rows, 1:cols],
+            container = ArrayDiff.ArrayOfVariables,
+        )
+        @testset "$(name)" for (name, expr) in [
+            ("scalar * M", ME(:*, Any[2.5, W], (rows, cols), false)),
+            ("M * scalar", ME(:*, Any[W, 2.5], (rows, cols), false)),
+        ]
+            ad = ArrayDiff.model(mode)
+            MOI.Nonlinear.set_objective(
+                ad,
+                JuMP.moi_function(LinearAlgebra.norm(expr)),
+            )
+            evaluator = MOI.Nonlinear.Evaluator(
+                ad,
+                mode,
+                JuMP.index.(JuMP.all_variables(model)),
+            )
+            MOI.initialize(evaluator, [:Grad])
+            sizes = evaluator.backend.objective.expr.sizes
+            # Tape: norm (k=1, scalar), * (k=2, matrix), then the scalar leaf
+            # and the matrix leaf in some order. The * node must inherit the
+            # (rows, cols) shape from the matrix child.
+            @test sizes.ndims[1] == 0
+            @test sizes.ndims[2] == 2
+            mul_off = sizes.size_offset[2]
+            @test sizes.size[mul_off+1] == rows
+            @test sizes.size[mul_off+2] == cols
+            # Storage for the * node should be `rows * cols`, not `1` (which
+            # is what the old `(1, 1)` stub produced).
+            @test sizes.storage_offset[3] - sizes.storage_offset[2] ==
+                  rows * cols
+            # Exactly one of the two children is the scalar leaf.
+            @test sort(sizes.ndims[3:4]) == [0, 2]
+            # Two ndims=2 nodes (the * and the matrix leaf) each contribute
+            # a (rows, cols) entry to the flat size vector.
+            @test sort(sizes.size) == sort([rows, cols, rows, cols])
+        end
+    end
+    return
+end
+
 end  # module
 
 TestJuMP.runtests()
