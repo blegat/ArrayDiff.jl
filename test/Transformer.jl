@@ -1,4 +1,5 @@
 # A minimal GPT-style Transformer implementation in pure Julia
+# Inpired from https://github.com/karpathy/nanogpt
 
 using Random
 using LinearAlgebra
