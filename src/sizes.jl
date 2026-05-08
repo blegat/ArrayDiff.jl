@@ -309,8 +309,17 @@ function _infer_sizes(
                     return !iszero(sizes.ndims[children_arr[i]])
                 end
                 if !isnothing(first_matrix)
-                    if sizes.ndims[children_arr[first(children_indices)]] == 0
-                        _add_size!(sizes, k, (1, 1))
+                    first_is_scalar =
+                        sizes.ndims[children_arr[first(children_indices)]] == 0
+                    last_is_scalar =
+                        sizes.ndims[children_arr[last(children_indices)]] == 0
+                    if first_is_scalar || last_is_scalar
+                        # `scalar * matrix` (or `matrix * scalar`) is
+                        # element-wise scaling, not matmul: result inherits
+                        # the matrix's shape.
+                        ix_mat =
+                            children_arr[children_indices[first_matrix]]
+                        _copy_size!(sizes, k, ix_mat)
                         continue
                     else
                         _add_size!(
