@@ -10,13 +10,6 @@ const Nonlinear = MOI.Nonlinear
 import ArrayDiff
 const Coloring = ArrayDiff.Coloring
 
-# Wrapped in a typed function so `@allocated` doesn't capture the
-# return-value boxing that happens when calling `eval_objective`
-# directly in tests where the local variable holding the input has been
-# reassigned to a different type (and is therefore `Any`-typed at the
-# call site).
-_obj(ev, x) = MOI.eval_objective(ev, x)
-
 function runtests()
     for name in names(@__MODULE__; all = true)
         if startswith("$(name)", "test_")
@@ -39,13 +32,13 @@ function test_objective_dot_univariate()
     @test sizes.size_offset == [0, 1, 0, 0, 0]
     @test sizes.size == [1, 1]
     @test sizes.storage_offset == [0, 1, 2, 3, 4, 5]
-    x = [1.2]
-    @test MOI.eval_objective(evaluator, x) == x[1]^2
-    @test 0 == @allocated _obj(evaluator, x)
+    xv = [1.2]
+    @test MOI.eval_objective(evaluator, xv) == xv[1]^2
+    @test 0 == @allocated MOI.eval_objective(evaluator, xv)
     g = ones(1)
-    MOI.eval_objective_gradient(evaluator, g, x)
-    @test g[1] == 2x[1]
-    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, x)
+    MOI.eval_objective_gradient(evaluator, g, xv)
+    @test g[1] == 2xv[1]
+    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, xv)
     return
 end
 
@@ -60,13 +53,13 @@ function test_objective_dot_univariate_and_scalar_mult()
     @test sizes.size_offset == [0, 0, 0, 1, 0, 0, 0]
     @test sizes.size == [1, 1]
     @test sizes.storage_offset == [0, 1, 2, 3, 4, 5, 6, 7]
-    x = [1.2]
-    @test MOI.eval_objective(evaluator, x) == 2*x[1]^2
-    @test 0 == @allocated _obj(evaluator, x)
+    xv = [1.2]
+    @test MOI.eval_objective(evaluator, xv) == 2*xv[1]^2
+    @test 0 == @allocated MOI.eval_objective(evaluator, xv)
     g = ones(1)
-    MOI.eval_objective_gradient(evaluator, g, x)
-    @test g[1] == 4x[1]
-    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, x)
+    MOI.eval_objective_gradient(evaluator, g, xv)
+    @test g[1] == 4xv[1]
+    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, xv)
     return
 end
 
@@ -86,13 +79,13 @@ function test_objective_dot_bivariate()
     @test sizes.size == [2, 2, 2, 2, 2, 2, 2]
     @test sizes.storage_offset ==
           [0, 1, 3, 5, 6, 7, 9, 10, 11, 13, 15, 17, 18, 19, 21, 22, 23]
-    x = [5.0, -1.0]
-    @test MOI.eval_objective(evaluator, x) ≈ 25
-    @test 0 == @allocated _obj(evaluator, x)
+    xv = [5.0, -1.0]
+    @test MOI.eval_objective(evaluator, xv) ≈ 25
+    @test 0 == @allocated MOI.eval_objective(evaluator, xv)
     g = ones(2)
-    MOI.eval_objective_gradient(evaluator, g, x)
-    @test g == 2(x - [1, 2])
-    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, x)
+    MOI.eval_objective_gradient(evaluator, g, xv)
+    @test g == 2(xv - [1, 2])
+    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, xv)
     return
 end
 
@@ -116,7 +109,7 @@ function test_objective_hcat_scalars()
     x4 = 4.0
     x = [x1, x2, x3, x4]
     @test MOI.eval_objective(evaluator, x) == 14.0
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == [2.0, 1.0, 4.0, 3.0]
@@ -147,7 +140,7 @@ function test_objective_hcat_vectors()
     x4 = 4.0
     x = [x1, x2, x3, x4]
     @test MOI.eval_objective(evaluator, x) == 14.0
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == [2.0, 1.0, 4.0, 3.0]
@@ -169,13 +162,13 @@ function test_objective_dot_bivariate_on_rows()
     @test sizes.size == [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2]
     @test sizes.storage_offset ==
           [0, 1, 3, 5, 6, 7, 9, 10, 11, 13, 15, 17, 18, 19, 21, 22, 23]
-    x = [5.0, -1.0]
-    @test MOI.eval_objective(evaluator, x) ≈ 25
-    @test 0 == @allocated _obj(evaluator, x)
+    xv = [5.0, -1.0]
+    @test MOI.eval_objective(evaluator, xv) ≈ 25
+    @test 0 == @allocated MOI.eval_objective(evaluator, xv)
     g = ones(2)
-    MOI.eval_objective_gradient(evaluator, g, x)
-    @test g == 2(x - [1, 2])
-    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, x)
+    MOI.eval_objective_gradient(evaluator, g, xv)
+    @test g == 2(xv - [1, 2])
+    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, xv)
     return
 end
 
@@ -190,13 +183,13 @@ function test_objective_norm_univariate()
     @test sizes.size_offset == [0, 0, 0]
     @test sizes.size == [1]
     @test sizes.storage_offset == [0, 1, 2, 3]
-    x = [1.2]
-    @test MOI.eval_objective(evaluator, x) == abs(x[1])
-    @test 0 == @allocated _obj(evaluator, x)
+    xv = [1.2]
+    @test MOI.eval_objective(evaluator, xv) == abs(xv[1])
+    @test 0 == @allocated MOI.eval_objective(evaluator, xv)
     g = ones(1)
-    MOI.eval_objective_gradient(evaluator, g, x)
-    @test g[1] == sign(x[1])
-    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, x)
+    MOI.eval_objective_gradient(evaluator, g, xv)
+    @test g[1] == sign(xv[1])
+    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, xv)
     return
 end
 
@@ -212,20 +205,20 @@ function test_objective_norm_bivariate()
     @test sizes.size_offset == [0, 0, 0, 0]
     @test sizes.size == [2]
     @test sizes.storage_offset == [0, 1, 3, 4, 5]
-    x = [3.0, 4.0]
-    @test MOI.eval_objective(evaluator, x) == 5.0
-    @test 0 == @allocated _obj(evaluator, x)
+    xv = [3.0, 4.0]
+    @test MOI.eval_objective(evaluator, xv) == 5.0
+    @test 0 == @allocated MOI.eval_objective(evaluator, xv)
     g = ones(2)
-    MOI.eval_objective_gradient(evaluator, g, x)
-    @test g == x / 5.0
-    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, x)
-    y = [0.0, 0.0]
-    @test MOI.eval_objective(evaluator, y) == 0.0
-    @test 0 == @allocated _obj(evaluator, y)
+    MOI.eval_objective_gradient(evaluator, g, xv)
+    @test g == xv / 5.0
+    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, xv)
+    yv = [0.0, 0.0]
+    @test MOI.eval_objective(evaluator, yv) == 0.0
+    @test 0 == @allocated MOI.eval_objective(evaluator, yv)
     g = ones(2)
-    MOI.eval_objective_gradient(evaluator, g, y)
+    MOI.eval_objective_gradient(evaluator, g, yv)
     @test g == [0.0, 0.0]
-    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, y)
+    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, yv)
     return
 end
 
@@ -245,7 +238,7 @@ function test_objective_norm_of_row_vector()
     x2 = 2.0
     x = [x1, x2]
     @test MOI.eval_objective(evaluator, x) == sqrt(5.0)
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(2)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == [1.0 / sqrt(5.0), 2.0 / sqrt(5.0)]
@@ -273,7 +266,7 @@ function test_objective_norm_of_vcat_vector()
     x4 = 4.0
     x = [x1, x2, x3, x4]
     @test MOI.eval_objective(evaluator, x) == sqrt(10.0)
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == [1.0 / sqrt(10.0), 0.0, 3.0 / sqrt(10.0), 0.0]
@@ -301,7 +294,7 @@ function test_objective_norm_of_vcat_matrix()
     x4 = 4.0
     x = [x1, x2, x3, x4]
     @test MOI.eval_objective(evaluator, x) == sqrt(30.0)
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == [
@@ -330,7 +323,7 @@ function test_objective_norm_of_row()
     x2 = 2.0
     x = [x1, x2]
     @test MOI.eval_objective(evaluator, x) == sqrt(5.0)
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(2)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == [1.0 / sqrt(5.0), 2.0 / sqrt(5.0)]
@@ -358,7 +351,7 @@ function test_objective_norm_of_matrix()
     x4 = 4.0
     x = [x1, x2, x3, x4]
     @test MOI.eval_objective(evaluator, x) == sqrt(30.0)
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == [
@@ -393,7 +386,7 @@ function test_objective_norm_of_matrix_with_sum()
     x4 = 4.0
     x = [x1, x2, x3, x4]
     @test MOI.eval_objective(evaluator, x) == sqrt(14.0)
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == [0.0, 1.0 / sqrt(14.0), 2.0 / sqrt(14.0), 3.0 / sqrt(14.0)]
@@ -423,7 +416,7 @@ function test_objective_norm_of_product_of_matrices()
     x4 = 4.0
     x = [x1, x2, x3, x4]
     @test MOI.eval_objective(evaluator, x) == sqrt(30.0)
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == [
@@ -536,7 +529,7 @@ function test_objective_norm_of_product_of_matrices_with_sum()
     x4 = 4.0
     x = [x1, x2, x3, x4]
     @test MOI.eval_objective(evaluator, x) == sqrt(54.0)
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == [
@@ -570,7 +563,7 @@ function test_objective_norm_of_mtx_vector_product()
     x4 = 4.0
     x = [x1, x2, x3, x4]
     @test MOI.eval_objective(evaluator, x) == sqrt(58.0)
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == [
@@ -594,13 +587,13 @@ function test_objective_univariate_operator()
     @test sizes.size_offset == [0, 0]
     @test sizes.size == []
     @test sizes.storage_offset == [0, 1, 2]
-    x = [pi / 4]
-    @test MOI.eval_objective(evaluator, x) ≈ sqrt(2) / 2
-    @test 0 == @allocated _obj(evaluator, x)
+    xv = [pi / 4]
+    @test MOI.eval_objective(evaluator, xv) ≈ sqrt(2) / 2
+    @test 0 == @allocated MOI.eval_objective(evaluator, xv)
     g = ones(1)
-    MOI.eval_objective_gradient(evaluator, g, x)
+    MOI.eval_objective_gradient(evaluator, g, xv)
     @test g[1] ≈ cos(pi / 4)
-    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, x)
+    @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, xv)
     return
 end
 
@@ -624,7 +617,7 @@ function test_objective_broadcasted_product()
     x4 = 4.0
     x = [x1, x2, x3, x4]
     @test MOI.eval_objective(evaluator, x) == sqrt(3.0^2 + 8.0^2)
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == [9.0, 32.0, 3.0, 16.0] / sqrt(3.0^2 + 8.0^2)
@@ -658,7 +651,7 @@ function test_objective_broadcasted_matrix_product()
     x = [x1, x2, x3, x4]
     @test MOI.eval_objective(evaluator, x) ==
           sqrt(1.0^2 + 4.0^2 + 9.0^2 + 16.0^2)
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == [
@@ -687,7 +680,7 @@ function test_objective_broadcasted_tanh()
     x2 = 2.0
     x = [x1, x2]
     @test MOI.eval_objective(evaluator, x) == sqrt(tanh(1.0)^2 + tanh(2.0)^2)
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(2)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g ≈ [
@@ -709,7 +702,7 @@ function test_objective_broadcasted_pow_vector_1()
     x2v = -4.0
     x = [x1v, x2v]
     @test MOI.eval_objective(evaluator, x) == x1v + x2v
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = zeros(2)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == ones(2)
@@ -728,7 +721,7 @@ function test_objective_broadcasted_pow_vector_2()
     x2v = -4.0
     x = [x1v, x2v]
     @test MOI.eval_objective(evaluator, x) == x1v^2 + x2v^2
-    @test 0 == @allocated _obj(evaluator, x)
+    @test 0 == @allocated MOI.eval_objective(evaluator, x)
     g = ones(2)
     MOI.eval_objective_gradient(evaluator, g, x)
     @test g == [2 * x1v, 2 * x2v]
@@ -751,7 +744,7 @@ function test_objective_broadcasted_pow_matrix_with_constant()
     xs = [1.0, 2.0, 3.0, 4.0]
     @test MOI.eval_objective(evaluator, xs) ==
           (1-1)^2 + (2-1)^2 + (3-1)^2 + (4-1)^2
-    @test 0 == @allocated _obj(evaluator, xs)
+    @test 0 == @allocated MOI.eval_objective(evaluator, xs)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, xs)
     @test g == [2 * (1 - 1), 2 * (2 - 1), 2 * (3 - 1), 2 * (4 - 1)]
@@ -768,7 +761,7 @@ function test_objective_broadcasted_pow_cubed()
     MOI.initialize(evaluator, [:Grad])
     xs = [2.0, 3.0]
     @test MOI.eval_objective(evaluator, xs) ≈ 2.0^3 + 3.0^3
-    @test 0 == @allocated _obj(evaluator, xs)
+    @test 0 == @allocated MOI.eval_objective(evaluator, xs)
     g = ones(2)
     MOI.eval_objective_gradient(evaluator, g, xs)
     @test g ≈ [3 * 2.0^2, 3 * 3.0^2]
@@ -855,7 +848,7 @@ function test_model_typed_float32_evaluator_runs()
     MOI.initialize(evaluator, [:Grad])
     xv = [1.5]
     @test MOI.eval_objective(evaluator, xv) ≈ 2 * xv[1]^2 + 1.0
-    @test 0 == @allocated _obj(evaluator, xv)
+    @test 0 == @allocated MOI.eval_objective(evaluator, xv)
     g = ones(1)
     MOI.eval_objective_gradient(evaluator, g, xv)
     @test g[1] ≈ 4 * xv[1]
