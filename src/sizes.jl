@@ -317,8 +317,7 @@ function _infer_sizes(
                         # `scalar * matrix` (or `matrix * scalar`) is
                         # element-wise scaling, not matmul: result inherits
                         # the matrix's shape.
-                        ix_mat =
-                            children_arr[children_indices[first_matrix]]
+                        ix_mat = children_arr[children_indices[first_matrix]]
                         _copy_size!(sizes, k, ix_mat)
                         continue
                     else
