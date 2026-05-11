@@ -164,7 +164,24 @@ function test_parse_moi()
     return
 end
 
-function _eval(model::JuMP.GenericModel{T}, func, x) where {T}
+# Wrapped in typed functions so `@allocated` doesn't capture the
+# return-value boxing that happens when calling `eval_objective`
+# directly from the macro's untyped scope (each `MOI.eval_objective`
+# returns a `Float64` which then escapes into `Any`-typed scope).
+_obj(ev, x) = MOI.eval_objective(ev, x)
+
+function _grad!(ev, g, x)
+    MOI.eval_objective_gradient(ev, g, x)
+    return nothing
+end
+
+function _eval(
+    model::JuMP.GenericModel{T},
+    func,
+    x,
+    obj_val,
+    grad_val,
+) where {T}
     mode = ArrayDiff.Mode{Vector{T}}()
     ad = ArrayDiff.model(mode)
     MOI.Nonlinear.set_objective(ad, JuMP.moi_function(func))
@@ -174,12 +191,20 @@ function _eval(model::JuMP.GenericModel{T}, func, x) where {T}
         JuMP.index.(JuMP.all_variables(model)),
     )
     MOI.initialize(evaluator, [:Grad])
-    val = MOI.eval_objective(evaluator, x)
+    x_grad = T.(collect(1:8))
+    @test MOI.eval_objective(evaluator, x) ≈ obj_val
+    if VERSION >= v"1.12"
+        @test 0 == @allocated _obj(evaluator, x)
+    end
     g = zero(x)
-    MOI.eval_objective_gradient(evaluator, g, T.(collect(1:8)))
+    MOI.eval_objective_gradient(evaluator, g, x_grad)
+    @test g ≈ grad_val
+    if VERSION >= v"1.12"
+        @test 0 == @allocated _grad!(evaluator, g, x_grad)
+    end
     MOI.Nonlinear.set_objective(ad, nothing)
     @test isnothing(ad.objective)
-    return val, g
+    return
 end
 
 function _test_neural(
@@ -242,7 +267,6 @@ function _test_neural(
     end
     W1_val = T[0.3 -0.2; 0.1 0.4]
     W2_val = T[-0.1 0.5; 0.2 -0.3]
-    obj, g = _eval(model, loss, [vec(W1_val); vec(W2_val)])
     # Reference computed from the same hand-written forward/reverse formulas
     # as `perf/cuda_vs_pytorch.jl::forward_pass`/`reverse_diff`, adapted to
     # this test's loss `sum((Y - target).^2)` (no `/ n` scaling, full gradient
@@ -255,7 +279,6 @@ function _test_neural(
     if with_norm
         obj_val = sqrt(obj_val)
     end
-    @test obj ≈ obj_val
     W1_at_grad = reshape(T[1.0, 2.0, 3.0, 4.0], 2, 2)
     W2_at_grad = reshape(T[5.0, 6.0, 7.0, 8.0], 2, 2)
     grad_sumsq = _ref_gradient(W1_at_grad, W2_at_grad, X_const, target_const)
@@ -264,10 +287,11 @@ function _test_neural(
         # taken at the gradient evaluation point.
         norm_at_grad =
             sqrt(_ref_objective(W1_at_grad, W2_at_grad, X_const, target_const))
-        @test g ≈ grad_sumsq ./ (2 * norm_at_grad)
+        grad_val = grad_sumsq ./ (2 * norm_at_grad)
     else
-        @test g ≈ grad_sumsq
+        grad_val = grad_sumsq
     end
+    _eval(model, loss, [vec(W1_val); vec(W2_val)], obj_val, grad_val)
     return
 end
 
@@ -316,61 +340,6 @@ function test_neural()
             end
         end
     end
-end
-
-# Builds the same `sum((W2*tanh.(W1*X) - target)^2)` MLP that `test_neural`
-# exercises and checks that, after warmup, both `eval_objective` and
-# `eval_objective_gradient` are allocation-free on the CPU `Vector{Float64}`
-# tape — including when the input `x` has changed since the last call (which
-# is the path that actually re-runs forward+reverse, not the
-# `last_x == x` short-circuit).
-function test_neural_allocations()
-    if VERSION < v"1.12"
-        return
-    end
-    n = 2
-    X = [1.0 0.5; 0.3 0.8]
-    target = [0.5 0.2; 0.1 0.7]
-    model = Model()
-    @variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-    @variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-    Y = W2 * tanh.(W1 * X)
-    loss = sum((Y .- target) .^ 2)
-    mode = ArrayDiff.Mode()
-    ad = ArrayDiff.model(mode)
-    MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
-    evaluator = MOI.Nonlinear.Evaluator(
-        ad,
-        mode,
-        JuMP.index.(JuMP.all_variables(model)),
-    )
-    MOI.initialize(evaluator, [:Grad])
-    x1 = Float64.(collect(1:8))
-    x2 = Float64.(collect(2:9))
-    g = zeros(8)
-    # Wrapped in typed functions so `@allocated` doesn't capture the
-    # return-value boxing that happens when calling `eval_objective`
-    # directly from the macro's untyped scope (each `MOI.eval_objective`
-    # returns a `Float64` which then escapes into `Any`-typed scope).
-    _obj(ev, x) = MOI.eval_objective(ev, x)
-    function _grad!(ev, g, x)
-        MOI.eval_objective_gradient(ev, g, x)
-        return nothing
-    end
-    # Warmup: trigger JIT compilation for both `eval_objective` and
-    # `eval_objective_gradient`. Two distinct inputs so `_reverse_mode`'s
-    # `last_x == x` short-circuit doesn't elide the work on the second call.
-    _obj(evaluator, x1)
-    _obj(evaluator, x2)
-    _grad!(evaluator, g, x1)
-    _grad!(evaluator, g, x2)
-    # Now alternate: each measured call sees `last_x ≠ x`, so it actually
-    # runs the full forward + reverse passes through the block tape.
-    @test 0 == @allocated _obj(evaluator, x1)
-    @test 0 == @allocated _obj(evaluator, x2)
-    @test 0 == @allocated _grad!(evaluator, g, x1)
-    @test 0 == @allocated _grad!(evaluator, g, x2)
-    return
 end
 
 function test_moi_function()
