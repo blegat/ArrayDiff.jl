@@ -656,7 +656,8 @@ function test_objective_broadcasted_matrix_product()
     x3 = 3.0
     x4 = 4.0
     x = [x1, x2, x3, x4]
-    @test MOI.eval_objective(evaluator, x) == sqrt(1.0^2 + 4.0^2 + 9.0^2 + 16.0^2)
+    @test MOI.eval_objective(evaluator, x) ==
+          sqrt(1.0^2 + 4.0^2 + 9.0^2 + 16.0^2)
     @test 0 == @allocated _obj(evaluator, x)
     g = ones(4)
     MOI.eval_objective_gradient(evaluator, g, x)
@@ -886,18 +887,29 @@ function test_residual_with_subexpression()
     v_ones = [1.0, 1.0]
     ArrayDiff.eval_residual_jtprod!(evaluator, Jtv, x, v_ones)
     @test Jtv == [1.0, 1.0]
-    @test 0 == @allocated ArrayDiff.eval_residual_jtprod!(evaluator, Jtv, x, v_ones)
+    @test 0 ==
+          @allocated ArrayDiff.eval_residual_jtprod!(evaluator, Jtv, x, v_ones)
     Jv = zeros(2)
     v_e1 = [1.0, 0.0]
     ArrayDiff.eval_residual_jprod!(evaluator, Jv, x, v_e1)
     @test Jv == [5.0, -4.0]
     # `eval_residual_jprod!` is not allocation-free: it allocates `seed` and
     # `row` on every call (see `src/mathoptinterface_api.jl`).
-    @test_broken 0 == @allocated ArrayDiff.eval_residual_jprod!(evaluator, Jv, x, v_e1)
+    @test_broken 0 == @allocated ArrayDiff.eval_residual_jprod!(
+        evaluator,
+        Jv,
+        x,
+        v_e1,
+    )
     v_e2 = [0.0, 1.0]
     ArrayDiff.eval_residual_jprod!(evaluator, Jv, x, v_e2)
     @test Jv == [3.0, -2.0]
-    @test_broken 0 == @allocated ArrayDiff.eval_residual_jprod!(evaluator, Jv, x, v_e2)
+    @test_broken 0 == @allocated ArrayDiff.eval_residual_jprod!(
+        evaluator,
+        Jv,
+        x,
+        v_e2,
+    )
     return
 end
 
