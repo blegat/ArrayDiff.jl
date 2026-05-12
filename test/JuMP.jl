@@ -164,17 +164,6 @@ function test_parse_moi()
     return
 end
 
-# Wrapped in typed functions so `@allocated` doesn't capture the
-# return-value boxing that happens when calling `eval_objective`
-# directly from the macro's untyped scope (each `MOI.eval_objective`
-# returns a `Float64` which then escapes into `Any`-typed scope).
-_obj(ev, x) = MOI.eval_objective(ev, x)
-
-function _grad!(ev, g, x)
-    MOI.eval_objective_gradient(ev, g, x)
-    return nothing
-end
-
 function _eval(
     model::JuMP.GenericModel{T},
     func,
@@ -194,13 +183,13 @@ function _eval(
     x_grad = T.(collect(1:8))
     @test MOI.eval_objective(evaluator, x) ≈ obj_val
     if VERSION >= v"1.12"
-        @test 0 == @allocated _obj(evaluator, x)
+        @test 0 == @allocated MOI.eval_objective(evaluator, x)
     end
     g = zero(x)
     MOI.eval_objective_gradient(evaluator, g, x_grad)
     @test g ≈ grad_val
     if VERSION >= v"1.12"
-        @test 0 == @allocated _grad!(evaluator, g, x_grad)
+        @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, x_grad)
     end
     MOI.Nonlinear.set_objective(ad, nothing)
     @test isnothing(ad.objective)
