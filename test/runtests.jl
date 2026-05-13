@@ -8,5 +8,5 @@ if VERSION >= v"1.11"
     # Needs https://github.com/JuliaSmoothOptimizers/NLPModelsJuMP.jl/pull/229
     include("NLPModelsJuMP.jl")
     include("Optimisers.jl")
-    include("Optimisers_GPU.jl")
+    #include("Optimisers_GPU.jl")
 end
