@@ -1,5 +1,6 @@
 [deps]
 ArrayDiff = "c45fa1ca-6901-44ac-ae5b-5513a4852d50"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 Calculus = "49dc2e85-a5d0-5ad3-a950-438e2897f1b9"
 GenOpt = "f2c049d8-7489-4223-990c-4f1c121a4cde"
 JSOSolvers = "10dff2fc-5484-5881-a0e0-c90441020f8a"
