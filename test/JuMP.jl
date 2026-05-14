@@ -10,7 +10,7 @@ import MathOptInterface as MOI
 include(joinpath(@__DIR__, "Transformer.jl"))
 
 function runtests()
-    for name in names(@__MODULE__; all=true)
+    for name in names(@__MODULE__; all = true)
         if startswith("$(name)", "test_")
             @testset "$(name)" begin
                 getfield(@__MODULE__, name)()
@@ -542,8 +542,10 @@ function test_transformer_mlp_gradient()
         xm = copy(x_pt)
         xm[i] -= h
         g_fd[i] =
-            (MOI.eval_objective(evaluator, xp) -
-             MOI.eval_objective(evaluator, xm)) / (2h)
+            (
+                MOI.eval_objective(evaluator, xp) -
+                MOI.eval_objective(evaluator, xm)
+            ) / (2h)
     end
     @test isapprox(g, g_fd; rtol = 1e-4)
     return

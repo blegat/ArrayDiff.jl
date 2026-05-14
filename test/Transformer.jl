@@ -6,7 +6,7 @@ using LinearAlgebra
 
 # Helper functions
 function gelu(x)
-    return 0.5 * x .* (1 .+ tanh.(sqrt(2 / π) .* (x .+ 0.044715 .* x.^3)))
+    return 0.5 * x .* (1 .+ tanh.(sqrt(2 / π) .* (x .+ 0.044715 .* x .^ 3)))
 end
 
 # LayerNorm
@@ -16,7 +16,7 @@ struct LayerNorm{V}
     ϵ::Float64
 end
 
-function LayerNorm(dim::Int; ϵ=1e-5)
+function LayerNorm(dim::Int; ϵ = 1e-5)
     # We could use `ones(dim)` and thend
     # do `γ'` but then we'll need to implement
     # `adjoint` for `VectNode`
@@ -27,8 +27,8 @@ end
 
 function (ln::LayerNorm)(x)
     d = size(x, 2)
-    μ = sum(x, dims=2) / d
-    σ2 = sum((x .- μ).^2, dims=2) / d
+    μ = sum(x, dims = 2) / d
+    σ2 = sum((x .- μ) .^ 2, dims = 2) / d
     x̂ = (x .- μ) ./ sqrt.(σ2 .+ ln.ϵ)
     return ln.γ .* x̂ .+ ln.β
 end
@@ -60,7 +60,7 @@ function (attn::CausalSelfAttention)(x)
     # Causal mask
     mask = [i < j ? -Inf : Inf for i in 1:seq, j in 1:seq]
     attn_scores = min.(attn_scores, mask)
-    attn_weights = softmax(attn_scores, dims=2)
+    attn_weights = softmax(attn_scores, dims = 2)
     return attn_weights * v
 end
 
@@ -131,7 +131,14 @@ struct Transformer{V,M}
     d_emb::Int
 end
 
-function Transformer(; n_voc::Int, n_ctx::Int, n_layer::Int, n_head::Int, d_emb::Int, d_ff::Int)
+function Transformer(;
+    n_voc::Int,
+    n_ctx::Int,
+    n_layer::Int,
+    n_head::Int,
+    d_emb::Int,
+    d_ff::Int,
+)
     wte = randn(n_voc, d_emb) * 0.02
     wpe = randn(n_ctx, d_emb) * 0.02
     blocks = [Block(d_emb, n_head, d_ff) for _ in 1:n_layer]
@@ -151,8 +158,8 @@ function (m::Transformer)(idx)
 end
 
 # Softmax helper
-function softmax(x; dims=1)
-    x_max = maximum(x, dims=dims)
+function softmax(x; dims = 1)
+    x_max = maximum(x, dims = dims)
     ex = exp.(x .- x_max)
-    return ex ./ sum(ex, dims=dims)
+    return ex ./ sum(ex, dims = dims)
 end

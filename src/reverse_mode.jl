@@ -413,12 +413,7 @@ function _forward_eval(
                     if f.sizes.ndims[ix] == 0
                         s = _getscalar(f.forward_storage, f.sizes, ix)
                         out .+= s
-                        _setscalar!(
-                            f.partials_storage,
-                            one(T),
-                            f.sizes,
-                            ix,
-                        )
+                        _setscalar!(f.partials_storage, one(T), f.sizes, ix)
                     else
                         v = _view_linear(f.forward_storage, f.sizes, ix)
                         out .+= v
@@ -488,18 +483,12 @@ function _forward_eval(
                         # the scalar; the scalar child's reverse is handled
                         # by the broadcasted-`:*` reverse branch below
                         # (sum of `rev_parent .* v`).
-                        fill!(
-                            _view_linear(f.partials_storage, f.sizes, ix2),
-                            s,
-                        )
+                        fill!(_view_linear(f.partials_storage, f.sizes, ix2), s)
                     elseif ndims1 != 0 && ndims2 == 0
                         v = _view_linear(f.forward_storage, f.sizes, ix1)
                         s = _getscalar(f.forward_storage, f.sizes, ix2)
                         out .= v .* s
-                        fill!(
-                            _view_linear(f.partials_storage, f.sizes, ix1),
-                            s,
-                        )
+                        fill!(_view_linear(f.partials_storage, f.sizes, ix1), s)
                     else
                         # Both children are arrays of the same shape —
                         # original element-wise path.
@@ -715,14 +704,14 @@ function _reverse_eval(
                         idx2 = last(children_indices)
                         ix1 = children_arr[idx1]
                         ix2 = children_arr[idx2]
-                        rev_parent =
-                            _view_linear(f.reverse_storage, f.sizes, k)
+                        rev_parent = _view_linear(f.reverse_storage, f.sizes, k)
                         ndims1 = f.sizes.ndims[ix1]
                         ndims2 = f.sizes.ndims[ix2]
                         if ndims1 == 0 && ndims2 != 0
                             v2 = _view_linear(f.forward_storage, f.sizes, ix2)
                             s1 = _getscalar(f.forward_storage, f.sizes, ix1)
-                            rev_v2 = _view_linear(f.reverse_storage, f.sizes, ix2)
+                            rev_v2 =
+                                _view_linear(f.reverse_storage, f.sizes, ix2)
                             rev_v2 .= rev_parent .* s1
                             _setscalar!(
                                 f.reverse_storage,
@@ -733,7 +722,8 @@ function _reverse_eval(
                         elseif ndims1 != 0 && ndims2 == 0
                             v1 = _view_linear(f.forward_storage, f.sizes, ix1)
                             s2 = _getscalar(f.forward_storage, f.sizes, ix2)
-                            rev_v1 = _view_linear(f.reverse_storage, f.sizes, ix1)
+                            rev_v1 =
+                                _view_linear(f.reverse_storage, f.sizes, ix1)
                             rev_v1 .= rev_parent .* s2
                             _setscalar!(
                                 f.reverse_storage,
@@ -954,13 +944,14 @@ function _reverse_eval(
                 # and matrix children here so the generic
                 # diagonal-partial path below doesn't trip its
                 # `_size(k) == _size(ix)` assertion.
-                if (op == :+ || op == :-) && any(
-                    c -> f.sizes.ndims[children_arr[c]] == 0,
-                    children_indices,
-                ) && f.sizes.ndims[k] != 0
+                if (op == :+ || op == :-) &&
+                   any(
+                       c -> f.sizes.ndims[children_arr[c]] == 0,
+                       children_indices,
+                   ) &&
+                   f.sizes.ndims[k] != 0
                     Tr = eltype(f.reverse_storage)
-                    rev_parent =
-                        _view_linear(f.reverse_storage, f.sizes, k)
+                    rev_parent = _view_linear(f.reverse_storage, f.sizes, k)
                     for c_idx in children_indices
                         ix = children_arr[c_idx]
                         # `:-` flips the sign for the second operand, mirroring
@@ -989,13 +980,11 @@ function _reverse_eval(
                         idx2 = last(children_indices)
                         ix1 = children_arr[idx1]
                         ix2 = children_arr[idx2]
-                        rev_parent =
-                            _view_linear(f.reverse_storage, f.sizes, k)
+                        rev_parent = _view_linear(f.reverse_storage, f.sizes, k)
                         ndims1 = f.sizes.ndims[ix1]
                         ndims2 = f.sizes.ndims[ix2]
                         if ndims1 == 0 && ndims2 != 0
-                            v2 =
-                                _view_linear(f.forward_storage, f.sizes, ix2)
+                            v2 = _view_linear(f.forward_storage, f.sizes, ix2)
                             s1 = _getscalar(f.forward_storage, f.sizes, ix1)
                             rev_v2 =
                                 _view_linear(f.reverse_storage, f.sizes, ix2)
@@ -1008,8 +997,7 @@ function _reverse_eval(
                             )
                             continue
                         elseif ndims1 != 0 && ndims2 == 0
-                            v1 =
-                                _view_linear(f.forward_storage, f.sizes, ix1)
+                            v1 = _view_linear(f.forward_storage, f.sizes, ix1)
                             s2 = _getscalar(f.forward_storage, f.sizes, ix2)
                             rev_v1 =
                                 _view_linear(f.reverse_storage, f.sizes, ix1)
