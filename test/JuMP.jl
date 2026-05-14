@@ -490,6 +490,79 @@ function test_broadcast_scalar_matrix_size_inference()
     return
 end
 
+# Verify the forward value and the analytic gradient for every
+# `Number op MatrixVar` / `MatrixVar op Number` broadcast pattern that
+# JuMP's `Base.broadcasted` produces. The size inference test above pins
+# the shape inference; this test pins the eval (`out .= s op v`) and
+# reverse paths (`rev_s = ±sum(rev_parent)` or `dot(rev_parent, v)`).
+# Loss is `sum((c op W) .^ 2)` so the analytic gradient has a closed form.
+function test_broadcast_scalar_matrix_gradient()
+    c = 2.5
+    rows, cols = 2, 3
+    x = Float64.(collect(1:rows*cols))
+    W_val = reshape(x, rows, cols)
+    @testset "$(name)" for (name, build_loss, ref_val, ref_grad) in [
+        (
+            "c .+ W",
+            W -> sum((c .+ W) .^ 2),
+            sum((c .+ W_val) .^ 2),
+            2 .* (c .+ W_val),
+        ),
+        (
+            "W .+ c",
+            W -> sum((W .+ c) .^ 2),
+            sum((W_val .+ c) .^ 2),
+            2 .* (W_val .+ c),
+        ),
+        (
+            "c .- W",
+            W -> sum((c .- W) .^ 2),
+            sum((c .- W_val) .^ 2),
+            -2 .* (c .- W_val),
+        ),
+        (
+            "W .- c",
+            W -> sum((W .- c) .^ 2),
+            sum((W_val .- c) .^ 2),
+            2 .* (W_val .- c),
+        ),
+        (
+            "c .* W",
+            W -> sum((c .* W) .^ 2),
+            sum((c .* W_val) .^ 2),
+            2 * c^2 .* W_val,
+        ),
+        (
+            "W .* c",
+            W -> sum((W .* c) .^ 2),
+            sum((W_val .* c) .^ 2),
+            2 * c^2 .* W_val,
+        ),
+    ]
+        model = Model()
+        @variable(
+            model,
+            W[1:rows, 1:cols],
+            container = ArrayDiff.ArrayOfVariables,
+        )
+        loss = build_loss(W)
+        mode = ArrayDiff.Mode()
+        ad = ArrayDiff.model(mode)
+        MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
+        evaluator = MOI.Nonlinear.Evaluator(
+            ad,
+            mode,
+            JuMP.index.(JuMP.all_variables(model)),
+        )
+        MOI.initialize(evaluator, [:Grad])
+        @test MOI.eval_objective(evaluator, x) ≈ ref_val
+        g = zero(x)
+        MOI.eval_objective_gradient(evaluator, g, x)
+        @test g ≈ vec(ref_grad)
+    end
+    return
+end
+
 end  # module
 
 TestJuMP.runtests()
