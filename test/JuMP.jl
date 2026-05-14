@@ -348,13 +348,7 @@ end
 # Build the non-broadcasted `:*` size-inference cases the HEAD commit fixed.
 # JuMP's surface syntax always lowers `c * W` to a broadcasted node, so to
 # exercise the non-broadcasted code path we build the `MatrixExpr` directly
-# (same pattern `_test_neural` uses for `wrap`). Before the fix, scalar-first
-# returned `(1, 1)` and scalar-last produced an out-of-range `_size` read; the
-# fix copies the matrix child's full shape in both orderings.
-#
-# The runtime forward/reverse pass for non-broadcasted scalar*matrix isn't
-# wired up yet, so this test only asserts the inferred shape — that's exactly
-# what the commit changed.
+# (same pattern `_test_neural` uses for `wrap`).
 function test_size_inference_scalar_times_matrix()
     mode = ArrayDiff.Mode()
     ME = ArrayDiff.GenericMatrixExpr{VariableRef}
