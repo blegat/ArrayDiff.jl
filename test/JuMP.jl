@@ -490,6 +490,44 @@ function test_broadcast_scalar_matrix_size_inference()
     return
 end
 
+# Exercise the non-broadcasted `:*` scalar-times-matrix branch.
+#
+# JuMP's `Number * MatrixOfVariables` falls through to `Base.broadcasted`
+# (no specialized method in `src/JuMP/operators.jl`), so the standard
+# `c * W` syntax actually parses as broadcasted `:*`. To hit the
+# non-broadcasted branch we build a `MatrixExpr` with `broadcasted = false`
+# directly — the same shape `_matmul` produces, but with one scalar child
+# instead of two matrix children. This is the path a hand-built
+# `MOI.ScalarNonlinearFunction(:*, Any[c, W])` would land on.
+function test_scalar_matrix_product_nonbroadcasted()
+    n, c = 2, 0.5
+    model = Model()
+    @variable(model, W[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    mat_expr =
+        ArrayDiff.MatrixExpr(:*, Any[c, W], (n, n), false)
+    @test mat_expr.head == :*
+    @test !mat_expr.broadcasted
+    @test size(mat_expr) == (n, n)
+    loss = sum(mat_expr)
+    mode = ArrayDiff.Mode()
+    ad = ArrayDiff.model(mode)
+    MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
+    evaluator = MOI.Nonlinear.Evaluator(
+        ad,
+        mode,
+        JuMP.index.(JuMP.all_variables(model)),
+    )
+    MOI.initialize(evaluator, [:Grad])
+    x = Float64[1, 2, 3, 4]
+    # `sum(c * W) = c * sum(W)`
+    @test MOI.eval_objective(evaluator, x) ≈ c * sum(x)
+    g = zeros(n * n)
+    MOI.eval_objective_gradient(evaluator, g, x)
+    # `∂/∂W_ij sum(c * W) = c`, constant.
+    @test g ≈ fill(c, n * n)
+    return
+end
+
 end  # module
 
 TestJuMP.runtests()
