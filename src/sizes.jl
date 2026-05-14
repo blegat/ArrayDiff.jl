@@ -347,22 +347,26 @@ function _infer_sizes(
             end
             op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
             if op == :+ || op == :- || op == :*
-                # Broadcasted +/-/* takes the largest child's shape (for
-                # scalar+matrix that's the matrix; for matrix+matrix the
-                # shapes must match).
-                first_matrix = findfirst(children_indices) do i
-                    return !iszero(sizes.ndims[children_arr[i]])
+                sizes.ndims[k] = maximum(children_indices, init = 0) do i
+                    return sizes.ndims[children_arr[i]]
                 end
-                if isnothing(first_matrix)
-                    _copy_size!(sizes, k, children_arr[first(children_indices)])
-                else
-                    ref = children_arr[children_indices[first_matrix]]
-                    for c_idx in children_indices
-                        ix = children_arr[c_idx]
-                        iszero(sizes.ndims[ix]) && continue
-                        @assert _size(sizes, ix) == _size(sizes, ref) "Incompatible array shapes $(Tuple(_size(sizes, ix))) and $(Tuple(_size(sizes, ref))) for broadcasted operator `$op`"
+                sizes.size_offset[k] = length(sizes.size)
+                for _ in 1:sizes.ndims[k]
+                    push!(sizes.size, 1)
+                end
+                sz_parent = _size(sizes, k)
+                for i in children_indices
+                    id = children_arr[i]
+                    sz = _size(sizes, id)
+                    for j in eachindex(sz)
+                        if sz[j] > 1
+                            if sz_parent[j] == 1
+                                sz_parent[j] = sz[j]
+                            else
+                                @assert sz_parent[j] == sz[j]
+                            end
+                        end
                     end
-                    _copy_size!(sizes, k, ref)
                 end
             elseif op == :^
                 # Broadcasted ^ with scalar exponent preserves base shape

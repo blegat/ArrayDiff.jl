@@ -424,10 +424,6 @@ function test_size_vec_vect()
     return
 end
 
-# The previous size-inference code special-cased broadcasted `+/-/*` with a
-# `nb_cols` formula that happened to match for square matrices. A 2x3 input
-# shape exercises the bug: with the old code the result would be reported as
-# (2, 2) instead of (2, 3), and `eval_objective` would read past the tape.
 function test_broadcast_nonsquare_matrix()
     model = Model()
     @variable(model, W[1:2, 1:3], container = ArrayDiff.ArrayOfVariables)
@@ -461,10 +457,6 @@ function test_broadcast_nonsquare_matrix()
     return
 end
 
-# The fix replaced the old `(1, 1)` stub for `scalar .op matrix` with a copy
-# of the matrix child's full shape. Eval/reverse for these mixed-rank
-# broadcasts isn't implemented yet (and is out of scope for the fix), so we
-# only assert the inferred shape — that's where the previous code was wrong.
 function test_broadcast_scalar_matrix_size_inference()
     model = Model()
     @variable(model, W[1:2, 1:3], container = ArrayDiff.ArrayOfVariables)
