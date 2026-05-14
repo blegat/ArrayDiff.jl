@@ -457,108 +457,40 @@ function test_broadcast_nonsquare_matrix()
     return
 end
 
-function test_broadcast_scalar_matrix_size_inference()
-    model = Model()
-    @variable(model, W[1:2, 1:3], container = ArrayDiff.ArrayOfVariables)
-    mode = ArrayDiff.Mode()
-    @testset "$(name)" for (name, expr) in [
-        ("scalar .* M", LinearAlgebra.norm(2.5 .* W)),
-        ("M .* scalar", LinearAlgebra.norm(W .* 2.5)),
-        ("scalar .+ M", LinearAlgebra.norm(2.5 .+ W)),
-        ("M .+ scalar", LinearAlgebra.norm(W .+ 2.5)),
-        ("scalar .- M", LinearAlgebra.norm(2.5 .- W)),
-        ("M .- scalar", LinearAlgebra.norm(W .- 2.5)),
-    ]
-        ad = ArrayDiff.model(mode)
-        MOI.Nonlinear.set_objective(ad, JuMP.moi_function(expr))
-        evaluator = MOI.Nonlinear.Evaluator(
-            ad,
-            mode,
-            JuMP.index.(JuMP.all_variables(model)),
-        )
-        MOI.initialize(evaluator, [:Grad])
-        sizes = evaluator.backend.objective.expr.sizes
-        # Broadcast node is at index 2; it should inherit the matrix child's
-        # (2, 3) shape, not the old `(1, 1)` stub.
-        @test sizes.ndims[2] == 2
-        broadcast_size_off = sizes.size_offset[2]
-        @test sizes.size[broadcast_size_off+1] == 2
-        @test sizes.size[broadcast_size_off+2] == 3
-        # And the scalar leaf among the children stays ndims=0.
-        @test 0 in sizes.ndims[3:4]
-    end
-    return
-end
-
-# Verify the forward value and the analytic gradient for every
-# `Number op MatrixVar` / `MatrixVar op Number` broadcast pattern that
-# JuMP's `Base.broadcasted` produces. The size inference test above pins
-# the shape inference; this test pins the eval (`out .= s op v`) and
-# reverse paths (`rev_s = ±sum(rev_parent)` or `dot(rev_parent, v)`).
-# Loss is `sum((c op W) .^ 2)` so the analytic gradient has a closed form.
+# Cover every `Number op MatrixVar` / `MatrixVar op Number` broadcast
+# pattern that JuMP's `Base.broadcasted` produces — both the size inference
+# (broadcast node inherits the matrix child's shape, not the old `(1, 1)`
+# stub) and the eval/reverse paths (`out .= s op v`, `rev_s =
+# ±sum(rev_parent)` or `dot(rev_parent, v)`). Loss is `norm(c op W)` so the
+# analytic gradient is `dexpr_dW .* (c op W) ./ norm(c op W)`.
 function test_broadcast_scalar_matrix_gradient()
     c = 2.5
     rows, cols = 2, 3
+    model = Model()
+    @variable(model, W[1:rows, 1:cols], container = ArrayDiff.ArrayOfVariables)
     x = Float64.(collect(1:rows*cols))
     W_val = reshape(x, rows, cols)
-    @testset "$(name)" for (name, build_loss, ref_val, ref_grad) in [
-        (
-            "c .+ W",
-            W -> sum((c .+ W) .^ 2),
-            sum((c .+ W_val) .^ 2),
-            2 .* (c .+ W_val),
-        ),
-        (
-            "W .+ c",
-            W -> sum((W .+ c) .^ 2),
-            sum((W_val .+ c) .^ 2),
-            2 .* (W_val .+ c),
-        ),
-        (
-            "c .- W",
-            W -> sum((c .- W) .^ 2),
-            sum((c .- W_val) .^ 2),
-            -2 .* (c .- W_val),
-        ),
-        (
-            "W .- c",
-            W -> sum((W .- c) .^ 2),
-            sum((W_val .- c) .^ 2),
-            2 .* (W_val .- c),
-        ),
-        (
-            "c .* W",
-            W -> sum((c .* W) .^ 2),
-            sum((c .* W_val) .^ 2),
-            2 * c^2 .* W_val,
-        ),
-        (
-            "W .* c",
-            W -> sum((W .* c) .^ 2),
-            sum((W_val .* c) .^ 2),
-            2 * c^2 .* W_val,
-        ),
+    @testset "$(name)" for (name, expr, ref_mat, dexpr_dW) in [
+        ("scalar .+ M", c .+ W, c .+ W_val, fill(1.0, rows, cols)),
+        ("M .+ scalar", W .+ c, W_val .+ c, fill(1.0, rows, cols)),
+        ("scalar .- M", c .- W, c .- W_val, fill(-1.0, rows, cols)),
+        ("M .- scalar", W .- c, W_val .- c, fill(1.0, rows, cols)),
+        ("scalar .* M", c .* W, c .* W_val, fill(c, rows, cols)),
+        ("M .* scalar", W .* c, W_val .* c, fill(c, rows, cols)),
     ]
-        model = Model()
-        @variable(
-            model,
-            W[1:rows, 1:cols],
-            container = ArrayDiff.ArrayOfVariables,
-        )
-        loss = build_loss(W)
-        mode = ArrayDiff.Mode()
-        ad = ArrayDiff.model(mode)
-        MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
-        evaluator = MOI.Nonlinear.Evaluator(
-            ad,
-            mode,
-            JuMP.index.(JuMP.all_variables(model)),
-        )
-        MOI.initialize(evaluator, [:Grad])
-        @test MOI.eval_objective(evaluator, x) ≈ ref_val
-        g = zero(x)
-        MOI.eval_objective_gradient(evaluator, g, x)
-        @test g ≈ vec(ref_grad)
+        sizes, val, g = _eval(model, LinearAlgebra.norm(expr), x)
+        # Outer norm scalar (k=1), then the broadcast (k=2) which must
+        # inherit the matrix child's (rows, cols) shape — not the old
+        # `(1, 1)` stub — then the two children (one scalar leaf, one
+        # matrix leaf) in some order.
+        @test sizes.ndims[1] == 0
+        @test sizes.ndims[2] == 2
+        b_off = sizes.size_offset[2]
+        @test sizes.size[b_off+1] == rows
+        @test sizes.size[b_off+2] == cols
+        @test 0 in sizes.ndims[3:4]
+        @test val ≈ LinearAlgebra.norm(ref_mat)
+        @test g ≈ vec(dexpr_dW .* ref_mat) ./ LinearAlgebra.norm(ref_mat)
     end
     return
 end
