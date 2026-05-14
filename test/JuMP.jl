@@ -503,8 +503,7 @@ function test_scalar_matrix_product_nonbroadcasted()
     n, c = 2, 0.5
     model = Model()
     @variable(model, W[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-    mat_expr =
-        ArrayDiff.MatrixExpr(:*, Any[c, W], (n, n), false)
+    mat_expr = ArrayDiff.MatrixExpr(:*, Any[c, W], (n, n), false)
     @test mat_expr.head == :*
     @test !mat_expr.broadcasted
     @test size(mat_expr) == (n, n)
