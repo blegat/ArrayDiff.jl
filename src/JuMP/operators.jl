@@ -2,9 +2,6 @@ function _matmul(::Type{V}, A, B) where {V}
     return GenericMatrixExpr{V}(:*, Any[A, B], (size(A, 1), size(B, 2)), false)
 end
 
-#function Base.:(*)(A::AbstractJuMPVector, B::)
-#    return _matmul(JuMP.variable_ref_type(A), A, B)
-#end
 function Base.:(*)(A::AbstractJuMPMatrix, B::Matrix)
     return _matmul(JuMP.variable_ref_type(A), A, B)
 end
