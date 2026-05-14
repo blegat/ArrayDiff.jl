@@ -168,8 +168,6 @@ function _eval(
     model::JuMP.GenericModel{T},
     func,
     x,
-    obj_val,
-    grad_val,
 ) where {T}
     mode = ArrayDiff.Mode{Vector{T}}()
     ad = ArrayDiff.model(mode)
@@ -180,20 +178,20 @@ function _eval(
         JuMP.index.(JuMP.all_variables(model)),
     )
     MOI.initialize(evaluator, [:Grad])
-    x_grad = T.(collect(1:8))
-    @test MOI.eval_objective(evaluator, x) ≈ obj_val
+    sizes = evaluator.backend.objective.expr.sizes
+    val = MOI.eval_objective(evaluator, x)
     if VERSION >= v"1.12"
         @test 0 == @allocated MOI.eval_objective(evaluator, x)
     end
+    x_grad = T.(collect(1:8))
     g = zero(x)
     MOI.eval_objective_gradient(evaluator, g, x_grad)
-    @test g ≈ grad_val
     if VERSION >= v"1.12"
         @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, x_grad)
     end
     MOI.Nonlinear.set_objective(ad, nothing)
     @test isnothing(ad.objective)
-    return
+    return sizes, val, g
 end
 
 function _test_neural(
@@ -280,7 +278,9 @@ function _test_neural(
     else
         grad_val = grad_sumsq
     end
-    _eval(model, loss, [vec(W1_val); vec(W2_val)], obj_val, grad_val)
+    _, val, g = _eval(model, loss, [vec(W1_val); vec(W2_val)])
+    @test obj_val ≈ val
+    @test grad_val ≈ g
     return
 end
 
@@ -428,21 +428,6 @@ function test_size_vec_vect()
     return
 end
 
-# Build an evaluator for `expr` with `vars` as the variable order. Returns the
-# inferred sizes plus the evaluated objective and gradient at `x`.
-function _build_and_eval(expr, vars, x)
-    mode = ArrayDiff.Mode()
-    ad = ArrayDiff.model(mode)
-    MOI.Nonlinear.set_objective(ad, JuMP.moi_function(expr))
-    evaluator = MOI.Nonlinear.Evaluator(ad, mode, JuMP.index.(vars))
-    MOI.initialize(evaluator, [:Grad])
-    sizes = evaluator.backend.objective.expr.sizes
-    val = MOI.eval_objective(evaluator, x)
-    g = zero(x)
-    MOI.eval_objective_gradient(evaluator, g, x)
-    return sizes, val, g
-end
-
 # The previous size-inference code special-cased broadcasted `+/-/*` with a
 # `nb_cols` formula that happened to match for square matrices. A 2x3 input
 # shape exercises the bug: with the old code the result would be reported as
@@ -458,7 +443,7 @@ function test_broadcast_nonsquare_matrix()
         (:-, LinearAlgebra.norm(W .- Y), W_val .- Y),
         (:*, LinearAlgebra.norm(W .* W), W_val .* W_val),
     ]
-        sizes, val, g = _build_and_eval(expr, JuMP.all_variables(model), x)
+        sizes, val, g = _eval(model, expr, x)
         # Outer norm scalar, then the broadcasted op produces a 2x3 matrix,
         # then the two 2x3 leaves: 4 nodes, three of them ndims=2 with size
         # (2, 3). The old bug would report (2, 2) for the broadcast node.
