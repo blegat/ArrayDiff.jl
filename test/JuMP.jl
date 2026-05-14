@@ -8,7 +8,7 @@ import LinearAlgebra
 import MathOptInterface as MOI
 
 function runtests()
-    for name in names(@__MODULE__; all=true)
+    for name in names(@__MODULE__; all = true)
         if startswith("$(name)", "test_")
             @testset "$(name)" begin
                 getfield(@__MODULE__, name)()
@@ -164,11 +164,7 @@ function test_parse_moi()
     return
 end
 
-function _eval(
-    model::JuMP.GenericModel{T},
-    func,
-    x,
-) where {T}
+function _eval(model::JuMP.GenericModel{T}, func, x) where {T}
     mode = ArrayDiff.Mode{Vector{T}}()
     ad = ArrayDiff.model(mode)
     MOI.Nonlinear.set_objective(ad, JuMP.moi_function(func))
