@@ -7,6 +7,8 @@ using ArrayDiff
 import LinearAlgebra
 import MathOptInterface as MOI
 
+include(joinpath(@__DIR__, "Transformer.jl"))
+
 function runtests()
     for name in names(@__MODULE__; all = true)
         if startswith("$(name)", "test_")
@@ -487,6 +489,65 @@ function test_broadcast_scalar_matrix_size_inference()
         # And the scalar leaf among the children stays ndims=0.
         @test 0 in sizes.ndims[3:4]
     end
+    return
+end
+
+# Plug JuMP variable matrices into the Transformer's `MLP` building block
+# (`gelu(x * c_fc) * c_proj`) and confirm the forward+reverse pass runs
+# end-to-end through the ArrayDiff evaluator. `gelu` exercises every
+# scalar-broadcast pattern that ArrayDiff supports for `MatrixExpr`:
+# `Number * matrix` scaling, `Number .* matrix`, and `Number .+ matrix`.
+# We finite-difference the analytic gradient as a sanity check.
+function test_transformer_mlp_gradient()
+    d_emb, d_hidden, seq = 2, 3, 2
+    model = Model()
+    @variable(
+        model,
+        c_fc[1:d_emb, 1:d_hidden],
+        container = ArrayDiff.ArrayOfVariables,
+    )
+    @variable(
+        model,
+        c_proj[1:d_hidden, 1:d_emb],
+        container = ArrayDiff.ArrayOfVariables,
+    )
+    mlp = MLP(c_fc, c_proj)
+    x = rand(seq, d_emb)
+    loss = sum(mlp(x) .^ 2)
+    mode = ArrayDiff.Mode()
+    ad = ArrayDiff.model(mode)
+    MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
+    evaluator = MOI.Nonlinear.Evaluator(
+        ad,
+        mode,
+        JuMP.index.(JuMP.all_variables(model)),
+    )
+    MOI.initialize(evaluator, [:Grad])
+    nvar = JuMP.num_variables(model)
+    @test nvar == 2 * d_emb * d_hidden
+    x_pt = randn(nvar)
+    val = MOI.eval_objective(evaluator, x_pt)
+    @test isfinite(val)
+    @test val >= 0
+    g = zeros(nvar)
+    MOI.eval_objective_gradient(evaluator, g, x_pt)
+    @test all(isfinite, g)
+    @test !all(iszero, g)
+    # Central finite differences on the AD-built objective.
+    h = 1e-6
+    g_fd = zeros(nvar)
+    for i in 1:nvar
+        xp = copy(x_pt)
+        xp[i] += h
+        xm = copy(x_pt)
+        xm[i] -= h
+        g_fd[i] =
+            (
+                MOI.eval_objective(evaluator, xp) -
+                MOI.eval_objective(evaluator, xm)
+            ) / (2h)
+    end
+    @test isapprox(g, g_fd; rtol = 1e-4)
     return
 end
 
