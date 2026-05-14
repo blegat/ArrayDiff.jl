@@ -3,7 +3,7 @@
 struct ArrayOfVariables{T,N} <: AbstractJuMPArray{JuMP.GenericVariableRef{T},N}
     model::JuMP.GenericModel{T}
     offset::Int64
-    size::NTuple{N,Int64}
+    size::Dims{N}
 end
 
 const MatrixOfVariables{T} = ArrayOfVariables{T,2}
@@ -13,6 +13,11 @@ function Base.getindex(A::ArrayOfVariables{T}, I...) where {T}
     index =
         A.offset + Base._to_linear_index(Base.CartesianIndices(A.size), I...)
     return JuMP.GenericVariableRef{T}(A.model, MOI.VariableIndex(index))
+end
+
+function Base.reshape(array::ArrayOfVariables, size::Dims)
+    @assert prod(array.size) == prod(size)
+    return ArrayOfVariables(array.model, array.offset, size)
 end
 
 function JuMP.variable_ref_type(::Type{ArrayOfVariables{T,N}}) where {T,N}

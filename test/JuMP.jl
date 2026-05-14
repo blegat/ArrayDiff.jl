@@ -8,7 +8,7 @@ import LinearAlgebra
 import MathOptInterface as MOI
 
 function runtests()
-    for name in names(@__MODULE__; all = true)
+    for name in names(@__MODULE__; all=true)
         if startswith("$(name)", "test_")
             @testset "$(name)" begin
                 getfield(@__MODULE__, name)()
@@ -402,6 +402,45 @@ function test_size_inference_scalar_times_matrix()
     end
     return
 end
+
+function test_size_vec_vect()
+    mode = ArrayDiff.Mode()
+    ME = ArrayDiff.GenericMatrixExpr{VariableRef}
+    @testset "$(rows)x$(cols)" for (rows, cols) in [(2, 3), (3, 2), (2, 2)]
+        model = Model()
+        @variable(
+            model,
+            a[1:rows],
+            container = ArrayDiff.ArrayOfVariables,
+        )
+        b = ones(cols)
+        ad = ArrayDiff.model(mode)
+        # a * b' is redirected to broadcast(*, a, b') but we want to test product here
+        # this calls reshape(a, length(a), 1)
+        expr = a * Matrix(b')
+        MOI.Nonlinear.set_objective(
+            ad,
+            JuMP.moi_function(sum(expr)),
+        )
+        evaluator = MOI.Nonlinear.Evaluator(
+            ad,
+            mode,
+            JuMP.index.(JuMP.all_variables(model)),
+        )
+        MOI.initialize(evaluator, [:Grad])
+        sizes = evaluator.backend.objective.expr.sizes
+        # Tape: norm (k=1, scalar), * (k=2, matrix), then the scalar leaf
+        # and the matrix leaf in some order. The * node must inherit the
+        # (rows, cols) shape from the matrix child.
+        @test sizes.ndims[1] == 0
+        @test sizes.ndims[2] == 2
+        mul_off = sizes.size_offset[2]
+        @test sizes.size[mul_off+1] == rows
+        @test sizes.size[mul_off+2] == cols
+    end
+    return
+end
+
 
 end  # module
 
