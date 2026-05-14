@@ -171,19 +171,32 @@ function _forward_eval(
                 end
             elseif node.index == 3 # :*
                 # Node `k` is not scalar, so we do matrix multiplication
+                # (or scalar `*` matrix scaling when one operand is scalar).
                 if f.sizes.ndims[k] != 0
                     @assert N == 2
                     idx1 = first(children_indices)
                     idx2 = last(children_indices)
                     @inbounds ix1 = children_arr[idx1]
                     @inbounds ix2 = children_arr[idx2]
-                    v1 = _view_matrix(f.forward_storage, f.sizes, ix1)
-                    v2 = _view_matrix(f.forward_storage, f.sizes, ix2)
-                    out = _view_matrix(f.forward_storage, f.sizes, k)
-                    LinearAlgebra.mul!(out, v1, v2)
+                    out = _view_linear(f.forward_storage, f.sizes, k)
+                    if f.sizes.ndims[ix1] == 0
+                        s = _getscalar(f.forward_storage, f.sizes, ix1)
+                        v = _view_linear(f.forward_storage, f.sizes, ix2)
+                        out .= s .* v
+                    elseif f.sizes.ndims[ix2] == 0
+                        v = _view_linear(f.forward_storage, f.sizes, ix1)
+                        s = _getscalar(f.forward_storage, f.sizes, ix2)
+                        out .= v .* s
+                    else
+                        v1 = _view_matrix(f.forward_storage, f.sizes, ix1)
+                        v2 = _view_matrix(f.forward_storage, f.sizes, ix2)
+                        out_m = _view_matrix(f.forward_storage, f.sizes, k)
+                        LinearAlgebra.mul!(out_m, v1, v2)
+                    end
                     # We deliberately don't write v1/v2 into partials_storage
-                    # here: the matmul reverse branch reads forward_storage
-                    # directly, so those writes were dead.
+                    # here: the matmul (or scalar-scaling) reverse branch
+                    # reads forward_storage directly, so those writes were
+                    # dead.
                     # Node `k` is scalar
                 else
                     tmp_prod = one(T)
@@ -620,23 +633,55 @@ function _reverse_eval(
                 op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
                 if op == :*
                     if f.sizes.ndims[k] != 0
-                        # Matrix multiplication: rev_v1 = rev_parent * v2',
-                        # rev_v2 = v1' * rev_parent. Both v1 and v2 are read
-                        # straight from forward_storage (the matmul forward
-                        # branch deliberately doesn't snapshot them into
-                        # partials_storage), and the reverse views are written
-                        # in place.
+                        # Matmul (or `scalar * matrix` scaling): rev_v1 =
+                        # rev_parent * v2', rev_v2 = v1' * rev_parent. With
+                        # a scalar operand, the result is `s .* M`, so
+                        # rev[s] = sum(rev_parent .* M) and rev[M] =
+                        # rev_parent .* s. Both v1 and v2 are read straight
+                        # from forward_storage.
                         idx1 = first(children_indices)
                         idx2 = last(children_indices)
                         ix1 = children_arr[idx1]
                         ix2 = children_arr[idx2]
-                        v1 = _view_matrix(f.forward_storage, f.sizes, ix1)
-                        v2 = _view_matrix(f.forward_storage, f.sizes, ix2)
-                        rev_parent = _view_matrix(f.reverse_storage, f.sizes, k)
-                        rev_v1 = _view_matrix(f.reverse_storage, f.sizes, ix1)
-                        rev_v2 = _view_matrix(f.reverse_storage, f.sizes, ix2)
-                        LinearAlgebra.mul!(rev_v1, rev_parent, v2')
-                        LinearAlgebra.mul!(rev_v2, v1', rev_parent)
+                        rev_parent = _view_linear(f.reverse_storage, f.sizes, k)
+                        ndims1 = f.sizes.ndims[ix1]
+                        ndims2 = f.sizes.ndims[ix2]
+                        if ndims1 == 0 && ndims2 != 0
+                            v2 = _view_linear(f.forward_storage, f.sizes, ix2)
+                            s1 = _getscalar(f.forward_storage, f.sizes, ix1)
+                            rev_v2 =
+                                _view_linear(f.reverse_storage, f.sizes, ix2)
+                            rev_v2 .= rev_parent .* s1
+                            _setscalar!(
+                                f.reverse_storage,
+                                LinearAlgebra.dot(rev_parent, v2),
+                                f.sizes,
+                                ix1,
+                            )
+                        elseif ndims1 != 0 && ndims2 == 0
+                            v1 = _view_linear(f.forward_storage, f.sizes, ix1)
+                            s2 = _getscalar(f.forward_storage, f.sizes, ix2)
+                            rev_v1 =
+                                _view_linear(f.reverse_storage, f.sizes, ix1)
+                            rev_v1 .= rev_parent .* s2
+                            _setscalar!(
+                                f.reverse_storage,
+                                LinearAlgebra.dot(rev_parent, v1),
+                                f.sizes,
+                                ix2,
+                            )
+                        else
+                            v1 = _view_matrix(f.forward_storage, f.sizes, ix1)
+                            v2 = _view_matrix(f.forward_storage, f.sizes, ix2)
+                            rev_parent_m =
+                                _view_matrix(f.reverse_storage, f.sizes, k)
+                            rev_v1 =
+                                _view_matrix(f.reverse_storage, f.sizes, ix1)
+                            rev_v2 =
+                                _view_matrix(f.reverse_storage, f.sizes, ix2)
+                            LinearAlgebra.mul!(rev_v1, rev_parent_m, v2')
+                            LinearAlgebra.mul!(rev_v2, v1', rev_parent_m)
+                        end
                         continue
                     end
                 elseif op == :vect
