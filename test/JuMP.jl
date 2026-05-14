@@ -7,7 +7,7 @@ using ArrayDiff
 import LinearAlgebra
 import MathOptInterface as MOI
 
-include("Transformer.jl")
+include(joinpath(@__DIR__, "Transformer.jl"))
 
 function runtests()
     for name in names(@__MODULE__; all=true)
