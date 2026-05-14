@@ -607,9 +607,9 @@ function test_objective_broadcasted_product()
     evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x1, x2, x3, x4])
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
-    @test sizes.ndims == [0, 2, 1, 0, 0, 1, 0, 0]
+    @test sizes.ndims == [0, 1, 1, 0, 0, 1, 0, 0]
     @test sizes.size_offset == [0, 2, 1, 0, 0, 0, 0, 0]
-    @test sizes.size == [2, 2, 2, 1]
+    @test sizes.size == [2, 2, 2]
     @test sizes.storage_offset == [0, 1, 3, 5, 6, 7, 9, 10, 11]
     x1 = 1.0
     x2 = 2.0

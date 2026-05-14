@@ -346,47 +346,33 @@ function _infer_sizes(
                 continue
             end
             op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
-            if op == :+ || op == :-
-                # Broadcasted +/- preserves shape
-                _copy_size!(sizes, k, children_arr[first(children_indices)])
-            elseif op == :^
-                # Broadcasted ^ with scalar exponent preserves base shape
-                _copy_size!(sizes, k, children_arr[first(children_indices)])
-            elseif op == :*
-                # TODO assert compatible sizes and all ndims should be 0 or 2
-                first_matrix = findfirst(children_indices) do i
-                    return !iszero(sizes.ndims[children_arr[i]])
+            if op == :+ || op == :- || op == :*
+                sizes.ndims[k] = maximum(children_indices, init = 0) do i
+                    return sizes.ndims[children_arr[i]]
                 end
-                if !isnothing(first_matrix)
-                    if sizes.ndims[children_arr[first(children_indices)]] == 0
-                        _add_size!(sizes, k, (1, 1))
-                        continue
-                    else
-                        if sizes.ndims[children_arr[first(children_indices)]] ==
-                           1
-                            nb_cols = 1
-                        else
-                            nb_cols = _size(
-                                sizes,
-                                children_arr[first(children_indices)],
-                                1,
-                            )
+                sizes.size_offset[k] = length(sizes.size)
+                for _ in 1:sizes.ndims[k]
+                    push!(sizes.size, 1)
+                end
+                sz_parent = _size(sizes, k)
+                for i in children_indices
+                    id = children_arr[i]
+                    sz = _size(sizes, id)
+                    for j in eachindex(sz)
+                        if sz[j] > 1
+                            if sz_parent[j] == 1
+                                sz_parent[j] = sz[j]
+                            else
+                                @assert sz_parent[j] == sz[j]
+                            end
                         end
-                        _add_size!(
-                            sizes,
-                            k,
-                            (
-                                _size(
-                                    sizes,
-                                    children_arr[first(children_indices)],
-                                    1,
-                                ),
-                                nb_cols,
-                            ),
-                        )
-                        continue
                     end
                 end
+            elseif op == :^
+                # Broadcasted ^ with scalar exponent preserves base shape
+                @assert length(children_indices) == 2 "Expected two arguments for broadcasted operator `$op`, got $(length(children_indices))"
+                @assert iszero(sizes.ndims[children_arr[children_indices[2]]]) "Expected scalar exponent for broadcasted operator `$op`"
+                _copy_size!(sizes, k, children_arr[first(children_indices)])
             end
         elseif node.type == NODE_CALL_UNIVARIATE
             if !(

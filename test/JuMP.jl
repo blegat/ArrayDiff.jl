@@ -164,13 +164,7 @@ function test_parse_moi()
     return
 end
 
-function _eval(
-    model::JuMP.GenericModel{T},
-    func,
-    x,
-    obj_val,
-    grad_val,
-) where {T}
+function _eval(model::JuMP.GenericModel{T}, func, x) where {T}
     mode = ArrayDiff.Mode{Vector{T}}()
     ad = ArrayDiff.model(mode)
     MOI.Nonlinear.set_objective(ad, JuMP.moi_function(func))
@@ -180,20 +174,20 @@ function _eval(
         JuMP.index.(JuMP.all_variables(model)),
     )
     MOI.initialize(evaluator, [:Grad])
-    x_grad = T.(collect(1:8))
-    @test MOI.eval_objective(evaluator, x) ≈ obj_val
+    sizes = evaluator.backend.objective.expr.sizes
+    val = MOI.eval_objective(evaluator, x)
     if VERSION >= v"1.12"
         @test 0 == @allocated MOI.eval_objective(evaluator, x)
     end
+    x_grad = T.(collect(1:8))
     g = zero(x)
     MOI.eval_objective_gradient(evaluator, g, x_grad)
-    @test g ≈ grad_val
     if VERSION >= v"1.12"
         @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, x_grad)
     end
     MOI.Nonlinear.set_objective(ad, nothing)
     @test isnothing(ad.objective)
-    return
+    return sizes, val, g
 end
 
 function _test_neural(
@@ -280,7 +274,9 @@ function _test_neural(
     else
         grad_val = grad_sumsq
     end
-    _eval(model, loss, [vec(W1_val); vec(W2_val)], obj_val, grad_val)
+    _, val, g = _eval(model, loss, [vec(W1_val); vec(W2_val)])
+    @test obj_val ≈ val
+    @test grad_val ≈ g
     return
 end
 
@@ -424,6 +420,72 @@ function test_size_vec_vect()
         mul_off = sizes.size_offset[2]
         @test sizes.size[mul_off+1] == rows
         @test sizes.size[mul_off+2] == cols
+    end
+    return
+end
+
+function test_broadcast_nonsquare_matrix()
+    model = Model()
+    @variable(model, W[1:2, 1:3], container = ArrayDiff.ArrayOfVariables)
+    Y = [10.0 20.0 30.0; 40.0 50.0 60.0]
+    x = Float64.(collect(1:6))
+    W_val = reshape(x, 2, 3)
+    @testset "$(op)" for (op, expr, ref_mat) in [
+        (:+, LinearAlgebra.norm(W .+ Y), W_val .+ Y),
+        (:-, LinearAlgebra.norm(W .- Y), W_val .- Y),
+        (:*, LinearAlgebra.norm(W .* W), W_val .* W_val),
+    ]
+        sizes, val, g = _eval(model, expr, x)
+        # Outer norm scalar, then the broadcasted op produces a 2x3 matrix,
+        # then the two 2x3 leaves: 4 nodes, three of them ndims=2 with size
+        # (2, 3). The old bug would report (2, 2) for the broadcast node.
+        @test sizes.ndims == [0, 2, 2, 2]
+        @test sizes.size == [2, 3, 2, 3, 2, 3]
+        @test sizes.size_offset == [0, 4, 2, 0]
+        @test sizes.storage_offset == [0, 1, 7, 13, 19]
+        @test val ≈ LinearAlgebra.norm(ref_mat)
+        ref_g = if op == :+
+            vec(W_val .+ Y) ./ LinearAlgebra.norm(ref_mat)
+        elseif op == :-
+            vec(W_val .- Y) ./ LinearAlgebra.norm(ref_mat)
+        else  # :*
+            # d(norm(W .* W))/dW = 2 .* W .^ 3 / norm(W .* W)
+            vec(2 .* W_val .^ 3) ./ LinearAlgebra.norm(ref_mat)
+        end
+        @test g ≈ ref_g
+    end
+    return
+end
+
+function test_broadcast_scalar_matrix_size_inference()
+    model = Model()
+    @variable(model, W[1:2, 1:3], container = ArrayDiff.ArrayOfVariables)
+    mode = ArrayDiff.Mode()
+    @testset "$(name)" for (name, expr) in [
+        ("scalar .* M", LinearAlgebra.norm(2.5 .* W)),
+        ("M .* scalar", LinearAlgebra.norm(W .* 2.5)),
+        ("scalar .+ M", LinearAlgebra.norm(2.5 .+ W)),
+        ("M .+ scalar", LinearAlgebra.norm(W .+ 2.5)),
+        ("scalar .- M", LinearAlgebra.norm(2.5 .- W)),
+        ("M .- scalar", LinearAlgebra.norm(W .- 2.5)),
+    ]
+        ad = ArrayDiff.model(mode)
+        MOI.Nonlinear.set_objective(ad, JuMP.moi_function(expr))
+        evaluator = MOI.Nonlinear.Evaluator(
+            ad,
+            mode,
+            JuMP.index.(JuMP.all_variables(model)),
+        )
+        MOI.initialize(evaluator, [:Grad])
+        sizes = evaluator.backend.objective.expr.sizes
+        # Broadcast node is at index 2; it should inherit the matrix child's
+        # (2, 3) shape, not the old `(1, 1)` stub.
+        @test sizes.ndims[2] == 2
+        broadcast_size_off = sizes.size_offset[2]
+        @test sizes.size[broadcast_size_off+1] == 2
+        @test sizes.size[broadcast_size_off+2] == 3
+        # And the scalar leaf among the children stays ndims=0.
+        @test 0 in sizes.ndims[3:4]
     end
     return
 end
