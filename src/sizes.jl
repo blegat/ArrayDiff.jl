@@ -311,9 +311,9 @@ function _infer_sizes(
                     if !iszero(ndims)
                         sz = _size(sizes, id)
                         if iszero(sizes.ndims[k])
+                            sizes.size_offset[k] = length(sizes.size)
                             append!(sizes.size, sz)
                             sizes.ndims[k] = ndims
-                            sizes.size_offset[k] = length(sizes.size)
                         else
                             @assert sizes.ndims[k] > 1
                             @assert sz[1] == sizes.size[end]
