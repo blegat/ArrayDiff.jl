@@ -468,7 +468,7 @@ function test_broadcast_scalar_matrix_gradient()
     rows, cols = 2, 3
     model = Model()
     @variable(model, W[1:rows, 1:cols], container = ArrayDiff.ArrayOfVariables)
-    x = Float64.(collect(1:rows*cols))
+    x = Float64.(collect(1:(rows*cols)))
     W_val = reshape(x, rows, cols)
     @testset "$(name)" for (name, expr, ref_mat, dexpr_dW) in [
         ("scalar .+ M", c .+ W, c .+ W_val, fill(1.0, rows, cols)),
