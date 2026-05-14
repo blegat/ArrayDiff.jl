@@ -304,34 +304,23 @@ function _infer_sizes(
                 end
                 _add_size!(sizes, k, tuple(shape...))
             elseif op == :*
-                # TODO assert compatible sizes and all ndims should be 0 or 2
-                first_matrix = findfirst(children_indices) do i
-                    return !iszero(sizes.ndims[children_arr[i]])
-                end
-                if !isnothing(first_matrix)
-                    if sizes.ndims[children_arr[first(children_indices)]] == 0
-                        _add_size!(sizes, k, (1, 1))
-                        continue
-                    else
-                        _add_size!(
-                            sizes,
-                            k,
-                            (
-                                _size(
-                                    sizes,
-                                    children_arr[first(children_indices)],
-                                    1,
-                                ),
-                                _size(
-                                    sizes,
-                                    children_arr[last(children_indices)],
-                                    sizes.ndims[children_arr[last(
-                                        children_indices,
-                                    )],],
-                                ),
-                            ),
-                        )
-                        continue
+                sizes.ndims[k] = 0
+                for child in children_indices
+                    id = children_arr[child]
+                    ndims = sizes.ndims[id]
+                    if !iszero(ndims)
+                        sz = _size(sizes, id)
+                        if iszero(sizes.ndims[k])
+                            sizes.size_offset[k] = length(sizes.size)
+                            append!(sizes.size, sz)
+                            sizes.ndims[k] = ndims
+                        else
+                            @assert sizes.ndims[k] > 1
+                            @assert sz[1] == sizes.size[end]
+                            pop!(sizes.size)
+                            append!(sizes.size, @view(sz[2:end]))
+                            sizes.ndims[k] += ndims - 2
+                        end
                     end
                 end
             elseif op == :^ || op == :/
