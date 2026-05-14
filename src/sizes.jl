@@ -305,7 +305,6 @@ function _infer_sizes(
                 _add_size!(sizes, k, tuple(shape...))
             elseif op == :*
                 sizes.ndims[k] = 0
-                sizes.size_offset[k] = length(sizes.size)
                 for child in children_indices
                     id = children_arr[child]
                     ndims = sizes.ndims[id]
@@ -314,6 +313,7 @@ function _infer_sizes(
                         if iszero(sizes.ndims[k])
                             append!(sizes.size, sz)
                             sizes.ndims[k] = ndims
+                            sizes.size_offset[k] = length(sizes.size)
                         else
                             @assert sizes.ndims[k] > 1
                             @assert sz[1] == sizes.size[end]
