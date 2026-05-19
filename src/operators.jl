@@ -18,6 +18,7 @@ const DEFAULT_MULTIVARIATE_OPERATORS = [
     :norm,
     :sum,
     :row,
+    :reduce,
 ]
 
 function _validate_register_assumptions(
