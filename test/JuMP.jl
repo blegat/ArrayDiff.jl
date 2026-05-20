@@ -177,12 +177,14 @@ function _eval(model::JuMP.GenericModel{T}, func, x) where {T}
     sizes = evaluator.backend.objective.expr.sizes
     val = MOI.eval_objective(evaluator, x)
     if VERSION >= v"1.12"
+        fill!(evaluator.backend.last_x, NaN)
         @test 0 == @allocated MOI.eval_objective(evaluator, x)
     end
     x_grad = T.(collect(1:8))
     g = zero(x)
     MOI.eval_objective_gradient(evaluator, g, x_grad)
     if VERSION >= v"1.12"
+        fill!(evaluator.backend.last_x, NaN)
         @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, x_grad)
     end
     MOI.Nonlinear.set_objective(ad, nothing)
@@ -457,35 +459,121 @@ function test_broadcast_nonsquare_matrix()
     return
 end
 
-function test_broadcast_scalar_matrix_size_inference()
+# Cover every `Number op MatrixVar` / `MatrixVar op Number` broadcast
+# pattern that JuMP's `Base.broadcasted` produces — both the size inference
+# (broadcast node inherits the matrix child's shape, not the old `(1, 1)`
+# stub) and the eval/reverse paths (`out .= s op v`, `rev_s =
+# ±sum(rev_parent)` or `dot(rev_parent, v)`). Loss is `norm(c op W)` so the
+# analytic gradient is `dexpr_dW .* (c op W) ./ norm(c op W)`.
+function test_broadcast_scalar_matrix_gradient()
+    c = 2.5
+    rows, cols = 2, 3
     model = Model()
-    @variable(model, W[1:2, 1:3], container = ArrayDiff.ArrayOfVariables)
-    mode = ArrayDiff.Mode()
-    @testset "$(name)" for (name, expr) in [
-        ("scalar .* M", LinearAlgebra.norm(2.5 .* W)),
-        ("M .* scalar", LinearAlgebra.norm(W .* 2.5)),
-        ("scalar .+ M", LinearAlgebra.norm(2.5 .+ W)),
-        ("M .+ scalar", LinearAlgebra.norm(W .+ 2.5)),
-        ("scalar .- M", LinearAlgebra.norm(2.5 .- W)),
-        ("M .- scalar", LinearAlgebra.norm(W .- 2.5)),
+    @variable(model, W[1:rows, 1:cols], container = ArrayDiff.ArrayOfVariables)
+    x = Float64.(collect(1:(rows*cols)))
+    W_val = reshape(x, rows, cols)
+    @testset "$(name)" for (name, expr, ref_mat, dexpr_dW) in [
+        ("scalar .+ M", c .+ W, c .+ W_val, fill(1.0, rows, cols)),
+        ("M .+ scalar", W .+ c, W_val .+ c, fill(1.0, rows, cols)),
+        ("scalar .- M", c .- W, c .- W_val, fill(-1.0, rows, cols)),
+        ("M .- scalar", W .- c, W_val .- c, fill(1.0, rows, cols)),
+        ("scalar .* M", c .* W, c .* W_val, fill(c, rows, cols)),
+        ("M .* scalar", W .* c, W_val .* c, fill(c, rows, cols)),
     ]
-        ad = ArrayDiff.model(mode)
-        MOI.Nonlinear.set_objective(ad, JuMP.moi_function(expr))
-        evaluator = MOI.Nonlinear.Evaluator(
-            ad,
-            mode,
-            JuMP.index.(JuMP.all_variables(model)),
-        )
-        MOI.initialize(evaluator, [:Grad])
-        sizes = evaluator.backend.objective.expr.sizes
-        # Broadcast node is at index 2; it should inherit the matrix child's
-        # (2, 3) shape, not the old `(1, 1)` stub.
+        sizes, val, g = _eval(model, LinearAlgebra.norm(expr), x)
+        # Outer norm scalar (k=1), then the broadcast (k=2) which must
+        # inherit the matrix child's (rows, cols) shape — not the old
+        # `(1, 1)` stub — then the two children (one scalar leaf, one
+        # matrix leaf) in some order.
+        @test sizes.ndims[1] == 0
         @test sizes.ndims[2] == 2
-        broadcast_size_off = sizes.size_offset[2]
-        @test sizes.size[broadcast_size_off+1] == 2
-        @test sizes.size[broadcast_size_off+2] == 3
-        # And the scalar leaf among the children stays ndims=0.
+        b_off = sizes.size_offset[2]
+        @test sizes.size[b_off+1] == rows
+        @test sizes.size[b_off+2] == cols
         @test 0 in sizes.ndims[3:4]
+        @test val ≈ LinearAlgebra.norm(ref_mat)
+        @test g ≈ vec(dexpr_dW .* ref_mat) ./ LinearAlgebra.norm(ref_mat)
+    end
+    return
+end
+
+# Cover broadcasting where one operand is a column vector or a row vector
+# (vector-transpose) and the other is the matrix variable W. Same loss shape
+# as `test_broadcast_scalar_matrix_gradient` — `norm(c op W)` — so the
+# analytic gradient is `dexpr_dW .* (c op W) ./ norm(c op W)`.
+function test_broadcast_vector_matrix_gradient()
+    rows, cols = 2, 3
+    model = Model()
+    @variable(model, W[1:rows, 1:cols], container = ArrayDiff.ArrayOfVariables)
+    v = [10.0, 20.0]                  # length-rows column vector
+    r = [100.0 200.0 300.0]           # 1×cols row vector (vector-transpose)
+    x = Float64.(collect(1:(rows*cols)))
+    W_val = reshape(x, rows, cols)
+    # Broadcast partials: `dexpr_dW` is the elementwise ∂(c op W)/∂W,
+    # broadcast to W's (rows, cols) shape.
+    v_bcast = v .* ones(rows, cols)   # repeats v across cols
+    r_bcast = ones(rows) .* r         # repeats r down rows
+    @testset "$(name)" for (name, expr, ref_mat, dexpr_dW) in [
+        # Column-vector broadcast (v repeats across cols)
+        ("v .+ W", v .+ W, v .+ W_val, fill(1.0, rows, cols)),
+        ("W .+ v", W .+ v, W_val .+ v, fill(1.0, rows, cols)),
+        ("v .- W", v .- W, v .- W_val, fill(-1.0, rows, cols)),
+        ("W .- v", W .- v, W_val .- v, fill(1.0, rows, cols)),
+        ("v .* W", v .* W, v .* W_val, v_bcast),
+        ("W .* v", W .* v, W_val .* v, v_bcast),
+        # Row-vector broadcast (r repeats down rows)
+        ("r .+ W", r .+ W, r .+ W_val, fill(1.0, rows, cols)),
+        ("W .+ r", W .+ r, W_val .+ r, fill(1.0, rows, cols)),
+        ("r .- W", r .- W, r .- W_val, fill(-1.0, rows, cols)),
+        ("W .- r", W .- r, W_val .- r, fill(1.0, rows, cols)),
+        ("r .* W", r .* W, r .* W_val, r_bcast),
+        ("W .* r", W .* r, W_val .* r, r_bcast),
+    ]
+        sizes, val, g = _eval(model, LinearAlgebra.norm(expr), x)
+        # Tape: norm (k=1, scalar) then the broadcast (k=2, matrix) inheriting
+        # (rows, cols) from the result shape — not from the smaller operand.
+        @test sizes.ndims[1] == 0
+        @test sizes.ndims[2] == 2
+        b_off = sizes.size_offset[2]
+        @test sizes.size[b_off+1] == rows
+        @test sizes.size[b_off+2] == cols
+        @test val ≈ LinearAlgebra.norm(ref_mat)
+        @test g ≈ vec(dexpr_dW .* ref_mat) ./ LinearAlgebra.norm(ref_mat)
+    end
+    return
+end
+
+# Outer-product-shape broadcast: a vector variable `v` (length rows) combined
+# with a row-vector constant `r` (1×cols). The result is rows×cols, and the
+# gradient w.r.t. v reduces along the broadcasted (cols) dimension.
+function test_broadcast_outer_vector_gradient()
+    rows, cols = 2, 3
+    model = Model()
+    @variable(model, v[1:rows], container = ArrayDiff.ArrayOfVariables)
+    r = [100.0 200.0 300.0]           # 1×cols row vector
+    x = Float64.(collect(1:rows))
+    v_val = copy(x)
+    r_bcast = ones(rows) .* r         # ∂(v .* r)/∂v broadcast to (rows, cols)
+    @testset "$(name)" for (name, expr, ref_mat, dexpr_dv) in [
+        ("v .+ r", v .+ r, v_val .+ r, fill(1.0, rows, cols)),
+        ("r .+ v", r .+ v, r .+ v_val, fill(1.0, rows, cols)),
+        ("v .- r", v .- r, v_val .- r, fill(1.0, rows, cols)),
+        ("r .- v", r .- v, r .- v_val, fill(-1.0, rows, cols)),
+        ("v .* r", v .* r, v_val .* r, r_bcast),
+        ("r .* v", r .* v, r .* v_val, r_bcast),
+    ]
+        sizes, val, g = _eval(model, LinearAlgebra.norm(expr), x)
+        @test sizes.ndims[1] == 0
+        @test sizes.ndims[2] == 2
+        b_off = sizes.size_offset[2]
+        @test sizes.size[b_off+1] == rows
+        @test sizes.size[b_off+2] == cols
+        @test val ≈ LinearAlgebra.norm(ref_mat)
+        # `d norm(M) / d v_i = sum_j dexpr_dv[i,j] * M[i,j] / norm(M)` because
+        # v's column is broadcast across every output column.
+        @test g ≈
+              vec(sum(dexpr_dv .* ref_mat; dims = 2)) ./
+              LinearAlgebra.norm(ref_mat)
     end
     return
 end

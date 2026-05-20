@@ -12,7 +12,7 @@ function _to_moi_arg(x::GenericArrayExpr{V,N}) where {V,N}
     return ArrayNonlinearFunction{N}(x.head, args, x.size, x.broadcasted)
 end
 
-_to_moi_arg(x::Matrix{<:Real}) = x
+_to_moi_arg(x::Array{<:Real}) = x
 
 _to_moi_arg(x::Real) = x
 

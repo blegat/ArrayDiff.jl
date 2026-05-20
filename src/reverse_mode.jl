@@ -391,82 +391,35 @@ function _forward_eval(
             children_indices = SparseArrays.nzrange(f.adj, k)
             N = length(children_indices)
             if node.index == 1 # :+  (broadcasted)
-                for j in _eachindex(f.sizes, k)
-                    tmp_sum = zero(T)
-                    for c_idx in children_indices
-                        ix = children_arr[c_idx]
-                        @j f.partials_storage[ix] = one(T)
-                        tmp_sum += @j f.forward_storage[ix]
-                    end
-                    @j f.forward_storage[k] = tmp_sum
-                end
+                @assert N == 2
+                child1 = first(children_indices)
+                _reshape_call(
+                    f.forward_storage,
+                    f.sizes,
+                    (k, children_arr[child1], children_arr[child1+1]),
+                    broadcast!,
+                    (+,),
+                )
             elseif node.index == 2 # :-  (broadcasted)
                 @assert N == 2
                 child1 = first(children_indices)
-                @inbounds ix1 = children_arr[child1]
-                @inbounds ix2 = children_arr[child1+1]
-                out = _view_linear(f.forward_storage, f.sizes, k)
-                v1 = _view_linear(f.forward_storage, f.sizes, ix1)
-                v2 = _view_linear(f.forward_storage, f.sizes, ix2)
-                out .= v1 .- v2
-                fill!(_view_linear(f.partials_storage, f.sizes, ix1), one(T))
-                fill!(_view_linear(f.partials_storage, f.sizes, ix2), -one(T))
+                _reshape_call(
+                    f.forward_storage,
+                    f.sizes,
+                    (k, children_arr[child1], children_arr[child1+1]),
+                    broadcast!,
+                    (-,),
+                )
             elseif node.index == 3 # :*  (broadcasted)
-                # Node `k` is not scalar, so we do matrix multiplication
-                if f.sizes.ndims[k] != 0
-                    @assert N == 2
-                    idx1 = first(children_indices)
-                    idx2 = last(children_indices)
-                    @inbounds ix1 = children_arr[idx1]
-                    @inbounds ix2 = children_arr[idx2]
-                    v1 = zeros(_size(f.sizes, ix1)...)
-                    v2 = zeros(_size(f.sizes, ix2)...)
-                    for j in _eachindex(f.sizes, ix1)
-                        v1[j] = @j f.forward_storage[ix1]
-                        @j f.partials_storage[ix2] = v1[j]
-                    end
-                    for j in _eachindex(f.sizes, ix2)
-                        v2[j] = @j f.forward_storage[ix2]
-                        @j f.partials_storage[ix1] = v2[j]
-                    end
-                    for j in _eachindex(f.sizes, k)
-                        @j f.forward_storage[k] = v1[j] * v2[j]
-                    end
-                    # Node `k` is scalar
-                else
-                    tmp_prod = one(T)
-                    for c_idx in children_indices
-                        @inbounds tmp_prod *=
-                            f.forward_storage[children_arr[c_idx]]
-                    end
-                    if tmp_prod == zero(T) || N <= 2
-                        # This is inefficient if there are a lot of children.
-                        # 2 is chosen as a limit because (x*y)/y does not always
-                        # equal x for floating-point numbers. This can produce
-                        # unexpected error in partials. There's still an error when
-                        # multiplying three or more terms, but users are less likely
-                        # to complain about it.
-                        for c_idx in children_indices
-                            prod_others = one(T)
-                            for c_idx2 in children_indices
-                                (c_idx == c_idx2) && continue
-                                ix = children_arr[c_idx2]
-                                prod_others *= f.forward_storage[ix]
-                            end
-                            f.partials_storage[children_arr[c_idx]] =
-                                prod_others
-                        end
-                    else
-                        # Compute all-minus-one partial derivatives by dividing from
-                        # the total product.
-                        for c_idx in children_indices
-                            ix = children_arr[c_idx]
-                            f.partials_storage[ix] =
-                                tmp_prod / f.forward_storage[ix]
-                        end
-                    end
-                    @inbounds f.forward_storage[k] = tmp_prod
-                end
+                @assert N == 2
+                child1 = first(children_indices)
+                _reshape_call(
+                    f.forward_storage,
+                    f.sizes,
+                    (k, children_arr[child1], children_arr[child1+1]),
+                    broadcast!,
+                    (*,),
+                )
             elseif node.index == 4 # :^ (broadcasted), array .^ scalar
                 @assert N == 2
                 idx1 = first(children_indices)
@@ -483,10 +436,8 @@ function _forward_eval(
                 partials = _view_linear(f.partials_storage, f.sizes, ix1)
                 if exponent == 2
                     out .= inp .* inp
-                    partials .= 2 .* inp
                 elseif exponent == 1
                     out .= inp
-                    fill!(partials, one(T))
                 else
                     out .= pow.(inp, exponent)
                     partials .= exponent .* pow.(inp, exponent - 1)
@@ -581,6 +532,38 @@ function _forward_eval(
     # for vector-valued roots (use `_storage_range(f.sizes, 1)`); the scalar
     # return is only meaningful when the root is scalar.
     return f.forward_storage[1]
+end
+
+function _reverse_broadcasted_mul(dout, dlhs, drhs, lhs, rhs)
+    # `reverse_storage` is zeroed out at construction but if
+    # at the second call of `eval_objective_gradient`, it is not
+    # zero so we can't assume that it is zero
+    fill!(dlhs, zero(eltype(dlhs)))
+    # Would need `conj` once we support `Complex`
+    Base.mapreducedim!(
+        identity,
+        Base.add_sum,
+        dlhs,
+        Broadcast.instantiate(Broadcast.broadcasted(*, dout, rhs)),
+    )
+    fill!(drhs, zero(eltype(drhs)))
+    Base.mapreducedim!(
+        identity,
+        Base.add_sum,
+        drhs,
+        Broadcast.instantiate(Broadcast.broadcasted(*, lhs, dout)),
+    )
+    return
+end
+
+function __reverse_broadcasted_mul(f, ilhs, irhs, dout, dlhs, drhs)
+    return _reshape_call(
+        f.forward_storage,
+        f.sizes,
+        (ilhs, irhs),
+        _reverse_broadcasted_mul,
+        (dout, dlhs, drhs),
+    )
 end
 
 """
@@ -832,75 +815,76 @@ function _reverse_eval(
         elseif node.type == NODE_CALL_MULTIVARIATE_BROADCASTED
             if node.index in eachindex(DEFAULT_MULTIVARIATE_OPERATORS)
                 op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
-                if op == :*
-                    if f.sizes.ndims[k] != 0
-                        # Node `k` is not scalar, so we do matrix multiplication or broadcasted multiplication
-                        idx1 = first(children_indices)
-                        idx2 = last(children_indices)
-                        ix1 = children_arr[idx1]
-                        ix2 = children_arr[idx2]
-                        v1 = zeros(_size(f.sizes, ix1)...)
-                        v2 = zeros(_size(f.sizes, ix2)...)
-                        for j in _eachindex(f.sizes, ix1)
-                            v1[j] = @j f.forward_storage[ix1]
-                        end
-                        for j in _eachindex(f.sizes, ix2)
-                            v2[j] = @j f.forward_storage[ix2]
-                        end
-                        rev_parent = zeros(_size(f.sizes, k)...)
-                        for j in _eachindex(f.sizes, k)
-                            rev_parent[j] = @j f.reverse_storage[k]
-                        end
-                        rev_v1 = zeros(_size(f.sizes, ix1)...)
-                        rev_v2 = zeros(_size(f.sizes, ix2)...)
-                        for j in _eachindex(f.sizes, ix1)
-                            rev_v1[j] = rev_parent[j] * v2[j]
-                            @j f.reverse_storage[ix1] = rev_v1[j]
-                        end
-                        for j in _eachindex(f.sizes, ix2)
-                            rev_v2[j] = rev_parent[j] * v1[j]
-                            @j f.reverse_storage[ix2] = rev_v2[j]
-                        end
-                        continue
-                    end
-                elseif op == :^
-                    # Broadcasted array .^ scalar: vectorize the per-element
-                    # base reverse (with 0*Inf guard preserved) and reduce
-                    # the exponent contribution as a single `sum` over GPU
-                    # arrays.
+                # Broadcasted +/- with at least one scalar child: the
+                # scalar's reverse is the (signed) sum of the parent's
+                # adjoint over the broadcast positions. Handle both scalar
+                # and matrix children here so the generic
+                # diagonal-partial path below doesn't trip its
+                # `_size(k) == _size(ix)` assertion.
+                if op == :+ || op == :- || op == :* || op == :^
                     @assert length(children_indices) == 2
-                    idx1 = first(children_indices)
-                    idx2 = last(children_indices)
-                    @inbounds ix1 = children_arr[idx1]
-                    @inbounds ix2 = children_arr[idx2]
-                    rev_parent = _view_linear(f.reverse_storage, f.sizes, k)
-                    rev_v1 = _view_linear(f.reverse_storage, f.sizes, ix1)
-                    partial = _view_linear(f.partials_storage, f.sizes, ix1)
-                    rev_v1 .= ifelse.(
-                        (rev_parent .== 0) .& .!isfinite.(partial),
-                        rev_parent,
-                        rev_parent .* partial,
-                    )
-                    base_view = _view_linear(f.forward_storage, f.sizes, ix1)
-                    out_view = _view_linear(f.forward_storage, f.sizes, k)
-                    # `mapreduce(f, +, base_view, rev_parent, out_view)`
-                    # would express this directly, but multi-iterable
-                    # `mapreduce` materializes an intermediate today
-                    # (JuliaLang/julia#53417). Wrap the inputs in `zip` so
-                    # the single-iterable specialization fires and the
-                    # reduction stays allocation-free. Once
-                    # https://github.com/JuliaLang/julia/pull/55301 lands
-                    # we can drop the `zip` and use the multi-arg form.
-                    T = eltype(rev_parent)
-                    rev_exp_total = mapreduce(
-                        +,
-                        zip(base_view, rev_parent, out_view);
-                        init = zero(T),
-                    ) do (b, rp, o)
-                        return b > 0 ? rp * o * log(b) : zero(T)
+                    child1 = first(children_indices)
+                    lhs = children_arr[child1]
+                    rhs = children_arr[child1+1]
+                    if op == :*
+                        _reshape_call(
+                            f.reverse_storage,
+                            f.sizes,
+                            (k, lhs, rhs),
+                            __reverse_broadcasted_mul,
+                            (f, lhs, rhs),
+                        )
+                    elseif op == :^
+                        # We start with just .^2 to simplify
+                        @assert f.sizes.ndims[rhs] == 0 "Broadcasted ^ requires scalar exponent"
+                        exp = _getscalar(f.forward_storage, f.sizes, rhs)
+                        # To simplify, so we don't need to compute its derivative
+                        @assert f.nodes[rhs].type == NODE_VALUE
+                        rev_parent = _view_linear(f.reverse_storage, f.sizes, k)
+                        rev_child =
+                            _view_linear(f.reverse_storage, f.sizes, lhs)
+                        if exp == 2
+                            child =
+                                _view_linear(f.forward_storage, f.sizes, lhs)
+                            rev_child .= 2 .* child .* rev_parent
+                        elseif exp == 1
+                            rev_child .= rev_parent
+                        else
+                            partial =
+                                _view_linear(f.partials_storage, f.sizes, lhs)
+                            rev_child .= ifelse.(
+                                (rev_parent .== 0) .& .!isfinite.(partial),
+                                rev_parent,
+                                rev_parent .* partial,
+                            )
+                        end
+                    else
+                        _reshape_call(
+                            f.reverse_storage,
+                            f.sizes,
+                            (children_arr[child1], k),
+                            sum!,
+                            tuple(),
+                        )
+                        rhs = children_arr[child1+1]
+                        if op == :+
+                            _reshape_call(
+                                f.reverse_storage,
+                                f.sizes,
+                                (rhs, k),
+                                sum!,
+                                tuple(),
+                            )
+                        elseif op == :-
+                            _reshape_call(
+                                f.reverse_storage,
+                                f.sizes,
+                                (rhs, k),
+                                sum!,
+                                (-,),
+                            )
+                        end
                     end
-                    pos2 = _scalar_pos(f.sizes, ix2)
-                    view(f.reverse_storage, pos2:pos2) .= rev_exp_total
                     continue
                 end
             end
