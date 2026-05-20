@@ -123,46 +123,130 @@ function _view_matrix(storage::AbstractVector, sizes::Sizes, k::Int)
     return reshape(v, (m, n))
 end
 
-function _reshape_call(_, _::Sizes, ::Tuple{}, op, args...)
-    return op(args...)
-end
+# Force specialization, (args..., x) is calling Core._apply_iterate
+@inline _push(::Tuple{}, x) = (x,)
+@inline _push(t::Tuple{Any}, x) = (t[1], x)
+@inline _push(t::Tuple{Any,Any}, x) = (t[1], t[2], x)
+@inline _push(t::Tuple{Any,Any,Any}, x) = (t[1], t[2], t[3], x)
+@inline _push(t::Tuple{Any,Any,Any,Any}, x) = (t[1], t[2], t[3], t[4], x)
+@inline _push(t::Tuple{Any,Any,Any,Any,Any}, x) =
+    (t[1], t[2], t[3], t[4], t[5], x)
+@inline _push(t::Tuple{Any,Any,Any,Any,Any,Any}, x) =
+    (t[1], t[2], t[3], t[4], t[5], t[6], x)
+@inline _push(t::Tuple{Any,Any,Any,Any,Any,Any,Any}, x) =
+    (t[1], t[2], t[3], t[4], t[5], t[6], t[7], x)
 
-function _reshape_call(storage, sizes::Sizes, nodes::Tuple, args...)
-    node = first(nodes)
-    ndims = sizes.ndims[node]
-    if ndims == 0
-        _reshape_call(
-            storage,
-            sizes,
-            Base.tail(nodes),
-            args...,
-            _view_scalar(storage, sizes, node),
-        )
-    elseif ndims == 1
-        _reshape_call(
-            storage,
-            sizes,
-            Base.tail(nodes),
-            args...,
-            _view_linear(storage, sizes, node),
-        )
-    elseif ndims == 2
-        _reshape_call(
-            storage,
-            sizes,
-            Base.tail(nodes),
-            args...,
-            _view_matrix(storage, sizes, node),
-        )
-    else
-        _reshape_call(
-            storage,
-            sizes,
-            Base.tail(nodes),
-            args...,
-            _view_array(storage, sizes, node), # TODO
+# The following is almost allocation-free but I couldn't figure out why it's not
+# Claude generated below an implementation with a generated function but it if we could
+# make the simpler version, without @generated, work, it would be simpler.
+
+#@inline function _reshape_call(
+#    _,
+#    _::Sizes,
+#    ::Tuple{},
+#    op::F,
+#    args::Tuple,
+#) where {F<:Function}
+#    op(args...)
+#    return
+#end
+
+#@inline function _reshape_call(
+#    storage,
+#    sizes::Sizes,
+#    nodes::NTuple{N,Int},
+#    op::F,
+#    args::Tuple,
+#) where {N,F<:Function}
+#    node = first(nodes)
+#    ndims = sizes.ndims[node]
+#    if ndims == 0
+#        _reshape_call(
+#            storage,
+#            sizes,
+#            Base.tail(nodes),
+#            op,
+#            _push(args, _view_scalar(storage, sizes, node)),
+#        )
+#    elseif ndims == 1
+#        _reshape_call(
+#            storage,
+#            sizes,
+#            Base.tail(nodes),
+#            op,
+#            _push(args, _view_linear(storage, sizes, node)),
+#        )
+#    elseif ndims == 2
+#        _reshape_call(
+#            storage,
+#            sizes,
+#            Base.tail(nodes),
+#            op,
+#            _push(args, _view_matrix(storage, sizes, node)),
+#        )
+#    else
+#        @assert false
+#        #        _reshape_call(
+#        #            storage,
+#        #            sizes,
+#        #            Base.tail(nodes),
+#        #            args...,
+#        #            _view_array(storage, sizes, node), # TODO
+#        #        )
+#    end
+#    return
+#end
+
+@generated function _reshape_call(
+    storage,
+    sizes::Sizes,
+    nodes::NTuple{N,Int},
+    op::F,
+    args::Tuple = (),
+) where {N,F}
+    # At each level, branch on ndims and CONTINUE recursively inside the chosen
+    # branch with the concrete view type. No phi-merge into Any, no Union args.
+    # The price: 4^N specialized paths, but each is fully type-stable.
+    function emit_level(i, args_sym)
+        if i > N
+            return Expr(:call, :op, Expr(:..., args_sym))
+        end
+        node_i = Symbol(:node_, i)
+        nd_i = Symbol(:nd_, i)
+        # In each branch, push the concrete view onto args and recurse to next level.
+        function with_view(view_call)
+            v = Symbol(:view_, i)
+            a = Symbol(:args_, i)
+            return Expr(
+                :block,
+                :($v = $view_call),
+                :($a = _push($args_sym, $v)),
+                emit_level(i + 1, a),
+            )
+        end
+        return Expr(
+            :block,
+            :($node_i = nodes[$i]),
+            :($nd_i = sizes.ndims[$node_i]),
+            Expr(
+                :if,
+                :($nd_i == 0),
+                with_view(:(_view_scalar(storage, sizes, $node_i))),
+                Expr(
+                    :elseif,
+                    :($nd_i == 1),
+                    with_view(:(_view_linear(storage, sizes, $node_i))),
+                    Expr(
+                        :elseif,
+                        :($nd_i == 2),
+                        with_view(:(_view_matrix(storage, sizes, $node_i))),
+                        with_view(:(_view_array(storage, sizes, $node_i))),
+                    ),
+                ),
+            ),
         )
     end
+    return Expr(:block, emit_level(1, :args), :(return nothing))
 end
 
 """
