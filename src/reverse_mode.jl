@@ -96,42 +96,38 @@ function _forward_broadcasted(
     return
 end
 
-function _reshape_forward_broadcasted(::Tuple{}, args...)
-    return _forward_broadcasted(args...)
+function _reshape_call(::_SubexpressionStorage, ::Tuple{}, op, args...)
+    return op(args...)
 end
 
-function _reshape_forward_broadcasted(nodes::Tuple, op, f, args...)
+function _reshape_call(f, nodes::Tuple, args...)
     node = first(nodes)
     ndims = f.sizes.ndims[node]
     if ndims == 0
-        _reshape_forward_broadcasted(
-            Base.tail(nodes),
-            op,
+        _reshape_call(
             f,
+            Base.tail(nodes),
             args...,
             _getscalar(f.forward_storage, f.sizes, node),
         )
     elseif ndims == 1
-        _reshape_forward_broadcasted(
-            Base.tail(nodes),
-            op,
+        _reshape_call(
             f,
+            Base.tail(nodes),
             args...,
             _view_linear(f.forward_storage, f.sizes, node),
         )
     elseif ndims == 2
-        _reshape_forward_broadcasted(
-            Base.tail(nodes),
-            op,
+        _reshape_call(
             f,
+            Base.tail(nodes),
             args...,
             _view_matrix(f.forward_storage, f.sizes, node),
         )
     else
-        _reshape_forward_broadcasted(
-            Base.tail(nodes),
-            op,
+        _reshape_call(
             f,
+            Base.tail(nodes),
             args...,
             _view_array(f.forward_storage, f.sizes, node),
         )
@@ -448,12 +444,11 @@ function _forward_eval(
             if node.index == 1 # :+  (broadcasted)
                 @assert N == 2
                 child1 = first(children_indices)
-                _reshape_forward_broadcasted(
-                    (k, children_arr[child1], children_arr[child1+1]),
-                    +,
+                _reshape_call(
                     f,
-                    d,
-                    x,
+                    (k, children_arr[child1], children_arr[child1+1]),
+                    broadcast!,
+                    +,
                 )
                 fill!(
                     _view_linear(
@@ -474,12 +469,11 @@ function _forward_eval(
             elseif node.index == 2 # :-  (broadcasted)
                 @assert N == 2
                 child1 = first(children_indices)
-                _reshape_forward_broadcasted(
-                    (k, children_arr[child1], children_arr[child1+1]),
-                    -,
+                _reshape_call(
                     f,
-                    d,
-                    x,
+                    (k, children_arr[child1], children_arr[child1+1]),
+                    broadcast!,
+                    -,
                 )
                 fill!(
                     _view_linear(
