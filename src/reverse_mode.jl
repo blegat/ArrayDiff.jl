@@ -398,7 +398,7 @@ function _forward_eval(
                     f.sizes,
                     (k, children_arr[child1], children_arr[child1+1]),
                     broadcast!,
-                    +,
+                    (+,),
                 )
             elseif node.index == 2 # :-  (broadcasted)
                 @assert N == 2
@@ -408,7 +408,7 @@ function _forward_eval(
                     f.sizes,
                     (k, children_arr[child1], children_arr[child1+1]),
                     broadcast!,
-                    -,
+                    (-,),
                 )
             elseif node.index == 3 # :*  (broadcasted)
                 @assert N == 2
@@ -418,7 +418,7 @@ function _forward_eval(
                     f.sizes,
                     (k, children_arr[child1], children_arr[child1+1]),
                     broadcast!,
-                    *,
+                    (*,),
                 )
             elseif node.index == 4 # :^ (broadcasted), array .^ scalar
                 @assert N == 2
@@ -564,9 +564,7 @@ function __reverse_broadcasted_mul(f, ilhs, irhs, dout, dlhs, drhs)
         f.sizes,
         (ilhs, irhs),
         _reverse_broadcasted_mul,
-        dout,
-        dlhs,
-        drhs,
+        (dout, dlhs, drhs),
     )
 end
 
@@ -836,9 +834,7 @@ function _reverse_eval(
                             f.sizes,
                             (k, lhs, rhs),
                             __reverse_broadcasted_mul,
-                            f,
-                            lhs,
-                            rhs,
+                            (f, lhs, rhs),
                         )
                     else
                         _reshape_call(
@@ -846,6 +842,7 @@ function _reverse_eval(
                             f.sizes,
                             (children_arr[child1], k),
                             sum!,
+                            tuple(),
                         )
                         rhs = children_arr[child1+1]
                         if op == :+
@@ -854,6 +851,7 @@ function _reverse_eval(
                                 f.sizes,
                                 (rhs, k),
                                 sum!,
+                                tuple(),
                             )
                         elseif op == :-
                             _reshape_call(
@@ -861,7 +859,7 @@ function _reverse_eval(
                                 f.sizes,
                                 (rhs, k),
                                 sum!,
-                                -,
+                                (-,),
                             )
                         end
                     end
