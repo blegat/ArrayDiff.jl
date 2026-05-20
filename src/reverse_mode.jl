@@ -83,61 +83,6 @@ function _reverse_mode(d::NLPEvaluator, x)
     return
 end
 
-function _forward_broadcasted(
-    op::Union{typeof(+),typeof(-)},
-    f::_SubexpressionStorage,
-    d::NLPEvaluator,
-    x::AbstractVector,
-    out,
-    lhs,
-    rhs,
-)
-    broadcast!(op, out, lhs, rhs)
-    return
-end
-
-function _reshape_call(_, _::Sizes, ::Tuple{}, op, args...)
-    return op(args...)
-end
-
-function _reshape_call(storage, sizes::Sizes, nodes::Tuple, args...)
-    node = first(nodes)
-    ndims = sizes.ndims[node]
-    if ndims == 0
-        _reshape_call(
-            storage,
-            sizes,
-            Base.tail(nodes),
-            args...,
-            _view_scalar(storage, sizes, node),
-        )
-    elseif ndims == 1
-        _reshape_call(
-            storage,
-            sizes,
-            Base.tail(nodes),
-            args...,
-            _view_linear(storage, sizes, node),
-        )
-    elseif ndims == 2
-        _reshape_call(
-            storage,
-            sizes,
-            Base.tail(nodes),
-            args...,
-            _view_matrix(storage, sizes, node),
-        )
-    else
-        _reshape_call(
-            storage,
-            sizes,
-            Base.tail(nodes),
-            args...,
-            _view_array(storage, sizes, node),
-        )
-    end
-end
-
 """
     _forward_eval(
         f::_SubexpressionStorage,
@@ -464,22 +409,6 @@ function _forward_eval(
                     (k, children_arr[child1], children_arr[child1+1]),
                     broadcast!,
                     -,
-                )
-                fill!(
-                    _view_linear(
-                        f.partials_storage,
-                        f.sizes,
-                        children_arr[child1],
-                    ),
-                    one(T),
-                )
-                fill!(
-                    _view_linear(
-                        f.partials_storage,
-                        f.sizes,
-                        children_arr[child1+1],
-                    ),
-                    -one(T),
                 )
             elseif node.index == 3 # :*  (broadcasted)
                 # Node `k` is not scalar, so we do element-wise multiply

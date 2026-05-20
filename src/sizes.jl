@@ -123,6 +123,48 @@ function _view_matrix(storage::AbstractVector, sizes::Sizes, k::Int)
     return reshape(v, (m, n))
 end
 
+function _reshape_call(_, _::Sizes, ::Tuple{}, op, args...)
+    return op(args...)
+end
+
+function _reshape_call(storage, sizes::Sizes, nodes::Tuple, args...)
+    node = first(nodes)
+    ndims = sizes.ndims[node]
+    if ndims == 0
+        _reshape_call(
+            storage,
+            sizes,
+            Base.tail(nodes),
+            args...,
+            _view_scalar(storage, sizes, node),
+        )
+    elseif ndims == 1
+        _reshape_call(
+            storage,
+            sizes,
+            Base.tail(nodes),
+            args...,
+            _view_linear(storage, sizes, node),
+        )
+    elseif ndims == 2
+        _reshape_call(
+            storage,
+            sizes,
+            Base.tail(nodes),
+            args...,
+            _view_matrix(storage, sizes, node),
+        )
+    else
+        _reshape_call(
+            storage,
+            sizes,
+            Base.tail(nodes),
+            args...,
+            _view_array(storage, sizes, node), # TODO
+        )
+    end
+end
+
 """
     @s(storage[node]) -> _getscalar(storage, f.sizes, node)
     @s(storage[node] = value) -> _setscalar!(storage, value, f.sizes, node)
