@@ -177,6 +177,7 @@ function _eval(model::JuMP.GenericModel{T}, func, x) where {T}
     sizes = evaluator.backend.objective.expr.sizes
     val = MOI.eval_objective(evaluator, x)
     if VERSION >= v"1.12"
+        fill!(evaluator.backend.last_x, NaN)
         @test 0 == @allocated MOI.eval_objective(evaluator, x)
     end
     x_grad = T.(collect(1:8))
@@ -569,8 +570,9 @@ function test_broadcast_outer_vector_gradient()
         @test val ≈ LinearAlgebra.norm(ref_mat)
         # `d norm(M) / d v_i = sum_j dexpr_dv[i,j] * M[i,j] / norm(M)` because
         # v's column is broadcast across every output column.
-        @test g ≈ vec(sum(dexpr_dv .* ref_mat; dims = 2)) ./
-                  LinearAlgebra.norm(ref_mat)
+        @test g ≈
+              vec(sum(dexpr_dv .* ref_mat; dims = 2)) ./
+              LinearAlgebra.norm(ref_mat)
     end
     return
 end
