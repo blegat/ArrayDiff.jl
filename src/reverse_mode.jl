@@ -84,7 +84,7 @@ function _reverse_mode(d::NLPEvaluator, x)
 end
 
 function _forward_broadcasted(
-    ::typeof(+),
+    op::Union{typeof(+),typeof(-)},
     f::_SubexpressionStorage,
     d::NLPEvaluator,
     x::AbstractVector,
@@ -92,7 +92,8 @@ function _forward_broadcasted(
     lhs,
     rhs,
 )
-    return out .= lhs .+ rhs
+    broadcast!(op, out, lhs, rhs)
+    return
 end
 
 function _reshape_forward_broadcasted(::Tuple{}, args...)
@@ -473,42 +474,29 @@ function _forward_eval(
             elseif node.index == 2 # :-  (broadcasted)
                 @assert N == 2
                 child1 = first(children_indices)
-                @inbounds ix1 = children_arr[child1]
-                @inbounds ix2 = children_arr[child1+1]
-                out = _view_linear(f.forward_storage, f.sizes, k)
-                ndims1 = f.sizes.ndims[ix1]
-                ndims2 = f.sizes.ndims[ix2]
-                if ndims1 == 0 && ndims2 != 0
-                    s1 = _getscalar(f.forward_storage, f.sizes, ix1)
-                    v2 = _view_linear(f.forward_storage, f.sizes, ix2)
-                    out .= s1 .- v2
-                    _setscalar!(f.partials_storage, one(T), f.sizes, ix1)
-                    fill!(
-                        _view_linear(f.partials_storage, f.sizes, ix2),
-                        -one(T),
-                    )
-                elseif ndims1 != 0 && ndims2 == 0
-                    v1 = _view_linear(f.forward_storage, f.sizes, ix1)
-                    s2 = _getscalar(f.forward_storage, f.sizes, ix2)
-                    out .= v1 .- s2
-                    fill!(
-                        _view_linear(f.partials_storage, f.sizes, ix1),
-                        one(T),
-                    )
-                    _setscalar!(f.partials_storage, -one(T), f.sizes, ix2)
-                else
-                    v1 = _view_linear(f.forward_storage, f.sizes, ix1)
-                    v2 = _view_linear(f.forward_storage, f.sizes, ix2)
-                    out .= v1 .- v2
-                    fill!(
-                        _view_linear(f.partials_storage, f.sizes, ix1),
-                        one(T),
-                    )
-                    fill!(
-                        _view_linear(f.partials_storage, f.sizes, ix2),
-                        -one(T),
-                    )
-                end
+                _reshape_forward_broadcasted(
+                    (k, children_arr[child1], children_arr[child1+1]),
+                    -,
+                    f,
+                    d,
+                    x,
+                )
+                fill!(
+                    _view_linear(
+                        f.partials_storage,
+                        f.sizes,
+                        children_arr[child1],
+                    ),
+                    one(T),
+                )
+                fill!(
+                    _view_linear(
+                        f.partials_storage,
+                        f.sizes,
+                        children_arr[child1+1],
+                    ),
+                    -one(T),
+                )
             elseif node.index == 3 # :*  (broadcasted)
                 # Node `k` is not scalar, so we do element-wise multiply
                 # (with scalar-broadcast support: when one operand is
