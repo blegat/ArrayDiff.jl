@@ -436,10 +436,8 @@ function _forward_eval(
                 partials = _view_linear(f.partials_storage, f.sizes, ix1)
                 if exponent == 2
                     out .= inp .* inp
-                    partials .= 2 .* inp
                 elseif exponent == 1
                     out .= inp
-                    fill!(partials, one(T))
                 else
                     out .= pow.(inp, exponent)
                     partials .= exponent .* pow.(inp, exponent - 1)
@@ -823,7 +821,7 @@ function _reverse_eval(
                 # and matrix children here so the generic
                 # diagonal-partial path below doesn't trip its
                 # `_size(k) == _size(ix)` assertion.
-                if op == :+ || op == :- || op == :*
+                if op == :+ || op == :- || op == :* || op == :^
                     @assert length(children_indices) == 2
                     child1 = first(children_indices)
                     lhs = children_arr[child1]
@@ -836,6 +834,30 @@ function _reverse_eval(
                             __reverse_broadcasted_mul,
                             (f, lhs, rhs),
                         )
+                    elseif op == :^
+                        # We start with just .^2 to simplify
+                        @assert f.sizes.ndims[rhs] == 0 "Broadcasted ^ requires scalar exponent"
+                        exp = _getscalar(f.forward_storage, f.sizes, rhs)
+                        # To simplify, so we don't need to compute its derivative
+                        @assert f.nodes[rhs].type == NODE_VALUE
+                        rev_parent = _view_linear(f.reverse_storage, f.sizes, k)
+                        rev_child =
+                            _view_linear(f.reverse_storage, f.sizes, lhs)
+                        if exp == 2
+                            child =
+                                _view_linear(f.forward_storage, f.sizes, lhs)
+                            rev_child .= 2 .* child .* rev_parent
+                        elseif exp == 1
+                            rev_child .= rev_parent
+                        else
+                            partial =
+                                _view_linear(f.partials_storage, f.sizes, lhs)
+                            rev_child .= ifelse.(
+                                (rev_parent .== 0) .& .!isfinite.(partial),
+                                rev_parent,
+                                rev_parent .* partial,
+                            )
+                        end
                     else
                         _reshape_call(
                             f.reverse_storage,
