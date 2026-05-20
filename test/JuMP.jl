@@ -184,6 +184,7 @@ function _eval(model::JuMP.GenericModel{T}, func, x) where {T}
     g = zero(x)
     MOI.eval_objective_gradient(evaluator, g, x_grad)
     if VERSION >= v"1.12"
+        fill!(evaluator.backend.last_x, NaN)
         @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, x_grad)
     end
     MOI.Nonlinear.set_objective(ad, nothing)
