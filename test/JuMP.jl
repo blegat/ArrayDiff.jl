@@ -495,6 +495,86 @@ function test_broadcast_scalar_matrix_gradient()
     return
 end
 
+# Cover broadcasting where one operand is a column vector or a row vector
+# (vector-transpose) and the other is the matrix variable W. Same loss shape
+# as `test_broadcast_scalar_matrix_gradient` — `norm(c op W)` — so the
+# analytic gradient is `dexpr_dW .* (c op W) ./ norm(c op W)`.
+function test_broadcast_vector_matrix_gradient()
+    rows, cols = 2, 3
+    model = Model()
+    @variable(model, W[1:rows, 1:cols], container = ArrayDiff.ArrayOfVariables)
+    v = [10.0, 20.0]                  # length-rows column vector
+    r = [100.0 200.0 300.0]           # 1×cols row vector (vector-transpose)
+    x = Float64.(collect(1:(rows*cols)))
+    W_val = reshape(x, rows, cols)
+    # Broadcast partials: `dexpr_dW` is the elementwise ∂(c op W)/∂W,
+    # broadcast to W's (rows, cols) shape.
+    v_bcast = v .* ones(rows, cols)   # repeats v across cols
+    r_bcast = ones(rows) .* r         # repeats r down rows
+    @testset "$(name)" for (name, expr, ref_mat, dexpr_dW) in [
+        # Column-vector broadcast (v repeats across cols)
+        ("v .+ W", v .+ W, v .+ W_val, fill(1.0, rows, cols)),
+        ("W .+ v", W .+ v, W_val .+ v, fill(1.0, rows, cols)),
+        ("v .- W", v .- W, v .- W_val, fill(-1.0, rows, cols)),
+        ("W .- v", W .- v, W_val .- v, fill(1.0, rows, cols)),
+        ("v .* W", v .* W, v .* W_val, v_bcast),
+        ("W .* v", W .* v, W_val .* v, v_bcast),
+        # Row-vector broadcast (r repeats down rows)
+        ("r .+ W", r .+ W, r .+ W_val, fill(1.0, rows, cols)),
+        ("W .+ r", W .+ r, W_val .+ r, fill(1.0, rows, cols)),
+        ("r .- W", r .- W, r .- W_val, fill(-1.0, rows, cols)),
+        ("W .- r", W .- r, W_val .- r, fill(1.0, rows, cols)),
+        ("r .* W", r .* W, r .* W_val, r_bcast),
+        ("W .* r", W .* r, W_val .* r, r_bcast),
+    ]
+        sizes, val, g = _eval(model, LinearAlgebra.norm(expr), x)
+        # Tape: norm (k=1, scalar) then the broadcast (k=2, matrix) inheriting
+        # (rows, cols) from the result shape — not from the smaller operand.
+        @test sizes.ndims[1] == 0
+        @test sizes.ndims[2] == 2
+        b_off = sizes.size_offset[2]
+        @test sizes.size[b_off+1] == rows
+        @test sizes.size[b_off+2] == cols
+        @test val ≈ LinearAlgebra.norm(ref_mat)
+        @test g ≈ vec(dexpr_dW .* ref_mat) ./ LinearAlgebra.norm(ref_mat)
+    end
+    return
+end
+
+# Outer-product-shape broadcast: a vector variable `v` (length rows) combined
+# with a row-vector constant `r` (1×cols). The result is rows×cols, and the
+# gradient w.r.t. v reduces along the broadcasted (cols) dimension.
+function test_broadcast_outer_vector_gradient()
+    rows, cols = 2, 3
+    model = Model()
+    @variable(model, v[1:rows], container = ArrayDiff.ArrayOfVariables)
+    r = [100.0 200.0 300.0]           # 1×cols row vector
+    x = Float64.(collect(1:rows))
+    v_val = copy(x)
+    r_bcast = ones(rows) .* r         # ∂(v .* r)/∂v broadcast to (rows, cols)
+    @testset "$(name)" for (name, expr, ref_mat, dexpr_dv) in [
+        ("v .+ r", v .+ r, v_val .+ r, fill(1.0, rows, cols)),
+        ("r .+ v", r .+ v, r .+ v_val, fill(1.0, rows, cols)),
+        ("v .- r", v .- r, v_val .- r, fill(1.0, rows, cols)),
+        ("r .- v", r .- v, r .- v_val, fill(-1.0, rows, cols)),
+        ("v .* r", v .* r, v_val .* r, r_bcast),
+        ("r .* v", r .* v, r .* v_val, r_bcast),
+    ]
+        sizes, val, g = _eval(model, LinearAlgebra.norm(expr), x)
+        @test sizes.ndims[1] == 0
+        @test sizes.ndims[2] == 2
+        b_off = sizes.size_offset[2]
+        @test sizes.size[b_off+1] == rows
+        @test sizes.size[b_off+2] == cols
+        @test val ≈ LinearAlgebra.norm(ref_mat)
+        # `d norm(M) / d v_i = sum_j dexpr_dv[i,j] * M[i,j] / norm(M)` because
+        # v's column is broadcast across every output column.
+        @test g ≈ vec(sum(dexpr_dv .* ref_mat; dims = 2)) ./
+                  LinearAlgebra.norm(ref_mat)
+    end
+    return
+end
+
 end  # module
 
 TestJuMP.runtests()

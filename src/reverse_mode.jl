@@ -820,44 +820,46 @@ function _reverse_eval(
                 # and matrix children here so the generic
                 # diagonal-partial path below doesn't trip its
                 # `_size(k) == _size(ix)` assertion.
-                if op == :+ || op == :-
+                if op == :+ || op == :- || op == :*
                     @assert length(children_indices) == 2
                     child1 = first(children_indices)
-                    _reshape_call(
-                        f.reverse_storage,
-                        f.sizes,
-                        (children_arr[child1], k),
-                        sum!,
-                    )
+                    lhs = children_arr[child1]
                     rhs = children_arr[child1+1]
-                    if op == :+
+                    if op == :*
                         _reshape_call(
                             f.reverse_storage,
                             f.sizes,
-                            (rhs, k),
-                            sum!,
+                            (k, lhs, rhs),
+                            __reverse_broadcasted_mul,
+                            f,
+                            lhs,
+                            rhs,
                         )
-                    elseif op == :-
+                    else
                         _reshape_call(
                             f.reverse_storage,
                             f.sizes,
-                            (rhs, k),
+                            (children_arr[child1], k),
                             sum!,
-                            -,
                         )
+                        rhs = children_arr[child1+1]
+                        if op == :+
+                            _reshape_call(
+                                f.reverse_storage,
+                                f.sizes,
+                                (rhs, k),
+                                sum!,
+                            )
+                        elseif op == :-
+                            _reshape_call(
+                                f.reverse_storage,
+                                f.sizes,
+                                (rhs, k),
+                                sum!,
+                                -,
+                            )
+                        end
                     end
-                    continue
-                end
-                if op == :*
-                    _reshape_call(
-                        f.reverse_storage,
-                        f.sizes,
-                        (k, lhs, rhs),
-                        __reverse_broadcasted_mul,
-                        f,
-                        lhs,
-                        rhs,
-                    )
                     continue
                 end
             end
