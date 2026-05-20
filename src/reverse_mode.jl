@@ -377,6 +377,15 @@ function _forward_eval(
                     sum!,
                     tuple(),
                 )
+            elseif node.index <= length(operators.multivariate_operators) &&
+                   haskey(
+                operators.chainrules_operators,
+                operators.multivariate_operators[node.index],
+            )
+                op_sym = operators.multivariate_operators[node.index]
+                user_f = operators.chainrules_operators[op_sym]
+                children = Int[children_arr[i] for i in children_indices]
+                _forward_chainrules_multivariate!(f, k, children, user_f)
             else # atan, min, max
                 f_input = _UnsafeVectorView(d.jac_storage, N)
                 ∇f = _UnsafeVectorView(d.user_output_buffer, N)
@@ -502,6 +511,21 @@ function _forward_eval(
                     val = @j f.forward_storage[child_idx]
                     @j f.forward_storage[k] = -val
                 end
+            elseif node.index <= length(operators.univariate_operators) &&
+                   haskey(
+                operators.chainrules_operators,
+                operators.univariate_operators[node.index],
+            )
+                op_sym = operators.univariate_operators[node.index]
+                user_f = operators.chainrules_operators[op_sym]
+                out = _view_linear(f.forward_storage, f.sizes, k)
+                inp = _view_linear(f.forward_storage, f.sizes, child_idx)
+                partials = _view_linear(f.partials_storage, f.sizes, child_idx)
+                out .= user_f.(inp)
+                # The local Jacobian of an univariate scalar function should
+                # be efficiently computed with ForwardDiff so we don't use ChainRules
+                # here.
+                partials .= ForwardDiff.derivative.(user_f, inp)
             elseif operators.univariate_operators[node.index] === :tanh
                 out = _view_linear(f.forward_storage, f.sizes, k)
                 inp = _view_linear(f.forward_storage, f.sizes, child_idx)
@@ -554,6 +578,99 @@ function _forward_eval(
     # for vector-valued roots (use `_storage_range(f.sizes, 1)`); the scalar
     # return is only meaningful when the root is scalar.
     return f.forward_storage[1]
+end
+
+"""
+    _chainrules_forward_kernel!(pullback_ref, user_f, out, args...)
+
+`_reshape_call`-style kernel for the forward pass of a chain-rules operator.
+`out` is the natural-shape view (0-D / 1-D linear / 2-D `ReshapedArray`) of
+node `k` in `forward_storage`, and `args` are the natural-shape views of the
+children. We call `ChainRulesCore.rrule(user_f, args...)` so the user's
+function sees the same matrix / vector / scalar shapes it would see outside
+the AD tape, stash the pullback for the reverse pass, and write the value
+into `out` via a shape-preserving broadcast.
+"""
+function _chainrules_forward_kernel!(
+    pullback_ref::Base.RefValue{Any},
+    user_f::F,
+    out,
+    args::Vararg{Any,N},
+) where {F,N}
+    y, pullback = ChainRulesCore.rrule(user_f, args...)
+    pullback_ref[] = pullback
+    out .= y
+    return
+end
+
+"""
+    _chainrules_reverse_kernel!(pullback, parent_cot, child_cots...)
+
+`_reshape_call`-style kernel for the reverse pass. `parent_cot` is the
+natural-shape view of node `k` in `reverse_storage` (which holds the
+incoming cotangent of the operator's output), and `child_cots[i]` is the
+natural-shape view of the `i`-th child in `reverse_storage`. We call the
+pullback with `parent_cot` (matching the shape it returned in forward)
+and write each input cotangent back into the child's view, again via a
+shape-preserving broadcast.
+"""
+function _chainrules_reverse_kernel!(
+    pullback,
+    parent_cot,
+    child_cots::Vararg{Any,N},
+) where {N}
+    cots = pullback(parent_cot)
+    # `cots[1]` is the cotangent of `user_f` itself, usually `NoTangent()`.
+    for i in 1:N
+        cot = cots[i+1]
+        cview = child_cots[i]
+        if cot isa ChainRulesCore.AbstractZero
+            fill!(cview, zero(eltype(cview)))
+        else
+            cview .= cot
+        end
+    end
+    return
+end
+
+# Build the `(k, children...)` `NTuple{N+1,Int}` that `_reshape_call`
+# expects. The result is type-unstable in `N`, but the chain-rules path is
+# the slow path so we accept the dispatch cost.
+@inline _chainrules_nodes(k::Int, children::Vector{Int}) =
+    (k, Tuple(children)...)
+
+function _forward_chainrules_multivariate!(
+    f::_SubexpressionStorage,
+    k::Int,
+    children::Vector{Int},
+    user_f,
+)
+    pullback_ref = Ref{Any}(nothing)
+    _reshape_call(
+        f.forward_storage,
+        f.sizes,
+        _chainrules_nodes(k, children),
+        _chainrules_forward_kernel!,
+        (pullback_ref, user_f),
+    )
+    f.chainrules_pullbacks[k] = pullback_ref[]
+    return
+end
+
+function _reverse_chainrules_multivariate!(
+    f::_SubexpressionStorage,
+    k::Int,
+    children::Vector{Int},
+)
+    pullback = f.chainrules_pullbacks[k]
+    _reshape_call(
+        f.reverse_storage,
+        f.sizes,
+        _chainrules_nodes(k, children),
+        _chainrules_reverse_kernel!,
+        (pullback,),
+    )
+    return
 end
 
 function _reverse_broadcasted_mul(dout, dlhs, drhs, lhs, rhs)
@@ -886,6 +1003,11 @@ function _reverse_eval(
                     )
                     continue
                 end
+            elseif node.type == NODE_CALL_MULTIVARIATE &&
+                   haskey(f.chainrules_pullbacks, k)
+                children = [children_arr[i] for i in children_indices]
+                _reverse_chainrules_multivariate!(f, k, children)
+                continue
             end
         elseif node.type == NODE_CALL_MULTIVARIATE_BROADCASTED
             if node.index in eachindex(DEFAULT_MULTIVARIATE_OPERATORS)

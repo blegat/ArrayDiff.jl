@@ -344,6 +344,7 @@ function _infer_sizes(
     adj::SparseArrays.SparseMatrixCSC{Bool,Int},
     block_shapes::Dict{Int,Vector{Int}},
     const_values::AbstractVector, # Needed for sum(_; dims)
+    operators,
 )
     sizes = Sizes(
         zeros(Int, length(nodes)),
@@ -367,6 +368,30 @@ function _infer_sizes(
         N = length(children_indices)
         if node.type == NODE_CALL_MULTIVARIATE
             if !(node.index in eachindex(DEFAULT_MULTIVARIATE_OPERATORS))
+                if operators !== nothing &&
+                   node.index in eachindex(operators.multivariate_operators)
+                    op_sym = operators.multivariate_operators[node.index]
+                    if haskey(operators.chainrules_operators, op_sym)
+                        f = operators.chainrules_operators[op_sym]
+                        # Determine output shape by calling `f` with
+                        # zero-initialised arrays sized like each child.
+                        args = Any[]
+                        for c_idx in children_indices
+                            child = children_arr[c_idx]
+                            child_shape = ntuple(
+                                d -> _size(sizes, child, d),
+                                sizes.ndims[child],
+                            )
+                            push!(args, zeros(child_shape))
+                        end
+                        y = f(args...)
+                        if y isa AbstractArray
+                            _add_size!(sizes, k, size(y))
+                        end
+                        # Scalar output → ndims = 0 (already initialised).
+                        continue
+                    end
+                end
                 # TODO user-defined operators
                 continue
             end
@@ -548,6 +573,16 @@ function _infer_sizes(
                 node.index in
                 eachindex(MOI.Nonlinear.DEFAULT_UNIVARIATE_OPERATORS)
             )
+                if operators !== nothing &&
+                   node.index in eachindex(operators.univariate_operators) &&
+                   haskey(
+                       operators.chainrules_operators,
+                       operators.univariate_operators[node.index],
+                   )
+                    @assert N == 1
+                    _copy_size!(sizes, k, children_arr[first(children_indices)])
+                    continue
+                end
                 error("TODO user-defined operators")
                 continue
             end
@@ -572,6 +607,11 @@ struct _SubexpressionStorage{T<:Real,S<:AbstractVector{T}}
     reverse_storage::S
     partials_storage_ϵ::Vector{Float64}
     linearity::Linearity
+    # ChainRules pullbacks captured during the forward pass, keyed by node
+    # index. Lazily populated by `_forward_eval` for nodes whose operator was
+    # registered via `register_chainrules_operator`. Read back by
+    # `_reverse_eval` to propagate cotangents to the children.
+    chainrules_pullbacks::Dict{Int,Any}
 
     function _SubexpressionStorage(
         nodes::Vector{Node},
@@ -580,9 +620,10 @@ struct _SubexpressionStorage{T<:Real,S<:AbstractVector{T}}
         block_shapes::Dict{Int,Vector{Int}},
         partials_storage_ϵ::Vector{Float64},
         linearity::Linearity,
+        operators = nothing,
         ::Type{S} = Vector{T},
     ) where {T<:Real,S<:AbstractVector{T}}
-        sizes = _infer_sizes(nodes, adj, block_shapes, const_values)
+        sizes = _infer_sizes(nodes, adj, block_shapes, const_values, operators)
         N = _length(sizes)
         # Pre-load value blocks into forward_storage once at construction;
         # each block is a contiguous-to-contiguous bulk copy. Individual
@@ -609,6 +650,7 @@ struct _SubexpressionStorage{T<:Real,S<:AbstractVector{T}}
             fill!(S(undef, N), zero(T)),  # reverse_storage,
             partials_storage_ϵ,
             linearity,
+            Dict{Int,Any}(),
         )
     end
 end

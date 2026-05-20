@@ -141,6 +141,14 @@ struct OperatorRegistry
     # NODE_COMPARISON
     comparison_operators::Vector{Symbol}
     comparison_operator_to_id::Dict{Symbol,Int}
+    # ChainRules-backed user operators. Keyed by the symbol that appears in
+    # the tape (the `head` of an `ArrayNonlinearFunction`). The value is the
+    # plain Julia function; the function's reverse-mode derivative is obtained
+    # via `ChainRulesCore.rrule(f, args...)`. These operators are also added
+    # to `multivariate_operators` (or `univariate_operators` for `arity == 1`)
+    # so the parser routes them through the standard
+    # `NODE_CALL_MULTIVARIATE` / `NODE_CALL_UNIVARIATE_BROADCASTED` paths.
+    chainrules_operators::Dict{Symbol,Any}
     function OperatorRegistry()
         univariate_operators = copy(MOI.Nonlinear.DEFAULT_UNIVARIATE_OPERATORS)
         multivariate_operators = copy(DEFAULT_MULTIVARIATE_OPERATORS)
@@ -169,6 +177,7 @@ struct OperatorRegistry
             Dict{Symbol,Int}(
                 op => i for (i, op) in enumerate(comparison_operators)
             ),
+            Dict{Symbol,Any}(),
         )
     end
 end

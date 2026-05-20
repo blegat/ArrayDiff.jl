@@ -6,6 +6,7 @@
 
 module ArrayDiff
 
+import ChainRulesCore
 import ForwardDiff
 import LinearAlgebra
 import MathOptInterface as MOI

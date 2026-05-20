@@ -118,6 +118,7 @@ function _subexpression_and_linearity(
         copy(expr.block_shapes),
         partials_storage_ϵ,
         linearity[1],
+        d.data.operators,
         S,
     ),
     linearity

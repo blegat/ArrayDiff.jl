@@ -4,10 +4,36 @@ using Test
 
 using JuMP
 using ArrayDiff
+import ChainRulesCore
 import LinearAlgebra
 import MathOptInterface as MOI
 
 include(joinpath(@__DIR__, "Transformer.jl"))
+
+# Helpers used by the ChainRules tests below. Defined at module scope so
+# `Symbol(my_relu)` resolves to `:my_relu` (rather than a generated closure
+# name) and so `ChainRulesCore.rrule` can be overloaded for `my_crossentropy`.
+my_relu(x) = max(zero(x), x)
+# No need to define any ChainRules because FiniteDiff is used in the broadcast.
+
+function my_crossentropy(p, q)
+    return -sum(q .* log.(p .+ 1e-3))
+end
+
+function ChainRulesCore.rrule(
+    ::typeof(my_crossentropy),
+    p::AbstractArray,
+    q::AbstractArray,
+)
+    ε = 1e-3
+    val = my_crossentropy(p, q)
+    function pullback(δ)
+        dp = δ .* (-q ./ (p .+ ε))
+        dq = δ .* (-log.(p .+ ε))
+        return ChainRulesCore.NoTangent(), dp, dq
+    end
+    return val, pullback
+end
 
 function runtests()
     for name in names(@__MODULE__; all = true)
@@ -608,6 +634,96 @@ function test_transformer_mlp_gradient()
     loss = sum(mlp(x) .^ 2)
     mode = ArrayDiff.Mode()
     ad = ArrayDiff.model(mode)
+    MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
+    evaluator = MOI.Nonlinear.Evaluator(
+        ad,
+        mode,
+        JuMP.index.(JuMP.all_variables(model)),
+    )
+    MOI.initialize(evaluator, [:Grad])
+    W_val = [0.3 -0.2; 0.1 0.4]
+    x_in = vec(W_val)
+    val = MOI.eval_objective(evaluator, x_in)
+    @test val ≈ sum(my_relu.(W_val * X))
+    g = zeros(length(x_in))
+    MOI.eval_objective_gradient(evaluator, g, x_in)
+    # d sum(relu.(W*X)) / dW = (Y .> 0) * X'
+    Y_val = W_val * X
+    grad_W = Float64.(Y_val .> 0) * X'
+    @test g ≈ vec(grad_W)
+    return
+end
+
+function test_chainrules_crossentropy_of_relu()
+    n = 2
+    X = [1.0 0.5; 0.3 0.8]
+    target = [0.5 0.2; 0.1 0.7]
+    model = Model()
+    @variable(model, W[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    mode = ArrayDiff.Mode()
+    ad = ArrayDiff.model(mode)
+    MOI.set(
+        ad,
+        ArrayDiff.UserDefinedArrayOperator(:my_relu; arity = 1),
+        my_relu,
+    )
+    MOI.set(
+        ad,
+        ArrayDiff.UserDefinedArrayOperator(:my_crossentropy; arity = 2),
+        my_crossentropy,
+    )
+    Y = W * X
+    Z = my_relu.(Y)
+    # JuMP's `GenericNonlinearExpr` rejects raw array arguments, so we build
+    # the `ScalarNonlinearFunction` directly. This is the wire format the
+    # parser expects anyway — there is no `crossentropy` JuMP-scalar layer
+    # for the user to traverse.
+    loss_moi = MOI.ScalarNonlinearFunction(
+        :my_crossentropy,
+        Any[JuMP.moi_function(Z), target],
+    )
+    MOI.Nonlinear.set_objective(ad, loss_moi)
+    evaluator = MOI.Nonlinear.Evaluator(
+        ad,
+        mode,
+        JuMP.index.(JuMP.all_variables(model)),
+    )
+    MOI.initialize(evaluator, [:Grad])
+    W_val = [0.3 -0.2; 0.1 0.4]
+    x_in = vec(W_val)
+    val = MOI.eval_objective(evaluator, x_in)
+    @test val ≈ my_crossentropy(my_relu.(W_val * X), target)
+    g = zeros(length(x_in))
+    MOI.eval_objective_gradient(evaluator, g, x_in)
+    ε = 1e-3
+    Y_val = W_val * X
+    Z_val = my_relu.(Y_val)
+    dL_dZ = -target ./ (Z_val .+ ε)
+    dZ_dY = Float64.(Y_val .> 0)
+    dL_dY = dL_dZ .* dZ_dY
+    grad_W = dL_dY * X'
+    @test g ≈ vec(grad_W)
+    return
+end
+
+function test_chainrules_broadcasted_relu()
+    n = 2
+    X = [1.0 0.5; 0.3 0.8]
+    model = Model()
+    @variable(model, W[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    mode = ArrayDiff.Mode()
+    ad = ArrayDiff.model(mode)
+    MOI.set(
+        ad,
+        ArrayDiff.UserDefinedArrayOperator(:my_relu; arity = 1),
+        my_relu,
+    )
+    Y = W * X
+    Z = my_relu.(Y)
+    @test Z isa ArrayDiff.MatrixExpr
+    @test Z.head == :my_relu
+    @test Z.broadcasted
+    loss = sum(Z)
     MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
     evaluator = MOI.Nonlinear.Evaluator(
         ad,
