@@ -455,22 +455,6 @@ function _forward_eval(
                     broadcast!,
                     +,
                 )
-                fill!(
-                    _view_linear(
-                        f.partials_storage,
-                        f.sizes,
-                        children_arr[child1],
-                    ),
-                    one(T),
-                )
-                fill!(
-                    _view_linear(
-                        f.partials_storage,
-                        f.sizes,
-                        children_arr[child1+1],
-                    ),
-                    one(T),
-                )
             elseif node.index == 2 # :-  (broadcasted)
                 @assert N == 2
                 child1 = first(children_indices)
