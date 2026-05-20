@@ -537,6 +537,11 @@ function _forward_eval(
 end
 
 function _reverse_broadcasted_mul(dout, dlhs, drhs, lhs, rhs)
+    # `reverse_storage` is zeroed out at construction but if
+    # at the second call of `eval_objective_gradient`, it is not
+    # zero so we can't assume that it is zero
+    end
+    fill!(dlhs, zero(eltype(dlhs)))
     # Would need `conj` once we support `Complex`
     Base.mapreducedim!(
         identity,
@@ -544,6 +549,7 @@ function _reverse_broadcasted_mul(dout, dlhs, drhs, lhs, rhs)
         dlhs,
         Broadcast.instantiate(Broadcast.broadcasted(*, dout, rhs)),
     )
+    fill!(drhs, zero(eltype(drhs)))
     Base.mapreducedim!(
         identity,
         Base.add_sum,
