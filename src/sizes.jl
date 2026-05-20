@@ -49,8 +49,7 @@ function _setscalar!(x, value, sizes::Sizes, k::Int)
     # Use a 1-element view + broadcast so this works on GPU storage as well as
     # `Vector{Float64}`. Direct `x[idx] = value` is a scalar setindex which
     # GPUArrays disallows by default.
-    pos = _scalar_pos(sizes, k)
-    view(x, reshape(pos:pos, ())) .= value
+    _view_scalar(x, sizes, k) .= value
     return value
 end
 
@@ -80,6 +79,11 @@ implementation just calls `getindex`; this is a hook for storage backends
 1-element transfer instead.
 """
 _scalar_load(storage::AbstractVector, idx::Int) = @inbounds storage[idx]
+
+function _view_scalar(storage::AbstractVector, sizes::Sizes, k::Int)
+    pos = _scalar_pos(sizes, k)
+    return view(storage, reshape(pos:pos, ()))
+end
 
 """
     _view_linear(storage, sizes, k) -> SubArray

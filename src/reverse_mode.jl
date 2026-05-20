@@ -96,40 +96,44 @@ function _forward_broadcasted(
     return
 end
 
-function _reshape_call(::_SubexpressionStorage, ::Tuple{}, op, args...)
+function _reshape_call(_, _::Sizes, ::Tuple{}, op, args...)
     return op(args...)
 end
 
-function _reshape_call(f, nodes::Tuple, args...)
+function _reshape_call(storage, sizes::Sizes, nodes::Tuple, args...)
     node = first(nodes)
-    ndims = f.sizes.ndims[node]
+    ndims = sizes.ndims[node]
     if ndims == 0
         _reshape_call(
-            f,
+            storage,
+            sizes,
             Base.tail(nodes),
             args...,
-            _getscalar(f.forward_storage, f.sizes, node),
+            _view_scalar(storage, sizes, node),
         )
     elseif ndims == 1
         _reshape_call(
-            f,
+            storage,
+            sizes,
             Base.tail(nodes),
             args...,
-            _view_linear(f.forward_storage, f.sizes, node),
+            _view_linear(storage, sizes, node),
         )
     elseif ndims == 2
         _reshape_call(
-            f,
+            storage,
+            sizes,
             Base.tail(nodes),
             args...,
-            _view_matrix(f.forward_storage, f.sizes, node),
+            _view_matrix(storage, sizes, node),
         )
     else
         _reshape_call(
-            f,
+            storage,
+            sizes,
             Base.tail(nodes),
             args...,
-            _view_array(f.forward_storage, f.sizes, node),
+            _view_array(storage, sizes, node),
         )
     end
 end
@@ -445,7 +449,8 @@ function _forward_eval(
                 @assert N == 2
                 child1 = first(children_indices)
                 _reshape_call(
-                    f,
+                    f.forward_storage,
+                    f.sizes,
                     (k, children_arr[child1], children_arr[child1+1]),
                     broadcast!,
                     +,
@@ -470,7 +475,8 @@ function _forward_eval(
                 @assert N == 2
                 child1 = first(children_indices)
                 _reshape_call(
-                    f,
+                    f.forward_storage,
+                    f.sizes,
                     (k, children_arr[child1], children_arr[child1+1]),
                     broadcast!,
                     -,
@@ -941,33 +947,31 @@ function _reverse_eval(
                 # and matrix children here so the generic
                 # diagonal-partial path below doesn't trip its
                 # `_size(k) == _size(ix)` assertion.
-                if (op == :+ || op == :-) &&
-                   any(
-                       c -> f.sizes.ndims[children_arr[c]] == 0,
-                       children_indices,
-                   ) &&
-                   f.sizes.ndims[k] != 0
-                    Tr = eltype(f.reverse_storage)
-                    rev_parent = _view_linear(f.reverse_storage, f.sizes, k)
-                    for c_idx in children_indices
-                        ix = children_arr[c_idx]
-                        # `:-` flips the sign for the second operand, mirroring
-                        # the partial we wrote in the forward pass.
-                        partial_sign =
-                            (op == :- && c_idx != first(children_indices)) ?
-                            -one(Tr) : one(Tr)
-                        if f.sizes.ndims[ix] == 0
-                            _setscalar!(
-                                f.reverse_storage,
-                                partial_sign * sum(rev_parent),
-                                f.sizes,
-                                ix,
-                            )
-                        else
-                            rev_child =
-                                _view_linear(f.reverse_storage, f.sizes, ix)
-                            rev_child .= partial_sign .* rev_parent
-                        end
+                if op == :+ || op == :-
+                    @assert length(children_indices) == 2
+                    child1 = first(children_indices)
+                    _reshape_call(
+                        f.reverse_storage,
+                        f.sizes,
+                        (children_arr[child1], k),
+                        sum!,
+                    )
+                    rhs = children_arr[child1+1]
+                    if op == :+
+                        _reshape_call(
+                            f.reverse_storage,
+                            f.sizes,
+                            (rhs, k),
+                            sum!,
+                        )
+                    elseif op == :-
+                        _reshape_call(
+                            f.reverse_storage,
+                            f.sizes,
+                            (rhs, k),
+                            sum!,
+                            -,
+                        )
                     end
                     continue
                 end
