@@ -83,6 +83,178 @@ function _reverse_mode(d::NLPEvaluator, x)
     return
 end
 
+function _forward_broadcasted(
+    ::typeof(+),
+    f::_SubexpressionStorage,
+    d::NLPEvaluator,
+    x::AbstractVector,
+    out,
+    lhs,
+    rhs,
+)
+    return out .= lhs .+ rhs
+end
+
+function _forward_broadcasted_1(
+    op::Union{typeof(+),typeof(-),typeof(*)},
+    f::_SubexpressionStorage,
+    d::NLPEvaluator,
+    x::AbstractVector,
+    out,
+    lhs,
+    rhs::Int,
+)
+    ndims = f.sizes.ndims[rhs]
+    if ndims == 0
+        _forward_broadcasted(
+            op,
+            f,
+            d,
+            x,
+            out,
+            lhs,
+            _getscalar(f.forward_storage, f.sizes, rhs),
+        )
+    elseif ndims == 1
+        _forward_broadcasted(
+            op,
+            f,
+            d,
+            x,
+            out,
+            lhs,
+            _view_linear(f.forward_storage, f.sizes, rhs),
+        )
+    elseif ndims == 2
+        _forward_broadcasted(
+            op,
+            f,
+            d,
+            x,
+            out,
+            lhs,
+            _view_matrix(f.forward_storage, f.sizes, rhs),
+        )
+    else
+        _forward_broadcasted(
+            op,
+            f,
+            d,
+            x,
+            out,
+            lhs,
+            _view_array(f.forward_storage, f.sizes, rhs),
+        )
+    end
+end
+
+function _forward_broadcasted_2(
+    op::Union{typeof(+),typeof(-),typeof(*)},
+    f::_SubexpressionStorage,
+    d::NLPEvaluator,
+    x::AbstractVector,
+    out,
+    lhs::Int,
+    rhs::Int,
+)
+    ndims = f.sizes.ndims[lhs]
+    if ndims == 0
+        _forward_broadcasted_1(
+            op,
+            f,
+            d,
+            x,
+            out,
+            _getscalar(f.forward_storage, f.sizes, lhs),
+            rhs,
+        )
+    elseif ndims == 1
+        _forward_broadcasted_1(
+            op,
+            f,
+            d,
+            x,
+            out,
+            _view_linear(f.forward_storage, f.sizes, lhs),
+            rhs,
+        )
+    elseif ndims == 2
+        _forward_broadcasted_1(
+            op,
+            f,
+            d,
+            x,
+            out,
+            _view_matrix(f.forward_storage, f.sizes, lhs),
+            rhs,
+        )
+    else
+        _forward_broadcasted_1(
+            op,
+            f,
+            d,
+            x,
+            out,
+            _view_array(f.forward_storage, f.sizes, lhs),
+            rhs,
+        )
+    end
+end
+
+# _3 means the last 3 arguments are node indices and should be replaced by the arrays
+function _forward_broadcasted_3(
+    op::Union{typeof(+),typeof(-),typeof(*)},
+    f::_SubexpressionStorage,
+    d::NLPEvaluator,
+    x::AbstractVector,
+    k::Int,
+    lhs::Int,
+    rhs::Int,
+)
+    ndims = f.sizes.ndims[k]
+    if ndims == 0
+        _forward_broadcasted_2(
+            op,
+            f,
+            d,
+            x,
+            _getscalar(f.forward_storage, f.sizes, k),
+            lhs,
+            rhs,
+        )
+    elseif ndims == 1
+        _forward_broadcasted_2(
+            op,
+            f,
+            d,
+            x,
+            _view_linear(f.forward_storage, f.sizes, k),
+            lhs,
+            rhs,
+        )
+    elseif ndims == 2
+        _forward_broadcasted_2(
+            op,
+            f,
+            d,
+            x,
+            _view_matrix(f.forward_storage, f.sizes, k),
+            lhs,
+            rhs,
+        )
+    else
+        _forward_broadcasted_2(
+            op,
+            f,
+            d,
+            x,
+            _view_array(f.forward_storage, f.sizes, k),
+            lhs,
+            rhs,
+        )
+    end
+end
+
 """
     _forward_eval(
         f::_SubexpressionStorage,
@@ -391,25 +563,33 @@ function _forward_eval(
             children_indices = SparseArrays.nzrange(f.adj, k)
             N = length(children_indices)
             if node.index == 1 # :+  (broadcasted)
-                # Broadcast-aware sum: scalar children contribute their
-                # single value to every output slot.
-                out = _view_linear(f.forward_storage, f.sizes, k)
-                fill!(out, zero(T))
-                for c_idx in children_indices
-                    ix = children_arr[c_idx]
-                    if f.sizes.ndims[ix] == 0
-                        s = _getscalar(f.forward_storage, f.sizes, ix)
-                        out .+= s
-                        _setscalar!(f.partials_storage, one(T), f.sizes, ix)
-                    else
-                        v = _view_linear(f.forward_storage, f.sizes, ix)
-                        out .+= v
-                        fill!(
-                            _view_linear(f.partials_storage, f.sizes, ix),
-                            one(T),
-                        )
-                    end
-                end
+                @assert N == 2
+                child1 = first(children_indices)
+                _forward_broadcasted_3(
+                    +,
+                    f,
+                    d,
+                    x,
+                    k,
+                    children_arr[child1],
+                    children_arr[child1+1],
+                )
+                fill!(
+                    _view_linear(
+                        f.partials_storage,
+                        f.sizes,
+                        children_arr[child1],
+                    ),
+                    one(T),
+                )
+                fill!(
+                    _view_linear(
+                        f.partials_storage,
+                        f.sizes,
+                        children_arr[child1+1],
+                    ),
+                    one(T),
+                )
             elseif node.index == 2 # :-  (broadcasted)
                 @assert N == 2
                 child1 = first(children_indices)
