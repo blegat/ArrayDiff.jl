@@ -95,162 +95,44 @@ function _forward_broadcasted(
     return out .= lhs .+ rhs
 end
 
-function _forward_broadcasted_1(
-    op::Union{typeof(+),typeof(-),typeof(*)},
-    f::_SubexpressionStorage,
-    d::NLPEvaluator,
-    x::AbstractVector,
-    out,
-    lhs,
-    rhs::Int,
-)
-    ndims = f.sizes.ndims[rhs]
-    if ndims == 0
-        _forward_broadcasted(
-            op,
-            f,
-            d,
-            x,
-            out,
-            lhs,
-            _getscalar(f.forward_storage, f.sizes, rhs),
-        )
-    elseif ndims == 1
-        _forward_broadcasted(
-            op,
-            f,
-            d,
-            x,
-            out,
-            lhs,
-            _view_linear(f.forward_storage, f.sizes, rhs),
-        )
-    elseif ndims == 2
-        _forward_broadcasted(
-            op,
-            f,
-            d,
-            x,
-            out,
-            lhs,
-            _view_matrix(f.forward_storage, f.sizes, rhs),
-        )
-    else
-        _forward_broadcasted(
-            op,
-            f,
-            d,
-            x,
-            out,
-            lhs,
-            _view_array(f.forward_storage, f.sizes, rhs),
-        )
-    end
+function _reshape_forward_broadcasted(::Tuple{}, args...)
+    return _forward_broadcasted(args...)
 end
 
-function _forward_broadcasted_2(
-    op::Union{typeof(+),typeof(-),typeof(*)},
-    f::_SubexpressionStorage,
-    d::NLPEvaluator,
-    x::AbstractVector,
-    out,
-    lhs::Int,
-    rhs::Int,
-)
-    ndims = f.sizes.ndims[lhs]
+function _reshape_forward_broadcasted(nodes::Tuple, op, f, args...)
+    node = first(nodes)
+    ndims = f.sizes.ndims[node]
     if ndims == 0
-        _forward_broadcasted_1(
+        _reshape_forward_broadcasted(
+            Base.tail(nodes),
             op,
             f,
-            d,
-            x,
-            out,
-            _getscalar(f.forward_storage, f.sizes, lhs),
-            rhs,
+            args...,
+            _getscalar(f.forward_storage, f.sizes, node),
         )
     elseif ndims == 1
-        _forward_broadcasted_1(
+        _reshape_forward_broadcasted(
+            Base.tail(nodes),
             op,
             f,
-            d,
-            x,
-            out,
-            _view_linear(f.forward_storage, f.sizes, lhs),
-            rhs,
+            args...,
+            _view_linear(f.forward_storage, f.sizes, node),
         )
     elseif ndims == 2
-        _forward_broadcasted_1(
+        _reshape_forward_broadcasted(
+            Base.tail(nodes),
             op,
             f,
-            d,
-            x,
-            out,
-            _view_matrix(f.forward_storage, f.sizes, lhs),
-            rhs,
+            args...,
+            _view_matrix(f.forward_storage, f.sizes, node),
         )
     else
-        _forward_broadcasted_1(
+        _reshape_forward_broadcasted(
+            Base.tail(nodes),
             op,
             f,
-            d,
-            x,
-            out,
-            _view_array(f.forward_storage, f.sizes, lhs),
-            rhs,
-        )
-    end
-end
-
-# _3 means the last 3 arguments are node indices and should be replaced by the arrays
-function _forward_broadcasted_3(
-    op::Union{typeof(+),typeof(-),typeof(*)},
-    f::_SubexpressionStorage,
-    d::NLPEvaluator,
-    x::AbstractVector,
-    k::Int,
-    lhs::Int,
-    rhs::Int,
-)
-    ndims = f.sizes.ndims[k]
-    if ndims == 0
-        _forward_broadcasted_2(
-            op,
-            f,
-            d,
-            x,
-            _getscalar(f.forward_storage, f.sizes, k),
-            lhs,
-            rhs,
-        )
-    elseif ndims == 1
-        _forward_broadcasted_2(
-            op,
-            f,
-            d,
-            x,
-            _view_linear(f.forward_storage, f.sizes, k),
-            lhs,
-            rhs,
-        )
-    elseif ndims == 2
-        _forward_broadcasted_2(
-            op,
-            f,
-            d,
-            x,
-            _view_matrix(f.forward_storage, f.sizes, k),
-            lhs,
-            rhs,
-        )
-    else
-        _forward_broadcasted_2(
-            op,
-            f,
-            d,
-            x,
-            _view_array(f.forward_storage, f.sizes, k),
-            lhs,
-            rhs,
+            args...,
+            _view_array(f.forward_storage, f.sizes, node),
         )
     end
 end
@@ -565,14 +447,12 @@ function _forward_eval(
             if node.index == 1 # :+  (broadcasted)
                 @assert N == 2
                 child1 = first(children_indices)
-                _forward_broadcasted_3(
+                _reshape_forward_broadcasted(
+                    (k, children_arr[child1], children_arr[child1+1]),
                     +,
                     f,
                     d,
                     x,
-                    k,
-                    children_arr[child1],
-                    children_arr[child1+1],
                 )
                 fill!(
                     _view_linear(
