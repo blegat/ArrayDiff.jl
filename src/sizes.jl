@@ -342,8 +342,8 @@ end
 function _infer_sizes(
     nodes::Vector{Node},
     adj::SparseArrays.SparseMatrixCSC{Bool,Int},
-    block_shapes::Dict{Int,Vector{Int}} = Dict{Int,Vector{Int}}(),
-    const_values::AbstractVector = Float64[],
+    block_shapes::Dict{Int,Vector{Int}},
+    const_values::AbstractVector, # Needed for sum(_; dims)
 )
     sizes = Sizes(
         zeros(Int, length(nodes)),
@@ -475,13 +475,11 @@ function _infer_sizes(
                 # `block_shapes`.
                 dims_len = prod(block_shapes[dims_id])
                 start = nodes[dims_id].index
-                dims_tuple =
-                    Tuple(Int(const_values[start+i-1]) for i in 1:dims_len)
+                dims_vec = const_values[(start-1) .+ (1:dims_len)]
                 in_ndims = sizes.ndims[arr_id]
-                out_shape =
-                    ntuple(in_ndims) do d
-                        d in dims_tuple ? 1 : _size(sizes, arr_id, d)
-                    end
+                out_shape = map(1:in_ndims) do d
+                    d in dims_vec ? 1 : _size(sizes, arr_id, d)
+                end
                 _add_size!(sizes, k, out_shape)
             else
                 _assert_scalar_children(
