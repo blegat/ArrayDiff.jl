@@ -7,6 +7,8 @@ using ArrayDiff
 import LinearAlgebra
 import MathOptInterface as MOI
 
+include(joinpath(@__DIR__, "Transformer.jl"))
+
 function runtests()
     for name in names(@__MODULE__; all = true)
         if startswith("$(name)", "test_")
@@ -576,6 +578,146 @@ function test_broadcast_outer_vector_gradient()
               LinearAlgebra.norm(ref_mat)
     end
     return
+end
+
+# Plug JuMP variable matrices into the Transformer's `MLP` building block
+# (`gelu(x * c_fc) * c_proj`) and confirm the forward+reverse pass runs
+# end-to-end through the ArrayDiff evaluator. `gelu` exercises every
+# scalar-broadcast pattern that ArrayDiff supports for `MatrixExpr`:
+# `Number * matrix` scaling, `Number .* matrix`, and `Number .+ matrix`.
+# We finite-difference the analytic gradient as a sanity check.
+function test_transformer_mlp_gradient()
+    d_emb, d_hidden, seq = 2, 3, 2
+    model = Model()
+    @variable(
+        model,
+        c_fc[1:d_emb, 1:d_hidden],
+        container = ArrayDiff.ArrayOfVariables,
+    )
+    @variable(
+        model,
+        c_proj[1:d_hidden, 1:d_emb],
+        container = ArrayDiff.ArrayOfVariables,
+    )
+    mlp = MLP(c_fc, c_proj)
+    x = rand(seq, d_emb)
+    loss = sum(mlp(x) .^ 2)
+    mode = ArrayDiff.Mode()
+    ad = ArrayDiff.model(mode)
+    MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
+    evaluator = MOI.Nonlinear.Evaluator(
+        ad,
+        mode,
+        JuMP.index.(JuMP.all_variables(model)),
+    )
+    MOI.initialize(evaluator, [:Grad])
+    nvar = JuMP.num_variables(model)
+    @test nvar == 2 * d_emb * d_hidden
+    x_pt = randn(nvar)
+    val = MOI.eval_objective(evaluator, x_pt)
+    @test isfinite(val)
+    @test val >= 0
+    g = zeros(nvar)
+    MOI.eval_objective_gradient(evaluator, g, x_pt)
+    @test all(isfinite, g)
+    @test !all(iszero, g)
+    # Central finite differences on the AD-built objective.
+    h = 1e-6
+    g_fd = zeros(nvar)
+    for i in 1:nvar
+        xp = copy(x_pt)
+        xp[i] += h
+        xm = copy(x_pt)
+        xm[i] -= h
+        g_fd[i] =
+            (
+                MOI.eval_objective(evaluator, xp) -
+                MOI.eval_objective(evaluator, xm)
+            ) / (2h)
+    end
+    @test isapprox(g, g_fd; rtol = 1e-4)
+    return
+end
+
+# Generic helper for transformer-style gradient checks: given a JuMP variable
+# matrix `x` of shape (seq, d_emb) and a builder that produces a scalar loss,
+# verify value+gradient against central finite differences.
+function _check_transformer_loss(build_loss; seq = 2, d_emb = 2)
+    model = Model()
+    @variable(model, x[1:seq, 1:d_emb], container = ArrayDiff.ArrayOfVariables)
+    loss = build_loss(x)
+    mode = ArrayDiff.Mode()
+    ad = ArrayDiff.model(mode)
+    MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
+    evaluator = MOI.Nonlinear.Evaluator(
+        ad,
+        mode,
+        JuMP.index.(JuMP.all_variables(model)),
+    )
+    MOI.initialize(evaluator, [:Grad])
+    nvar = JuMP.num_variables(model)
+    x_pt = randn(nvar)
+    val = MOI.eval_objective(evaluator, x_pt)
+    @test isfinite(val)
+    g = zeros(nvar)
+    MOI.eval_objective_gradient(evaluator, g, x_pt)
+    @test all(isfinite, g)
+    h = 1e-6
+    g_fd = zeros(nvar)
+    for i in 1:nvar
+        xp = copy(x_pt)
+        xp[i] += h
+        xm = copy(x_pt)
+        xm[i] -= h
+        g_fd[i] =
+            (
+                MOI.eval_objective(evaluator, xp) -
+                MOI.eval_objective(evaluator, xm)
+            ) / (2h)
+    end
+    @test isapprox(g, g_fd; rtol = 1e-4)
+    return
+end
+
+# `gelu` mixes `tanh.`, `.+`, `.*`, `.^3`, and scalar-broadcast `Number *
+# matrix` / `Number .+ matrix` patterns. Test that the full gelu of a JuMP
+# variable matrix is differentiated correctly.
+function test_transformer_gelu_gradient()
+    return _check_transformer_loss(x -> sum(gelu(x) .^ 2))
+end
+
+# Two MLPs in sequence: `m2(m1(x))`. Exercises chain-rule through repeated
+# `*` (matrix multiply) and broadcasted `gelu` ops on JuMP variable inputs.
+function test_transformer_mlp_chained_gradient()
+    d_emb, d_hidden = 2, 3
+    c_fc1, c_proj1 = randn(d_emb, d_hidden), randn(d_hidden, d_emb)
+    c_fc2, c_proj2 = randn(d_emb, d_hidden), randn(d_hidden, d_emb)
+    m1, m2 = MLP(c_fc1, c_proj1), MLP(c_fc2, c_proj2)
+    return _check_transformer_loss(x -> sum(m2(m1(x)) .^ 2))
+end
+
+# Block-like residual connection `x + mlp(x)`. The transformer Block uses
+# this exact `+`-broadcast pattern after each sub-layer; we verify that the
+# gradient flows through the sum of identity and a non-linear sub-graph.
+function test_transformer_residual_gradient()
+    d_emb, d_hidden = 2, 3
+    mlp = MLP(randn(d_emb, d_hidden), randn(d_hidden, d_emb))
+    return _check_transformer_loss(x -> sum((x .+ mlp(x)) .^ 2))
+end
+
+# Stack of two residual MLP blocks, mimicking the structural skeleton of a
+# transformer with LayerNorm/Attention swapped out. Exercises a deeper graph
+# than the single-block residual test.
+function test_transformer_stacked_residual_gradient()
+    d_emb, d_hidden = 2, 3
+    m1 = MLP(randn(d_emb, d_hidden), randn(d_hidden, d_emb))
+    m2 = MLP(randn(d_emb, d_hidden), randn(d_hidden, d_emb))
+    function build(x)
+        h1 = x .+ m1(x)
+        h2 = h1 .+ m2(h1)
+        return sum(h2 .^ 2)
+    end
+    return _check_transformer_loss(build)
 end
 
 end  # module
