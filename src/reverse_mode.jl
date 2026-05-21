@@ -365,6 +365,18 @@ function _forward_eval(
                     val = @s f.forward_storage[ix]
                     @j f.forward_storage[k] = val
                 end
+            elseif node.index == 17 # sum_dims -> sum(x; dims)
+                @assert N == 2 "`sum_dims` expects (array, dims_vector)"
+                arr_ix = children_arr[first(children_indices)]
+                dims_ix = children_arr[first(children_indices)+1]
+                @assert f.nodes[dims_ix].type == NODE_VALUE_BLOCK
+                _reshape_call(
+                    f.forward_storage,
+                    f.sizes,
+                    (k, arr_ix),
+                    sum!,
+                    tuple(),
+                )
             else # atan, min, max
                 f_input = _UnsafeVectorView(d.jac_storage, N)
                 ∇f = _UnsafeVectorView(d.user_output_buffer, N)
@@ -564,6 +576,15 @@ function __reverse_broadcasted_mul(f, ilhs, irhs, dout, dlhs, drhs)
         _reverse_broadcasted_mul,
         (dout, dlhs, drhs),
     )
+end
+
+# Reverse for `sum_dims`: broadcast the parent's gradient back to the
+# input's shape. Parent has size 1 in the reduced dimensions, child has the
+# original input shape.
+# Good news: `dchild .= dparent` does the expansion via Julia broadcasting.
+function _reverse_sum_dims!(dchild, dparent)
+    dchild .= dparent
+    return
 end
 
 """
@@ -809,6 +830,19 @@ function _reverse_eval(
                         # partial is 1 so we can ignore it
                         @s f.reverse_storage[ix] = rev_parent_j
                     end
+                    continue
+                elseif op == :sum_dims
+                    @assert length(children_indices) == 2 "`sum_dims` expects (array, dims_vector)"
+                    arr_ix = children_arr[first(children_indices)]
+                    dims_ix = children_arr[first(children_indices)+1]
+                    @assert f.nodes[dims_ix].type == NODE_VALUE_BLOCK
+                    _reshape_call(
+                        f.reverse_storage,
+                        f.sizes,
+                        (arr_ix, k),
+                        _reverse_sum_dims!,
+                        tuple(),
+                    )
                     continue
                 end
             end

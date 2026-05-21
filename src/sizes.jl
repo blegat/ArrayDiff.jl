@@ -342,7 +342,8 @@ end
 function _infer_sizes(
     nodes::Vector{Node},
     adj::SparseArrays.SparseMatrixCSC{Bool,Int},
-    block_shapes::Dict{Int,Vector{Int}} = Dict{Int,Vector{Int}}(),
+    block_shapes::Dict{Int,Vector{Int}},
+    const_values::AbstractVector, # Needed for sum(_; dims)
 )
     sizes = Sizes(
         zeros(Int, length(nodes)),
@@ -462,6 +463,24 @@ function _infer_sizes(
                     op,
                 )
                 _copy_size!(sizes, k, children_arr[first(children_indices)])
+            elseif op == :sum_dims
+                # Two args: (array, Vector{Float64}(dims)). Output keeps the
+                # input ndims with the reduced dims collapsed to size 1.
+                @assert N == 2 "`sum_dims` expects (array, dims_vector)"
+                arr_id = children_arr[first(children_indices)]
+                dims_id = children_arr[first(children_indices)+1]
+                @assert nodes[dims_id].type == NODE_VALUE_BLOCK "`sum_dims` requires constant dims (NODE_VALUE_BLOCK)"
+                # Read the dims values out of `const_values`. The block was
+                # appended at `nodes[dims_id].index` with length recorded in
+                # `block_shapes`.
+                dims_len = prod(block_shapes[dims_id])
+                start = nodes[dims_id].index
+                dims_vec = const_values[(start-1) .+ (1:dims_len)]
+                in_ndims = sizes.ndims[arr_id]
+                out_shape = map(1:in_ndims) do d
+                    return d in dims_vec ? 1 : _size(sizes, arr_id, d)
+                end
+                _add_size!(sizes, k, out_shape)
             else
                 _assert_scalar_children(
                     sizes,
@@ -563,7 +582,7 @@ struct _SubexpressionStorage{T<:Real,S<:AbstractVector{T}}
         linearity::Linearity,
         ::Type{S} = Vector{T},
     ) where {T<:Real,S<:AbstractVector{T}}
-        sizes = _infer_sizes(nodes, adj, block_shapes)
+        sizes = _infer_sizes(nodes, adj, block_shapes, const_values)
         N = _length(sizes)
         # Pre-load value blocks into forward_storage once at construction;
         # each block is a contiguous-to-contiguous bulk copy. Individual

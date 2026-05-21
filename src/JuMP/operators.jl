@@ -62,9 +62,14 @@ function Base.broadcasted(
     return Base.broadcasted(^, x, y)
 end
 
-function Base.sum(x::GenericArrayExpr)
+function Base.sum(x::AbstractJuMPArray; dims = Colon())
     V = JuMP.variable_ref_type(x)
-    return JuMP.GenericNonlinearExpr{V}(:sum, Any[x])
+    if dims === Colon()
+        return JuMP.GenericNonlinearExpr{V}(:sum, Any[x])
+    end
+    sz = ntuple(i -> i in dims ? 1 : size(x, i), ndims(x))
+    dims_vec = JuMP.value_type(V)[d for d in dims]
+    return GenericArrayExpr{V,ndims(x)}(:sum_dims, Any[x, dims_vec], sz, false)
 end
 
 import LinearAlgebra
