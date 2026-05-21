@@ -495,7 +495,7 @@ function _infer_sizes(
                 continue
             end
             op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
-            if op == :+ || op == :- || op == :*
+            if op == :+ || op == :- || op == :* || op == :/
                 sizes.ndims[k] = maximum(children_indices, init = 0) do i
                     return sizes.ndims[children_arr[i]]
                 end

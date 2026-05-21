@@ -432,6 +432,16 @@ function _forward_eval(
                     broadcast!,
                     (*,),
                 )
+            elseif node.index == 5 # :/  (broadcasted)
+                @assert N == 2
+                child1 = first(children_indices)
+                _reshape_call(
+                    f.forward_storage,
+                    f.sizes,
+                    (k, children_arr[child1], children_arr[child1+1]),
+                    broadcast!,
+                    (/,),
+                )
             elseif node.index == 4 # :^ (broadcasted), array .^ scalar
                 @assert N == 2
                 idx1 = first(children_indices)
@@ -578,13 +588,44 @@ function __reverse_broadcasted_mul(f, ilhs, irhs, dout, dlhs, drhs)
     )
 end
 
-# Reverse for `sum_dims`: broadcast the parent's gradient back to the
-# input's shape. Parent has size 1 in the reduced dimensions, child has the
-# original input shape.
-# Good news: `dchild .= dparent` does the expansion via Julia broadcasting.
-function _reverse_sum_dims!(dchild, dparent)
-    dchild .= dparent
+# Reverse for broadcasted `:/`. `z = x ./ y`:
+#   ∂z/∂x = 1 ./ y          → dx += dout ./ y
+#   ∂z/∂y = -x ./ y .^ 2    → dy += -dout .* x ./ y .^ 2
+function _reverse_broadcasted_div(dout, dlhs, drhs, lhs, rhs)
+    # Why `fill!` ? See comment in `_reverse_broadcasted_mul`
+    fill!(dlhs, zero(eltype(dlhs)))
+    Base.mapreducedim!(
+        identity,
+        Base.add_sum,
+        dlhs,
+        Broadcast.instantiate(Broadcast.broadcasted(/, dout, rhs)),
+    )
+    fill!(drhs, zero(eltype(drhs)))
+    # dy += -dout * lhs / rhs^2, written lazily so no temporary materializes.
+    Base.mapreducedim!(
+        identity,
+        Base.add_sum,
+        drhs,
+        Broadcast.instantiate(
+            Broadcast.broadcasted(
+                (do_, l, r) -> -do_ * l / (r * r),
+                dout,
+                lhs,
+                rhs,
+            ),
+        ),
+    )
     return
+end
+
+function __reverse_broadcasted_div(f, ilhs, irhs, dout, dlhs, drhs)
+    return _reshape_call(
+        f.forward_storage,
+        f.sizes,
+        (ilhs, irhs),
+        _reverse_broadcasted_div,
+        (dout, dlhs, drhs),
+    )
 end
 
 """
@@ -855,7 +896,7 @@ function _reverse_eval(
                 # and matrix children here so the generic
                 # diagonal-partial path below doesn't trip its
                 # `_size(k) == _size(ix)` assertion.
-                if op == :+ || op == :- || op == :* || op == :^
+                if op == :+ || op == :- || op == :* || op == :^ || op == :/
                     @assert length(children_indices) == 2
                     child1 = first(children_indices)
                     lhs = children_arr[child1]
@@ -866,6 +907,14 @@ function _reverse_eval(
                             f.sizes,
                             (k, lhs, rhs),
                             __reverse_broadcasted_mul,
+                            (f, lhs, rhs),
+                        )
+                    elseif op == :/
+                        _reshape_call(
+                            f.reverse_storage,
+                            f.sizes,
+                            (k, lhs, rhs),
+                            __reverse_broadcasted_div,
                             (f, lhs, rhs),
                         )
                     elseif op == :^
