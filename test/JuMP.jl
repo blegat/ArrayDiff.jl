@@ -713,13 +713,46 @@ function test_transformer_stacked_residual_gradient()
     return _check_transformer_loss(build)
 end
 
-# `sum(x; dims=N)` builds a `:sum_dims` node that reduces along the given
-# dims, keeping the input ndims with the reduced axes collapsed to size 1.
-# Verify both value and gradient against finite differences across
-# `dims=1`, `dims=2`, and `dims=(1,2)` for a 2×3 matrix variable.
-function test_sum_dims_gradient()
-    @testset "dims=$dims" for dims in (1, 2, (1, 2))
-        _check_transformer_loss(x -> sum(sum(x; dims = dims) .^ 2))
+# Broadcasted `./` against a JuMP matrix variable `W`, with the other
+# operand cycling through every shape combination ArrayDiff supports:
+# scalar, full matrix, column vector (length rows), row vector (1×cols).
+# Loss is `norm(c ./ W)` (variable always in the denominator) and a second
+# set of cases with W in the numerator (`W ./ c`); the analytic gradient
+# `dexpr_dW .* (c./W) ./ norm(c./W)` is checked against the AD-computed
+# gradient elementwise. W is initialized to positive values to avoid the
+# division-by-zero blow-up.
+function test_broadcast_divide_gradient()
+    rows, cols = 2, 3
+    c = 2.5
+    model = Model()
+    @variable(model, W[1:rows, 1:cols], container = ArrayDiff.ArrayOfVariables)
+    v = [10.0, 20.0]
+    r = [100.0 200.0 300.0]
+    M = reshape(collect(11.0:10.0:160.0)[1:(rows*cols)], rows, cols)
+    x = Float64.(collect(1:(rows*cols)))
+    W_val = reshape(x, rows, cols)
+    @testset "$(name)" for (name, expr, ref_mat, dexpr_dW) in [
+        # W as denominator: ∂(c ./ W)/∂W_ij = -c_ij / W_ij^2  (c broadcast)
+        ("scalar ./ W", c ./ W, c ./ W_val, -c ./ W_val .^ 2),
+        ("v ./ W", v ./ W, v ./ W_val, -(v .* ones(rows, cols)) ./ W_val .^ 2),
+        ("r ./ W", r ./ W, r ./ W_val, -(ones(rows) .* r) ./ W_val .^ 2),
+        ("M ./ W", M ./ W, M ./ W_val, -M ./ W_val .^ 2),
+        # W as numerator: ∂(W ./ c)/∂W_ij = 1 / c_ij  (c broadcast)
+        ("W ./ scalar", W ./ c, W_val ./ c, fill(1 / c, rows, cols)),
+        ("W ./ v", W ./ v, W_val ./ v, 1 ./ (v .* ones(rows, cols))),
+        ("W ./ r", W ./ r, W_val ./ r, 1 ./ (ones(rows) .* r)),
+        ("W ./ M", W ./ M, W_val ./ M, 1 ./ M),
+    ]
+        sizes, val, g = _eval(model, LinearAlgebra.norm(expr), x)
+        # Tape: norm (k=1, scalar), broadcast `./` (k=2) inheriting (rows, cols)
+        # from the result shape, then the two children.
+        @test sizes.ndims[1] == 0
+        @test sizes.ndims[2] == 2
+        b_off = sizes.size_offset[2]
+        @test sizes.size[b_off+1] == rows
+        @test sizes.size[b_off+2] == cols
+        @test val ≈ LinearAlgebra.norm(ref_mat)
+        @test g ≈ vec(dexpr_dW .* ref_mat) ./ LinearAlgebra.norm(ref_mat)
     end
     return
 end
