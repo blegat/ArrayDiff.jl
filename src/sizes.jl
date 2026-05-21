@@ -478,7 +478,7 @@ function _infer_sizes(
                 dims_vec = const_values[(start-1) .+ (1:dims_len)]
                 in_ndims = sizes.ndims[arr_id]
                 out_shape = map(1:in_ndims) do d
-                    d in dims_vec ? 1 : _size(sizes, arr_id, d)
+                    return d in dims_vec ? 1 : _size(sizes, arr_id, d)
                 end
                 _add_size!(sizes, k, out_shape)
             else
