@@ -166,7 +166,12 @@ function test_parse_moi()
     return
 end
 
-function _eval(model::JuMP.GenericModel{T}, func, x) where {T}
+function _eval(
+    model::JuMP.GenericModel{T},
+    func,
+    x;
+    x_grad = T.(collect(1:length(x))),
+) where {T}
     mode = ArrayDiff.Mode{Vector{T}}()
     ad = ArrayDiff.model(mode)
     MOI.Nonlinear.set_objective(ad, JuMP.moi_function(func))
@@ -182,7 +187,6 @@ function _eval(model::JuMP.GenericModel{T}, func, x) where {T}
         fill!(evaluator.backend.last_x, NaN)
         @test 0 == @allocated MOI.eval_objective(evaluator, x)
     end
-    x_grad = T.(collect(1:8))
     g = zero(x)
     MOI.eval_objective_gradient(evaluator, g, x_grad)
     if VERSION >= v"1.12"
@@ -191,7 +195,7 @@ function _eval(model::JuMP.GenericModel{T}, func, x) where {T}
     end
     MOI.Nonlinear.set_objective(ad, nothing)
     @test isnothing(ad.objective)
-    return sizes, val, g
+    return sizes, val, g, evaluator
 end
 
 function _test_neural(
@@ -646,21 +650,10 @@ function _check_transformer_loss(build_loss; seq = 2, d_emb = 2)
     model = Model()
     @variable(model, x[1:seq, 1:d_emb], container = ArrayDiff.ArrayOfVariables)
     loss = build_loss(x)
-    mode = ArrayDiff.Mode()
-    ad = ArrayDiff.model(mode)
-    MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
-    evaluator = MOI.Nonlinear.Evaluator(
-        ad,
-        mode,
-        JuMP.index.(JuMP.all_variables(model)),
-    )
-    MOI.initialize(evaluator, [:Grad])
     nvar = JuMP.num_variables(model)
     x_pt = randn(nvar)
-    val = MOI.eval_objective(evaluator, x_pt)
+    _, val, g, evaluator = _eval(model, loss, x_pt; x_grad = x_pt)
     @test isfinite(val)
-    g = zeros(nvar)
-    MOI.eval_objective_gradient(evaluator, g, x_pt)
     @test all(isfinite, g)
     h = 1e-6
     g_fd = zeros(nvar)
