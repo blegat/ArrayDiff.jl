@@ -365,6 +365,24 @@ function _forward_eval(
                     val = @s f.forward_storage[ix]
                     @j f.forward_storage[k] = val
                 end
+            elseif node.index == 17 # sum_dims
+                # Forward: out_view = sum(in_view; dims=...). Output node
+                # `k` keeps the input ndims with the reduced dims collapsed
+                # to size 1, so `sum!(out_view, in_view)` does it in-place
+                # (Julia's `sum!` uses the destination's size-1 dims as the
+                # reduction axes). The dims arg is a NODE_VALUE_BLOCK; we
+                # don't differentiate it.
+                @assert N == 2 "`sum_dims` expects (array, dims_vector)"
+                arr_ix = children_arr[first(children_indices)]
+                dims_ix = children_arr[first(children_indices)+1]
+                @assert f.nodes[dims_ix].type == NODE_VALUE_BLOCK
+                _reshape_call(
+                    f.forward_storage,
+                    f.sizes,
+                    (k, arr_ix),
+                    sum!,
+                    tuple(),
+                )
             else # atan, min, max
                 f_input = _UnsafeVectorView(d.jac_storage, N)
                 ∇f = _UnsafeVectorView(d.user_output_buffer, N)
@@ -564,6 +582,16 @@ function __reverse_broadcasted_mul(f, ilhs, irhs, dout, dlhs, drhs)
         _reverse_broadcasted_mul,
         (dout, dlhs, drhs),
     )
+end
+
+# Reverse for `sum_dims`: broadcast the parent's gradient back to the
+# input's shape. Parent has size 1 in the reduced dimensions, child has the
+# original input shape — `dchild .= dparent` does the expansion via Julia
+# broadcasting. Called through `_reshape_call` so the views match the
+# input/parent ndims.
+function _reverse_sum_dims!(dchild, dparent)
+    dchild .= dparent
+    return
 end
 
 """
@@ -809,6 +837,26 @@ function _reverse_eval(
                         # partial is 1 so we can ignore it
                         @s f.reverse_storage[ix] = rev_parent_j
                     end
+                    continue
+                elseif op == :sum_dims
+                    # Reverse: every position in the (reduced) parent feeds
+                    # back to every position of the input along the reduced
+                    # dim with partial 1. Because the output keeps the input
+                    # ndims with reduced dims set to 1, a plain broadcast
+                    # `rev_child .= rev_parent` does the expansion for free
+                    # (Julia broadcasts size-1 dims). The `dims` arg is a
+                    # NODE_VALUE_BLOCK; we don't propagate gradient to it.
+                    @assert length(children_indices) == 2 "`sum_dims` expects (array, dims_vector)"
+                    arr_ix = children_arr[first(children_indices)]
+                    dims_ix = children_arr[first(children_indices)+1]
+                    @assert f.nodes[dims_ix].type == NODE_VALUE_BLOCK
+                    _reshape_call(
+                        f.reverse_storage,
+                        f.sizes,
+                        (arr_ix, k),
+                        _reverse_sum_dims!,
+                        tuple(),
+                    )
                     continue
                 end
             end

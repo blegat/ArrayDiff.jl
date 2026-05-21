@@ -720,6 +720,17 @@ function test_transformer_stacked_residual_gradient()
     return _check_transformer_loss(build)
 end
 
+# `sum(x; dims=N)` builds a `:sum_dims` node that reduces along the given
+# dims, keeping the input ndims with the reduced axes collapsed to size 1.
+# Verify both value and gradient against finite differences across
+# `dims=1`, `dims=2`, and `dims=(1,2)` for a 2×3 matrix variable.
+function test_sum_dims_gradient()
+    @testset "dims=$dims" for dims in (1, 2, (1, 2))
+        _check_transformer_loss(x -> sum(sum(x; dims = dims) .^ 2))
+    end
+    return
+end
+
 end  # module
 
 TestJuMP.runtests()
