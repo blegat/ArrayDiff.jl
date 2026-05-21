@@ -171,7 +171,6 @@ function _eval(
     func,
     x;
     x_grad = T.(collect(1:length(x))),
-    check_alloc::Bool = true,
 ) where {T}
     mode = ArrayDiff.Mode{Vector{T}}()
     ad = ArrayDiff.model(mode)
@@ -184,13 +183,13 @@ function _eval(
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     val = MOI.eval_objective(evaluator, x)
-    if check_alloc && VERSION >= v"1.12"
+    if VERSION >= v"1.12"
         fill!(evaluator.backend.last_x, NaN)
         @test 0 == @allocated MOI.eval_objective(evaluator, x)
     end
     g = zero(x)
     MOI.eval_objective_gradient(evaluator, g, x_grad)
-    if check_alloc && VERSION >= v"1.12"
+    if VERSION >= v"1.12"
         fill!(evaluator.backend.last_x, NaN)
         @test 0 == @allocated MOI.eval_objective_gradient(evaluator, g, x_grad)
     end
@@ -653,8 +652,7 @@ function _check_transformer_loss(build_loss; seq = 2, d_emb = 2)
     loss = build_loss(x)
     nvar = JuMP.num_variables(model)
     x_pt = randn(nvar)
-    _, val, g, evaluator =
-        _eval(model, loss, x_pt; x_grad = x_pt, check_alloc = false)
+    _, val, g, evaluator = _eval(model, loss, x_pt; x_grad = x_pt)
     @test isfinite(val)
     @test all(isfinite, g)
     h = 1e-6
