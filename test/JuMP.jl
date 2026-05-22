@@ -641,16 +641,31 @@ function test_transformer_mlp_gradient()
         JuMP.index.(JuMP.all_variables(model)),
     )
     MOI.initialize(evaluator, [:Grad])
-    W_val = [0.3 -0.2; 0.1 0.4]
-    x_in = vec(W_val)
-    val = MOI.eval_objective(evaluator, x_in)
-    @test val ≈ sum(my_relu.(W_val * X))
-    g = zeros(length(x_in))
-    MOI.eval_objective_gradient(evaluator, g, x_in)
-    # d sum(relu.(W*X)) / dW = (Y .> 0) * X'
-    Y_val = W_val * X
-    grad_W = Float64.(Y_val .> 0) * X'
-    @test g ≈ vec(grad_W)
+    nvar = JuMP.num_variables(model)
+    @test nvar == 2 * d_emb * d_hidden
+    x_pt = randn(nvar)
+    val = MOI.eval_objective(evaluator, x_pt)
+    @test isfinite(val)
+    @test val >= 0
+    g = zeros(nvar)
+    MOI.eval_objective_gradient(evaluator, g, x_pt)
+    @test all(isfinite, g)
+    @test !all(iszero, g)
+    # Central finite differences on the AD-built objective.
+    h = 1e-6
+    g_fd = zeros(nvar)
+    for i in 1:nvar
+        xp = copy(x_pt)
+        xp[i] += h
+        xm = copy(x_pt)
+        xm[i] -= h
+        g_fd[i] =
+            (
+                MOI.eval_objective(evaluator, xp) -
+                MOI.eval_objective(evaluator, xm)
+            ) / (2h)
+    end
+    @test isapprox(g, g_fd; rtol = 1e-4)
     return
 end
 
@@ -731,31 +746,16 @@ function test_chainrules_broadcasted_relu()
         JuMP.index.(JuMP.all_variables(model)),
     )
     MOI.initialize(evaluator, [:Grad])
-    nvar = JuMP.num_variables(model)
-    @test nvar == 2 * d_emb * d_hidden
-    x_pt = randn(nvar)
-    val = MOI.eval_objective(evaluator, x_pt)
-    @test isfinite(val)
-    @test val >= 0
-    g = zeros(nvar)
-    MOI.eval_objective_gradient(evaluator, g, x_pt)
-    @test all(isfinite, g)
-    @test !all(iszero, g)
-    # Central finite differences on the AD-built objective.
-    h = 1e-6
-    g_fd = zeros(nvar)
-    for i in 1:nvar
-        xp = copy(x_pt)
-        xp[i] += h
-        xm = copy(x_pt)
-        xm[i] -= h
-        g_fd[i] =
-            (
-                MOI.eval_objective(evaluator, xp) -
-                MOI.eval_objective(evaluator, xm)
-            ) / (2h)
-    end
-    @test isapprox(g, g_fd; rtol = 1e-4)
+    W_val = [0.3 -0.2; 0.1 0.4]
+    x_in = vec(W_val)
+    val = MOI.eval_objective(evaluator, x_in)
+    @test val ≈ sum(my_relu.(W_val * X))
+    g = zeros(length(x_in))
+    MOI.eval_objective_gradient(evaluator, g, x_in)
+    # d sum(relu.(W*X)) / dW = (Y .> 0) * X'
+    Y_val = W_val * X
+    grad_W = Float64.(Y_val .> 0) * X'
+    @test g ≈ vec(grad_W)
     return
 end
 
