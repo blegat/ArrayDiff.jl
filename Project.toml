@@ -5,6 +5,7 @@ authors = ["Sophie Lequeu <slequeu@hotmail.com>", "Benoît Legat <benoit.legat@g
 
 [deps]
 Calculus = "49dc2e85-a5d0-5ad3-a950-438e2897f1b9"
+ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
@@ -17,6 +18,7 @@ SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 
 [compat]
 Calculus = "0.5.2"
+ChainRulesCore = "1"
 DataStructures = "0.18, 0.19"
 ForwardDiff = "1"
 JuMP = "1.29.4"

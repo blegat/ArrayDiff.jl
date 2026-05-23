@@ -78,6 +78,72 @@ function register_operator(
     return
 end
 
+"""
+    register_chainrules_operator(model::OperatorRegistry, op::Symbol, f; arity::Int)
+
+Register a user-defined array operator named `op` whose value is computed by
+calling `f` and whose reverse-mode derivative is obtained through
+`ChainRulesCore.rrule(f, args...)`.
+
+`arity` is the number of arguments `f` takes. When `arity == 1`, the operator
+is added to the univariate registry so it can be used in broadcasted form
+(e.g. `relu.(x)`). When `arity > 1`, it is added to the multivariate registry
+and can be applied to whole arrays (e.g. `crossentropy(p, q)`).
+"""
+function register_chainrules_operator(
+    registry::OperatorRegistry,
+    op::Symbol,
+    f::Function;
+    arity::Int,
+)
+    if haskey(registry.chainrules_operators, op)
+        error("Chain-rules operator $op is already registered.")
+    end
+    if arity == 1
+        if haskey(registry.univariate_operator_to_id, op)
+            error("Operator $op is already registered.")
+        end
+        push!(registry.univariate_operators, op)
+        registry.univariate_operator_to_id[op] =
+            length(registry.univariate_operators)
+    else
+        if haskey(registry.multivariate_operator_to_id, op)
+            error("Operator $op is already registered.")
+        end
+        push!(registry.multivariate_operators, op)
+        registry.multivariate_operator_to_id[op] =
+            length(registry.multivariate_operators)
+    end
+    registry.chainrules_operators[op] = f
+    return
+end
+
+"""
+    UserDefinedArrayOperator(name::Symbol; arity::Int) <: MOI.AbstractModelAttribute
+
+Model-level attribute analogous to [`MOI.UserDefinedFunction`](@ref) used to
+register a user-defined array operator whose reverse-mode derivative comes from
+`ChainRulesCore.rrule`. Set it with the Julia function as the value, for
+example `MOI.set(model, ArrayDiff.UserDefinedArrayOperator(:relu; arity = 1), relu)`.
+"""
+struct UserDefinedArrayOperator <: MOI.AbstractModelAttribute
+    name::Symbol
+    arity::Int
+    UserDefinedArrayOperator(name::Symbol; arity::Int) = new(name, arity)
+end
+
+function MOI.set(model::Model, attr::UserDefinedArrayOperator, f::Function)
+    register_chainrules_operator(
+        model.operators,
+        attr.name,
+        f;
+        arity = attr.arity,
+    )
+    return
+end
+
+MOI.supports(::Model, ::UserDefinedArrayOperator) = true
+
 function MOI.features_available(evaluator::Evaluator)
     features = Symbol[]
     if evaluator.backend !== nothing
