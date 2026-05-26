@@ -784,12 +784,7 @@ function test_add_operator_crossentropy_of_relu()
         ArrayDiff.UserDefinedArrayOperator(:my_relu; arity = 1),
         my_relu,
     )
-    MOI.set(
-        ad,
-        ArrayDiff.UserDefinedArrayOperator(:my_crossentropy; arity = 2),
-        my_crossentropy,
-    )
-    op_crossentropy = ArrayDiff.add_operator(my_crossentropy)
+    op_crossentropy = ArrayDiff.add_operator(ad, 2, my_crossentropy)
     @test op_crossentropy isa JuMP.NonlinearOperator
     @test op_crossentropy.head == :my_crossentropy
     Y = W * X

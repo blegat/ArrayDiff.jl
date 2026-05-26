@@ -150,25 +150,32 @@ end
 
 # ── User-defined array operators ─────────────────────────────────────────────
 #
-# `add_operator(f)` wraps `f` in a `JuMP.NonlinearOperator` whose `head` is
-# `Symbol(f)`. When the operator is called with at least one `AbstractJuMPArray`
-# argument, the dispatch methods below build either a `GenericArrayExpr` (when
-# `f` returns an array) or a `JuMP.GenericNonlinearExpr` (scalar output) with
-# that `head`. The user is still responsible for registering `f` with the
-# `ArrayDiff.Model` via [`UserDefinedArrayOperator`](@ref) so the evaluator can
-# call `f` and pull its reverse-mode derivative from `ChainRulesCore.rrule`.
+# `add_operator(model, arity, f)` registers `f` on the `ArrayDiff.Model` via
+# the [`UserDefinedArrayOperator`](@ref) attribute and returns a
+# `JuMP.NonlinearOperator` wrapping `f`. When the returned operator is called
+# with at least one `AbstractJuMPArray` argument, the dispatch methods below
+# build either a `GenericArrayExpr` (when `f` returns an array) or a
+# `JuMP.GenericNonlinearExpr` (scalar output) with that `name`. The reverse-
+# mode derivative is pulled from `ChainRulesCore.rrule` at evaluator time.
 
 """
-    add_operator(f::Function; head::Symbol = Symbol(f))
+    add_operator(model::Model, arity::Int, f::Function; name::Symbol = Symbol(f))
 
-Return a `JuMP.NonlinearOperator` wrapping `f`. When the returned operator is
-called with `AbstractJuMPArray` arguments, it builds a JuMP expression whose
-`head` is `head` — a `GenericArrayExpr` if `f` returns an array, otherwise a
-`JuMP.GenericNonlinearExpr`. The output shape is determined by probing `f`
-with zero arrays sized like the JuMP-array arguments.
+Register `f` as a user-defined array operator on `model` and return a
+`JuMP.NonlinearOperator` wrapping it. Mirrors `JuMP.add_nonlinear_operator`:
+the call internally does `MOI.set(model, UserDefinedArrayOperator(name; arity), f)`.
+The returned operator can be called with `AbstractJuMPArray` arguments to
+build a `GenericArrayExpr` (array result) or `JuMP.GenericNonlinearExpr`
+(scalar result). The output shape is determined by [`infer_sizes`](@ref).
 """
-function add_operator(f::Function; head::Symbol = Symbol(f))
-    return JuMP.NonlinearOperator(f, head)
+function add_operator(
+    model::Model,
+    arity::Int,
+    f::Function;
+    name::Symbol = Symbol(f),
+)
+    MOI.set(model, UserDefinedArrayOperator(name; arity), f)
+    return JuMP.NonlinearOperator(f, name)
 end
 
 function _build_user_op_expr(op::JuMP.NonlinearOperator, V::Type, args::Tuple)
