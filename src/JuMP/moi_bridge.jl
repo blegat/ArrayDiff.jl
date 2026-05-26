@@ -3,22 +3,16 @@
 
 # ── moi_function: JuMP → MOI ─────────────────────────────────────────────────
 
-function _to_moi_arg(x::ArrayOfVariables{T,N}) where {T,N}
+function JuMP.moi_function(x::ArrayOfVariables{T,N}) where {T,N}
     return ArrayOfContiguousVariables{N}(x.offset, x.size)
 end
 
-function _to_moi_arg(x::GenericArrayExpr{V,N}) where {V,N}
-    args = Any[_to_moi_arg(a) for a in x.args]
+function JuMP.moi_function(x::GenericArrayExpr{V,N}) where {V,N}
+    args = Any[JuMP.moi_function(a) for a in x.args]
     return ArrayNonlinearFunction{N}(x.head, args, x.size, x.broadcasted)
 end
 
-_to_moi_arg(x::Array{<:Real}) = x
-
-_to_moi_arg(x::Real) = x
-
-function JuMP.moi_function(x::GenericArrayExpr{V,N}) where {V,N}
-    return _to_moi_arg(x)
-end
+JuMP.moi_function(x::Array{<:Real}) = x
 
 # ── Detect whether a JuMP expression contains array args ─────────────────────
 
