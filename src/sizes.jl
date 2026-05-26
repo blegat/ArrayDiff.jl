@@ -354,18 +354,21 @@ inputs, or to compute the output shape symbolically.
 
 ## Example
 
-For mulitplication, `infer_sizes` can be implemented as follows
+For multiplication, `infer_sizes` can be implemented as follows
 ```julia
-infer_sizes(::typeof(*), ::Tuple{}, ::Tuple{}) = ()
-infer_sizes(::typeof(*), ::Tuple{}, rhs::Tuple) = rhs
-infer_sizes(::typeof(*), lhs::Tuple, ::Tuple{}) = lhs
 function infer_sizes(::typeof(*), lhs, rhs)
+    if isempty(lhs)
+        return rhs
+    end
+    if isempty(rhs)
+        return lhs
+    end
     return (lhs[1:end-1]..., rhs[2:end]...)
 end
 ```
 """
 """
-function infer_sizes(op, child_sizes::Tuple...) where {T}
+function infer_sizes(op, child_sizes::Tuple...)
     args = map(child_sizes) do sz
         return isempty(sz) ? 0.0 : zeros(sz)
     end
