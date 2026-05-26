@@ -35,6 +35,56 @@ function ChainRulesCore.rrule(
     return val, pullback
 end
 
+# `my_crossentropy1` and `my_crossentropy2` exercise the `infer_sizes` API:
+# the first relies on the default zeros-probe, the second has an explicit
+# override. To prove the override is what runs, `my_crossentropy2` asserts
+# `all(p .> 0)` — the default probe would build `p = zeros(...)` and assert-
+# fail, so reaching the test's final `@test` confirms `infer_sizes` was
+# specialised.
+my_crossentropy1(p, q) = -sum(q .* log.(p .+ 1e-3))
+function my_crossentropy2(p, q)
+    @assert all(>(0), p)
+    return -sum(q .* log.(p))
+end
+
+function ArrayDiff.infer_sizes(
+    ::Type{T},
+    ::typeof(my_crossentropy2),
+    ::Tuple,
+    ::Tuple,
+) where {T}
+    return ()
+end
+
+function ChainRulesCore.rrule(
+    ::typeof(my_crossentropy1),
+    p::AbstractArray,
+    q::AbstractArray,
+)
+    ε = 1e-3
+    val = my_crossentropy1(p, q)
+    function pullback(δ)
+        dp = δ .* (-q ./ (p .+ ε))
+        dq = δ .* (-log.(p .+ ε))
+        return ChainRulesCore.NoTangent(), dp, dq
+    end
+    return val, pullback
+end
+
+function ChainRulesCore.rrule(
+    ::typeof(my_crossentropy2),
+    p::AbstractArray,
+    q::AbstractArray,
+)
+    val = my_crossentropy2(p, q)
+    function pullback(δ)
+        dp = δ .* (-q ./ p)
+        dq = δ .* (-log.(p))
+        return ChainRulesCore.NoTangent(), dp, dq
+    end
+    return val, pullback
+end
+
 function runtests()
     for name in names(@__MODULE__; all = true)
         if startswith("$(name)", "test_")
@@ -921,6 +971,71 @@ function test_broadcast_divide_gradient()
         @test g ≈ vec(dexpr_dW .* ref_mat) ./ LinearAlgebra.norm(ref_mat)
     end
     return
+end
+
+function _run_infer_sizes_op(f, head::Symbol)
+    n = 2
+    X = [1.0 0.5; 0.3 0.8]
+    target = [0.5 0.2; 0.1 0.7]
+    model = Model()
+    @variable(model, W[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    mode = ArrayDiff.Mode()
+    ad = ArrayDiff.model(mode)
+    MOI.set(ad, ArrayDiff.UserDefinedArrayOperator(head; arity = 2), f)
+    Y = W * X
+    Z = my_relu.(Y)  # ensure p > 0 for `my_crossentropy2`'s assertion
+    MOI.set(
+        ad,
+        ArrayDiff.UserDefinedArrayOperator(:my_relu; arity = 1),
+        my_relu,
+    )
+    loss_moi = MOI.ScalarNonlinearFunction(
+        head,
+        Any[JuMP.moi_function(Z), target],
+    )
+    MOI.Nonlinear.set_objective(ad, loss_moi)
+    evaluator = MOI.Nonlinear.Evaluator(
+        ad,
+        mode,
+        JuMP.index.(JuMP.all_variables(model)),
+    )
+    MOI.initialize(evaluator, [:Grad])
+    W_val = [0.3 0.2; 0.1 0.4]
+    x_in = vec(W_val)
+    val = MOI.eval_objective(evaluator, x_in)
+    @test val ≈ f(my_relu.(W_val * X), target)
+    g = zeros(length(x_in))
+    MOI.eval_objective_gradient(evaluator, g, x_in)
+    h = 1e-6
+    g_fd = zeros(length(x_in))
+    for i in eachindex(x_in)
+        xp = copy(x_in)
+        xp[i] += h
+        xm = copy(x_in)
+        xm[i] -= h
+        g_fd[i] =
+            (
+                MOI.eval_objective(evaluator, xp) -
+                MOI.eval_objective(evaluator, xm)
+            ) / (2h)
+    end
+    @test isapprox(g, g_fd; rtol = 1e-4)
+    return
+end
+
+# `my_crossentropy1` has no `infer_sizes` override, so output shape is found
+# by probing the function with `zeros(Float64, ...)`. The probe runs fine
+# because `log(0 + 1e-3)` is finite.
+function test_infer_sizes_default_probe()
+    return _run_infer_sizes_op(my_crossentropy1, :my_crossentropy1)
+end
+
+# `my_crossentropy2` asserts `all(p .> 0)`, so the default zeros-probe would
+# fail. The `infer_sizes` override returns `()` symbolically and avoids
+# touching the function — reaching the final `@test` proves the override is
+# what ran.
+function test_infer_sizes_user_override()
+    return _run_infer_sizes_op(my_crossentropy2, :my_crossentropy2)
 end
 
 end  # module

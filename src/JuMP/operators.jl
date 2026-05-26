@@ -171,28 +171,18 @@ function add_operator(f::Function; head::Symbol = Symbol(f))
     return JuMP.NonlinearOperator(f, head)
 end
 
-function _user_op_probe_arg(a::AbstractJuMPArray)
-    return zeros(Float64, size(a))
-end
-_user_op_probe_arg(a::AbstractArray{<:Real}) = Float64.(a)
-_user_op_probe_arg(a::Real) = Float64(a)
-
-function _build_user_op_expr(
-    op::JuMP.NonlinearOperator,
-    V::Type,
-    args::Tuple,
-)
-    probe = map(_user_op_probe_arg, args)
-    y = op.func(probe...)
-    if y isa AbstractArray
-        return GenericArrayExpr{V,ndims(y)}(
-            op.head,
-            Any[args...],
-            size(y),
-            false,
-        )
+function _build_user_op_expr(op::JuMP.NonlinearOperator, V::Type, args::Tuple)
+    shapes = map(size, args)
+    out_sz = infer_sizes(JuMP.value_type(V), op.func, shapes...)
+    if isempty(out_sz)
+        return JuMP.GenericNonlinearExpr{V}(op.head, Any[args...])
     end
-    return JuMP.GenericNonlinearExpr{V}(op.head, Any[args...])
+    return GenericArrayExpr{V,length(out_sz)}(
+        op.head,
+        Any[args...],
+        out_sz,
+        false,
+    )
 end
 
 function (op::JuMP.NonlinearOperator)(x::AbstractJuMPArray)

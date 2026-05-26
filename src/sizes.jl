@@ -339,6 +339,27 @@ function _assert_scalar_children(sizes, children_arr, children_indices, op)
     end
 end
 
+"""
+    infer_sizes(::Type{T}, op, child_sizes::Tuple...) -> Tuple
+
+Return the output shape of applying `op` to arguments of shapes `child_sizes`.
+Each `child_sizes[i]` is `()` if argument `i` is a scalar, or a tuple of
+positive integers if it is an array. The returned shape is `()` for a scalar
+result.
+
+The default implementation constructs dummy arguments with `zeros(T, sz)`
+(or `zero(T)` for scalars) and calls `op(args...)`. Specialise on `op`'s
+`typeof` to avoid the allocation, to support operators that error on zero
+inputs, or to compute the output shape symbolically.
+"""
+function infer_sizes(::Type{T}, op, child_sizes::Tuple...) where {T}
+    args = map(child_sizes) do sz
+        return isempty(sz) ? zero(T) : zeros(T, sz)
+    end
+    y = op(args...)
+    return y isa AbstractArray ? size(y) : ()
+end
+
 function _infer_sizes(
     nodes::Vector{Node},
     adj::SparseArrays.SparseMatrixCSC{Bool,Int},
@@ -373,20 +394,19 @@ function _infer_sizes(
                     op_sym = operators.multivariate_operators[node.index]
                     if haskey(operators.chainrules_operators, op_sym)
                         f = operators.chainrules_operators[op_sym]
-                        # Determine output shape by calling `f` with
-                        # zero-initialised arrays sized like each child.
-                        args = Any[]
-                        for c_idx in children_indices
-                            child = children_arr[c_idx]
-                            child_shape = ntuple(
-                                d -> _size(sizes, child, d),
-                                sizes.ndims[child],
-                            )
-                            push!(args, zeros(child_shape))
-                        end
-                        y = f(args...)
-                        if y isa AbstractArray
-                            _add_size!(sizes, k, size(y))
+                        child_shapes = Tuple(
+                            ntuple(
+                                d -> _size(
+                                    sizes,
+                                    children_arr[c_idx],
+                                    d,
+                                ),
+                                sizes.ndims[children_arr[c_idx]],
+                            ) for c_idx in children_indices
+                        )
+                        out_sz = infer_sizes(Float64, f, child_shapes...)
+                        if !isempty(out_sz)
+                            _add_size!(sizes, k, out_sz)
                         end
                         # Scalar output → ndims = 0 (already initialised).
                         continue
