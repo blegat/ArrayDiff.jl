@@ -340,21 +340,34 @@ function _assert_scalar_children(sizes, children_arr, children_indices, op)
 end
 
 """
-    infer_sizes(::Type{T}, op, child_sizes::Tuple...) -> Tuple
+    infer_sizes(op, child_sizes::Tuple...) -> Tuple
 
 Return the output shape of applying `op` to arguments of shapes `child_sizes`.
 Each `child_sizes[i]` is `()` if argument `i` is a scalar, or a tuple of
 positive integers if it is an array. The returned shape is `()` for a scalar
 result.
 
-The default implementation constructs dummy arguments with `zeros(T, sz)`
-(or `zero(T)` for scalars) and calls `op(args...)`. Specialise on `op`'s
+The default implementation constructs dummy arguments with `zeros(sz)`
+(or `0.0` for scalars) and calls `op(args...)`. Specialise on `op`'s
 `typeof` to avoid the allocation, to support operators that error on zero
 inputs, or to compute the output shape symbolically.
+
+## Example
+
+For mulitplication, `infer_sizes` can be implemented as follows
+```julia
+infer_sizes(::typeof(*), ::Tuple{}, ::Tuple{}) = ()
+infer_sizes(::typeof(*), ::Tuple{}, rhs::Tuple) = rhs
+infer_sizes(::typeof(*), lhs::Tuple, ::Tuple{}) = lhs
+function infer_sizes(::typeof(*), lhs, rhs)
+    return (lhs[1:end-1]..., rhs[2:end]...)
+end
+```
 """
-function infer_sizes(::Type{T}, op, child_sizes::Tuple...) where {T}
+"""
+function infer_sizes(op, child_sizes::Tuple...) where {T}
     args = map(child_sizes) do sz
-        return isempty(sz) ? zero(T) : zeros(T, sz)
+        return isempty(sz) ? 0.0 : zeros(sz)
     end
     y = op(args...)
     return y isa AbstractArray ? size(y) : ()

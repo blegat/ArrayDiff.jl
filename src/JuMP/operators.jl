@@ -180,7 +180,7 @@ end
 
 function _build_user_op_expr(op::JuMP.NonlinearOperator, V::Type, args::Tuple)
     shapes = map(size, args)
-    out_sz = infer_sizes(JuMP.value_type(V), op.func, shapes...)
+    out_sz = infer_sizes(op.func, shapes...)
     if isempty(out_sz)
         return JuMP.GenericNonlinearExpr{V}(op.head, Any[args...])
     end

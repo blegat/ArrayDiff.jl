@@ -47,12 +47,7 @@ function my_crossentropy2(p, q)
     return -sum(q .* log.(p))
 end
 
-function ArrayDiff.infer_sizes(
-    ::Type{T},
-    ::typeof(my_crossentropy2),
-    ::Tuple,
-    ::Tuple,
-) where {T}
+function ArrayDiff.infer_sizes(::typeof(my_crossentropy2), ::Tuple, ::Tuple)
     return ()
 end
 
