@@ -343,12 +343,15 @@ end
     infer_sizes(op, child_sizes...) -> shape
 
 Return the output shape of applying `op` to arguments of shapes `child_sizes`.
-Each `child_sizes[i]` is empty (`()` or `Int[]`) if argument `i` is a scalar,
-or a tuple/vector of positive integers if it is an array. The returned shape
-is empty for a scalar output. Methods are written generically over indexable
-containers so the same definition works whether the caller passes tuples
-(JuMP-side) or views into a `Sizes` buffer (tape-side); the returned shape
-typically matches the input kind.
+Each `child_sizes[i]` is empty if argument `i` is a scalar (`()` or `Int[]`),
+or any indexable container of positive integers if it is an array. The
+returned shape is empty for a scalar output.
+
+Inputs may be tuples (JuMP-side, from `size()`) or `AbstractVector{Int}`
+(tape-side — typically views into a `Sizes` buffer). The returned shape can
+likewise be a tuple or an `AbstractVector{Int}` (including a view): pick
+whichever makes the method type-stable. `_infer_sizes` and
+`_build_user_op_expr` accept either.
 
 The default implementation constructs dummy arguments with `zeros(sz)`
 (or `0.0` for scalars) and calls `op(args...)`. Specialise on `op`'s
@@ -376,7 +379,7 @@ end
 """
 function infer_sizes(op, child_sizes...)
     args = map(child_sizes) do sz
-        return isempty(sz) ? 0.0 : zeros(Tuple(sz))
+        return isempty(sz) ? 0.0 : zeros(sz...)
     end
     y = op(args...)
     return y isa AbstractArray ? size(y) : ()
@@ -443,19 +446,24 @@ function infer_sizes(::Val{:vcat}, shapes...)
     return (total_rows, shapes[1][2])
 end
 
-# *: matmul-like inner-dim reduction; scalar children are ignored
+# *: matmul-like inner-dim reduction; scalar children are ignored. Returns a
+# `Vector{Int}` so the accumulator is type-stable across the loop (a tuple
+# accumulator would change type each iteration as the length varies).
 function infer_sizes(::Val{:*}, shapes...)
-    out::Tuple{Vararg{Int}} = ()
+    out = Int[]
     for s in shapes
         if isempty(s)
             continue
         end
         if isempty(out)
-            out = Tuple(s)
+            append!(out, s)
         else
             @assert length(out) > 1
             @assert s[1] == out[end]
-            out = (out[1:(end-1)]..., s[2:end]...)
+            pop!(out)
+            for j in 2:length(s)
+                push!(out, s[j])
+            end
         end
     end
     return out
