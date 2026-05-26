@@ -989,10 +989,8 @@ function _run_infer_sizes_op(f, head::Symbol)
         ArrayDiff.UserDefinedArrayOperator(:my_relu; arity = 1),
         my_relu,
     )
-    loss_moi = MOI.ScalarNonlinearFunction(
-        head,
-        Any[JuMP.moi_function(Z), target],
-    )
+    loss_moi =
+        MOI.ScalarNonlinearFunction(head, Any[JuMP.moi_function(Z), target])
     MOI.Nonlinear.set_objective(ad, loss_moi)
     evaluator = MOI.Nonlinear.Evaluator(
         ad,

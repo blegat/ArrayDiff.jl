@@ -396,11 +396,7 @@ function _infer_sizes(
                         f = operators.chainrules_operators[op_sym]
                         child_shapes = Tuple(
                             ntuple(
-                                d -> _size(
-                                    sizes,
-                                    children_arr[c_idx],
-                                    d,
-                                ),
+                                d -> _size(sizes, children_arr[c_idx], d),
                                 sizes.ndims[children_arr[c_idx]],
                             ) for c_idx in children_indices
                         )
