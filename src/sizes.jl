@@ -385,49 +385,28 @@ function infer_sizes(op, child_sizes...)
     return y isa AbstractArray ? size(y) : ()
 end
 
-# Symbol → Val redirect: built-in tape operators carry a `Symbol`, so callers
-# from `_infer_sizes` invoke `infer_sizes(:op, shapes...)` which lands here.
-infer_sizes(op::Symbol, shapes...) = infer_sizes(Val(op), shapes...)
-
-"""
-    Broadcasted{op}
-
-Marker used to dispatch `infer_sizes` for the broadcasted variant of a
-tape operator. Mirrors `Val(op)` but selects shape-combination rules that
-follow Julia's broadcasting axis-combination rules instead of the
-non-broadcasted (matmul/identity/etc.) rules.
-"""
-struct Broadcasted{S} end
-Broadcasted(s::Symbol) = Broadcasted{s}()
-
 # ── Built-in tape operators: non-broadcasted ────────────────────────────────
 # These methods are written generically over indexable shape containers
 # (tuple or `AbstractVector`), so the same definition serves both the
 # JuMP-side (tuples from `size()`) and the tape-side (views into `Sizes`).
 
 # Pure scalar reductions
-infer_sizes(::Val{:sum}, shapes...) = ()
-infer_sizes(::Val{:norm}, shapes...) = ()
-infer_sizes(::Val{:dot}, shapes...) = ()
+infer_sizes(::typeof(sum), shapes...) = ()
+infer_sizes(::typeof(LinearAlgebra.norm), shapes...) = ()
+infer_sizes(::typeof(LinearAlgebra.dot), shapes...) = ()
 
 # vect: N scalar children → 1-D vector of length N
-function infer_sizes(::Val{:vect}, shapes...)
+function infer_sizes(::typeof(Base.vect), shapes...)
     @assert all(isempty, shapes) "`vect` expects scalar children"
     return (length(shapes),)
 end
 
-# row: N scalar children → 1×N row vector
-function infer_sizes(::Val{:row}, shapes...)
-    @assert all(isempty, shapes) "`row` expects scalar children"
-    return (1, length(shapes))
-end
-
 # +, - : non-broadcasted; all children share the same shape, output = first
-infer_sizes(::Val{:+}, shape, more...) = shape
-infer_sizes(::Val{:-}, shape, more...) = shape
+infer_sizes(::typeof(+), shape, more...) = shape
+infer_sizes(::typeof(-), shape, more...) = shape
 
 # hcat: rows from first arg, total cols summed across children
-function infer_sizes(::Val{:hcat}, shapes...)
+function infer_sizes(::typeof(hcat), shapes...)
     total_cols = sum(s -> length(s) <= 1 ? 1 : s[2], shapes)
     if isempty(shapes[1])
         return (1, total_cols)
@@ -437,7 +416,7 @@ function infer_sizes(::Val{:hcat}, shapes...)
 end
 
 # vcat: cols from first arg, total rows summed across children
-function infer_sizes(::Val{:vcat}, shapes...)
+function infer_sizes(::typeof(vcat), shapes...)
     total_rows = sum(s -> length(s) <= 1 ? 1 : s[1], shapes)
     if isempty(shapes[1])
         return (total_rows, 1)
@@ -449,7 +428,7 @@ end
 # *: matmul-like inner-dim reduction; scalar children are ignored. Returns a
 # `Vector{Int}` so the accumulator is type-stable across the loop (a tuple
 # accumulator would change type each iteration as the length varies).
-function infer_sizes(::Val{:*}, shapes...)
+function infer_sizes(::typeof(*), shapes...)
     out = Int[]
     for s in shapes
         if isempty(s)
@@ -470,23 +449,27 @@ function infer_sizes(::Val{:*}, shapes...)
 end
 
 # ^ and / (non-broadcasted): first arg's shape, second must be scalar
-function infer_sizes(::Val{:^}, base, exp)
+function infer_sizes(::typeof(^), base, exp)
     @assert isempty(exp) "`^` expects scalar exponent"
     return base
 end
-function infer_sizes(::Val{:/}, num, den)
+function infer_sizes(::typeof(/), num, den)
     @assert isempty(den) "`/` expects scalar denominator"
     return num
 end
 
 # ── Built-in tape operators: broadcasted ────────────────────────────────────
+# A broadcasted call lowers to `Base.broadcasted(op, args...)`; we use the
+# same shape — dispatching on `(typeof(broadcasted), typeof(op))` instead of
+# defining a parallel marker type.
 
 # Broadcasted +, -, *, /: combine via Julia's broadcasting axis-combination
 # rules. Output ndims = max child ndims; size in each dim is the max size > 1.
-function infer_sizes(::Broadcasted{op}, shapes...) where {op}
-    if !(op in (:+, :-, :*, :/))
-        error("Unsupported broadcasted op `$op`")
-    end
+function infer_sizes(
+    ::typeof(Base.broadcasted),
+    ::Union{typeof(+),typeof(-),typeof(*),typeof(/)},
+    shapes...,
+)
     nd = maximum(length, shapes; init = 0)
     out = ones(Int, nd)
     for sz in shapes
@@ -504,9 +487,35 @@ function infer_sizes(::Broadcasted{op}, shapes...) where {op}
 end
 
 # Broadcasted ^: scalar exponent, base shape preserved
-function infer_sizes(::Broadcasted{:^}, base, exp)
+function infer_sizes(::typeof(Base.broadcasted), ::typeof(^), base, exp)
     @assert isempty(exp) "broadcasted `^` expects scalar exponent"
     return base
+end
+
+# `:row` is an MOI tape primitive (one row of a matrix literal) without a
+# corresponding Julia function. Define an empty function so `infer_sizes` can
+# still dispatch on `typeof(_row_op)` — `_row_op` is never actually called.
+function _row_op end
+
+function infer_sizes(::typeof(_row_op), shapes...)
+    @assert all(isempty, shapes) "`row` expects scalar children"
+    return (1, length(shapes))
+end
+
+# Map a built-in operator symbol to its Julia function so `infer_sizes` can
+# dispatch on `typeof(fn)`. Returns `nothing` for `:sum_dims`, whose shape
+# depends on the constant dims vector and is handled inline by `_infer_sizes`.
+function _default_op_function(sym::Symbol)
+    if sym === :sum_dims
+        return nothing
+    end
+    if sym === :row
+        return _row_op
+    end
+    if sym === :dot || sym === :norm
+        return getfield(LinearAlgebra, sym)
+    end
+    return getfield(Base, sym)
 end
 
 # `:sum_dims` is the one tape op whose shape depends on data outside the
@@ -533,35 +542,27 @@ function _sum_dims_shape(
     end
 end
 
-# Resolve a tape node's "operator handle" — a `Symbol` (built-in op), a
-# `Function` (user-defined ChainRules op), or `nothing` (unrecognised /
-# scalar-only operator). For broadcasted multivariate nodes we wrap the
-# symbol in `Broadcasted` so the corresponding `infer_sizes` method fires.
-# This is type-unstable but it is only called from `_infer_sizes` for which
-# performance isn't critical since it's just called at setup time.
-# If performance is an issue, we can generate code with if-else like we
-# already do at other places in this package.
+# Resolve a multivariate tape node's operator to the Julia `Function` whose
+# `infer_sizes` method computes its output shape. Returns the bare op symbol
+# (`:sum_dims`) when the shape rule needs out-of-band data and is handled
+# inline by `_infer_sizes`, or `nothing` for unrecognised operators.
+# Type-unstable on purpose — called only at setup time.
 function _shape_op(node::Node, operators)
     @assert node.type == NODE_CALL_MULTIVARIATE ||
             node.type == NODE_CALL_MULTIVARIATE_BROADCASTED
-    func = nothing
     if node.index in eachindex(DEFAULT_MULTIVARIATE_OPERATORS)
-        func = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
+        sym = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
+        func = _default_op_function(sym)
+        return func === nothing ? sym : func
     end
     if operators !== nothing &&
        node.index in eachindex(operators.multivariate_operators)
         op_sym = operators.multivariate_operators[node.index]
         if haskey(operators.chainrules_operators, op_sym)
-            func = operators.chainrules_operators[op_sym]
+            return operators.chainrules_operators[op_sym]
         end
     end
-    if isnothing(func)
-        return nothing
-    end
-    if node.type == NODE_CALL_MULTIVARIATE_BROADCASTED
-        func = Broadcasted(func)
-    end
-    return func
+    return nothing
 end
 
 function _infer_sizes(
@@ -612,7 +613,11 @@ function _infer_sizes(
                     i -> _size(sizes, children_arr[children_indices[i]]),
                     N,
                 )
-                out_sz = infer_sizes(op, child_shapes...)
+                out_sz = if node.type == NODE_CALL_MULTIVARIATE_BROADCASTED
+                    infer_sizes(Base.broadcasted, op, child_shapes...)
+                else
+                    infer_sizes(op, child_shapes...)
+                end
             end
             _add_size!(sizes, k, out_sz)
         elseif node.type == NODE_CALL_UNIVARIATE
