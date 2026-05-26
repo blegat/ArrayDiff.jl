@@ -47,9 +47,9 @@ function my_crossentropy2(p, q)
     return -sum(q .* log.(p))
 end
 
-function ArrayDiff.infer_sizes(::typeof(my_crossentropy2), ::Tuple, ::Tuple)
-    return ()
-end
+# Override works for any indexable shape kind (tuple from JuMP, view from
+# tape) — leaving the args untyped exercises that.
+ArrayDiff.infer_sizes(::typeof(my_crossentropy2), s1, s2) = ()
 
 function ChainRulesCore.rrule(
     ::typeof(my_crossentropy1),
@@ -520,7 +520,7 @@ function test_broadcast_nonsquare_matrix()
         # (2, 3). The old bug would report (2, 2) for the broadcast node.
         @test sizes.ndims == [0, 2, 2, 2]
         @test sizes.size == [2, 3, 2, 3, 2, 3]
-        @test sizes.size_offset == [0, 4, 2, 0]
+        @test sizes.size_offset == [6, 4, 2, 0]
         @test sizes.storage_offset == [0, 1, 7, 13, 19]
         @test val ≈ LinearAlgebra.norm(ref_mat)
         ref_g = if op == :+
