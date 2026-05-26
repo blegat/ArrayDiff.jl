@@ -1026,6 +1026,43 @@ function test_infer_sizes_user_override()
     return _run_infer_sizes_op(my_crossentropy2, :my_crossentropy2)
 end
 
+# Whole-array unary op used to exercise the array-output / unary dispatch.
+my_double(x::AbstractArray) = 2 .* x
+
+# Covers the unary `(op::NonlinearOperator)(x::AbstractJuMPArray)` dispatch
+# and the array-output branch in `_build_user_op_expr` (where `infer_sizes`
+# returns a non-empty shape and we build a `GenericArrayExpr` rather than a
+# `GenericNonlinearExpr`).
+function test_op_unary_jump_array()
+    n = 2
+    model = Model()
+    @variable(model, W[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    op = JuMP.NonlinearOperator(my_double, :my_double)
+    result = op(W)
+    @test result isa ArrayDiff.MatrixExpr
+    @test result.head == :my_double
+    @test size(result) == (n, n)
+    @test !result.broadcasted
+    @test result.args[1] === W
+    return
+end
+
+# Covers the `(op::NonlinearOperator)(x::Union{Real,AbstractArray{<:Real}}, y::AbstractJuMPArray)`
+# dispatch — constant array first, JuMP array second.
+function test_op_reversed_args()
+    n = 2
+    model = Model()
+    @variable(model, W[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    target = rand(n, n)
+    op = JuMP.NonlinearOperator(my_crossentropy, :my_crossentropy)
+    result = op(target, W)
+    @test result isa JuMP.NonlinearExpr
+    @test result.head == :my_crossentropy
+    @test result.args[1] === target
+    @test result.args[2] === W
+    return
+end
+
 end  # module
 
 TestJuMP.runtests()
