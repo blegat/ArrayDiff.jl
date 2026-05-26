@@ -147,3 +147,71 @@ function Base.:(+)(
     @assert size(x) == size(y)
     return GenericArrayExpr{V,N}(:+, Any[x, y], size(x), false)
 end
+
+# ── User-defined array operators ─────────────────────────────────────────────
+#
+# `add_operator(f)` wraps `f` in a `JuMP.NonlinearOperator` whose `head` is
+# `Symbol(f)`. When the operator is called with at least one `AbstractJuMPArray`
+# argument, the dispatch methods below build either a `GenericArrayExpr` (when
+# `f` returns an array) or a `JuMP.GenericNonlinearExpr` (scalar output) with
+# that `head`. The user is still responsible for registering `f` with the
+# `ArrayDiff.Model` via [`UserDefinedArrayOperator`](@ref) so the evaluator can
+# call `f` and pull its reverse-mode derivative from `ChainRulesCore.rrule`.
+
+"""
+    add_operator(f::Function; head::Symbol = Symbol(f))
+
+Return a `JuMP.NonlinearOperator` wrapping `f`. When the returned operator is
+called with `AbstractJuMPArray` arguments, it builds a JuMP expression whose
+`head` is `head` — a `GenericArrayExpr` if `f` returns an array, otherwise a
+`JuMP.GenericNonlinearExpr`. The output shape is determined by probing `f`
+with zero arrays sized like the JuMP-array arguments.
+"""
+function add_operator(f::Function; head::Symbol = Symbol(f))
+    return JuMP.NonlinearOperator(f, head)
+end
+
+function _user_op_probe_arg(a::AbstractJuMPArray)
+    return zeros(Float64, size(a))
+end
+_user_op_probe_arg(a::AbstractArray{<:Real}) = Float64.(a)
+_user_op_probe_arg(a::Real) = Float64(a)
+
+function _build_user_op_expr(
+    op::JuMP.NonlinearOperator,
+    V::Type,
+    args::Tuple,
+)
+    probe = map(_user_op_probe_arg, args)
+    y = op.func(probe...)
+    if y isa AbstractArray
+        return GenericArrayExpr{V,ndims(y)}(
+            op.head,
+            Any[args...],
+            size(y),
+            false,
+        )
+    end
+    return JuMP.GenericNonlinearExpr{V}(op.head, Any[args...])
+end
+
+function (op::JuMP.NonlinearOperator)(x::AbstractJuMPArray)
+    V = JuMP.variable_ref_type(x)
+    return _build_user_op_expr(op, V, (x,))
+end
+
+function (op::JuMP.NonlinearOperator)(
+    x::AbstractJuMPArray,
+    y::Union{Real,AbstractArray{<:Real},AbstractJuMPArray},
+)
+    V = JuMP.variable_ref_type(x)
+    return _build_user_op_expr(op, V, (x, y))
+end
+
+function (op::JuMP.NonlinearOperator)(
+    x::Union{Real,AbstractArray{<:Real}},
+    y::AbstractJuMPArray,
+)
+    V = JuMP.variable_ref_type(y)
+    return _build_user_op_expr(op, V, (x, y))
+end

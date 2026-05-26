@@ -721,6 +721,56 @@ function test_chainrules_crossentropy_of_relu()
     return
 end
 
+function test_add_operator_crossentropy_of_relu()
+    n = 2
+    X = [1.0 0.5; 0.3 0.8]
+    target = [0.5 0.2; 0.1 0.7]
+    model = Model()
+    @variable(model, W[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    mode = ArrayDiff.Mode()
+    ad = ArrayDiff.model(mode)
+    MOI.set(
+        ad,
+        ArrayDiff.UserDefinedArrayOperator(:my_relu; arity = 1),
+        my_relu,
+    )
+    MOI.set(
+        ad,
+        ArrayDiff.UserDefinedArrayOperator(:my_crossentropy; arity = 2),
+        my_crossentropy,
+    )
+    op_crossentropy = ArrayDiff.add_operator(my_crossentropy)
+    @test op_crossentropy isa JuMP.NonlinearOperator
+    @test op_crossentropy.head == :my_crossentropy
+    Y = W * X
+    Z = my_relu.(Y)
+    loss = op_crossentropy(Z, target)
+    @test loss isa JuMP.NonlinearExpr
+    @test loss.head == :my_crossentropy
+    @test loss.args[1] === Z
+    @test loss.args[2] === target
+    MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
+    evaluator = MOI.Nonlinear.Evaluator(
+        ad,
+        mode,
+        JuMP.index.(JuMP.all_variables(model)),
+    )
+    MOI.initialize(evaluator, [:Grad])
+    W_val = [0.3 -0.2; 0.1 0.4]
+    x_in = vec(W_val)
+    val = MOI.eval_objective(evaluator, x_in)
+    @test val ≈ my_crossentropy(my_relu.(W_val * X), target)
+    g = zeros(length(x_in))
+    MOI.eval_objective_gradient(evaluator, g, x_in)
+    ε = 1e-3
+    Y_val = W_val * X
+    Z_val = my_relu.(Y_val)
+    dL_dZ = -target ./ (Z_val .+ ε)
+    dL_dY = dL_dZ .* Float64.(Y_val .> 0)
+    @test g ≈ vec(dL_dY * X')
+    return
+end
+
 function test_chainrules_broadcasted_relu()
     n = 2
     X = [1.0 0.5; 0.3 0.8]
