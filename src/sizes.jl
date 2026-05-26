@@ -367,7 +367,6 @@ function infer_sizes(::typeof(*), lhs, rhs)
 end
 ```
 """
-"""
 function infer_sizes(op, child_sizes::Tuple...)
     args = map(child_sizes) do sz
         return isempty(sz) ? 0.0 : zeros(sz)
@@ -416,7 +415,7 @@ function _infer_sizes(
                                 sizes.ndims[children_arr[c_idx]],
                             ) for c_idx in children_indices
                         )
-                        out_sz = infer_sizes(Float64, f, child_shapes...)
+                        out_sz = infer_sizes(f, child_shapes...)
                         if !isempty(out_sz)
                             _add_size!(sizes, k, out_sz)
                         end
