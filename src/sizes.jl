@@ -340,17 +340,27 @@ function _assert_scalar_children(sizes, children_arr, children_indices, op)
 end
 
 """
-    infer_sizes(op, child_sizes::Tuple...) -> Tuple
+    infer_sizes(op, child_sizes...) -> shape
 
 Return the output shape of applying `op` to arguments of shapes `child_sizes`.
-Each `child_sizes[i]` is `()` if argument `i` is a scalar, or a tuple of
-positive integers if it is an array. The returned shape is `()` for a scalar
-result.
+Each `child_sizes[i]` is empty if argument `i` is a scalar (`()` or `Int[]`),
+or any indexable container of positive integers if it is an array. The
+returned shape is empty for a scalar output.
+
+Inputs may be tuples (JuMP-side, from `size()`) or `AbstractVector{Int}`
+(tape-side — typically views into a `Sizes` buffer). The returned shape can
+likewise be a tuple or an `AbstractVector{Int}` (including a view): pick
+whichever makes the method type-stable. `_infer_sizes` and
+`_build_user_op_expr` accept either.
 
 The default implementation constructs dummy arguments with `zeros(sz)`
 (or `0.0` for scalars) and calls `op(args...)`. Specialise on `op`'s
 `typeof` to avoid the allocation, to support operators that error on zero
 inputs, or to compute the output shape symbolically.
+
+For tape-internal use, built-in operator symbols dispatch via
+`infer_sizes(::Val{op}, shapes...)`, and broadcasted variants dispatch via
+`infer_sizes(::Broadcasted{op}, shapes...)`.
 
 ## Example
 
@@ -367,12 +377,197 @@ function infer_sizes(::typeof(*), lhs, rhs)
 end
 ```
 """
-function infer_sizes(op, child_sizes::Tuple...)
+function infer_sizes(op, child_sizes...)
     args = map(child_sizes) do sz
-        return isempty(sz) ? 0.0 : zeros(sz)
+        return isempty(sz) ? 0.0 : zeros(sz...)
     end
     y = op(args...)
     return y isa AbstractArray ? size(y) : ()
+end
+
+# ── Built-in tape operators: non-broadcasted ────────────────────────────────
+# These methods are written generically over indexable shape containers
+# (tuple or `AbstractVector`), so the same definition serves both the
+# JuMP-side (tuples from `size()`) and the tape-side (views into `Sizes`).
+
+# Pure scalar reductions
+infer_sizes(::typeof(sum), shapes...) = ()
+infer_sizes(::typeof(LinearAlgebra.norm), shapes...) = ()
+infer_sizes(::typeof(LinearAlgebra.dot), shapes...) = ()
+
+# vect: N scalar children → 1-D vector of length N
+function infer_sizes(::typeof(Base.vect), shapes...)
+    @assert all(isempty, shapes) "`vect` expects scalar children"
+    return (length(shapes),)
+end
+
+# +, - : non-broadcasted; all children share the same shape, output = first
+infer_sizes(::typeof(+), shape, more...) = shape
+infer_sizes(::typeof(-), shape, more...) = shape
+
+function infer_sizes(::typeof(ifelse), cond, lhs, rhs)
+    @assert lhs == rhs
+    return lhs
+end
+
+# hcat: rows from first arg, total cols summed across children
+function infer_sizes(::typeof(hcat), shapes...)
+    total_cols = sum(s -> length(s) <= 1 ? 1 : s[2], shapes)
+    if isempty(shapes[1])
+        return (1, total_cols)
+    end
+    @assert length(shapes[1]) <= 2 "hcat with ndims > 2 is not supported yet"
+    return (shapes[1][1], total_cols)
+end
+
+# vcat: cols from first arg, total rows summed across children
+function infer_sizes(::typeof(vcat), shapes...)
+    total_rows = sum(s -> length(s) <= 1 ? 1 : s[1], shapes)
+    if isempty(shapes[1])
+        return (total_rows, 1)
+    end
+    @assert length(shapes[1]) <= 2 "vcat with ndims > 2 is not supported yet"
+    return (total_rows, shapes[1][2])
+end
+
+# *: matmul-like inner-dim reduction; scalar children are ignored. Returns a
+# `Vector{Int}` so the accumulator is type-stable across the loop (a tuple
+# accumulator would change type each iteration as the length varies).
+function infer_sizes(::typeof(*), shapes...)
+    out = Int[]
+    for s in shapes
+        if isempty(s)
+            continue
+        end
+        if isempty(out)
+            append!(out, s)
+        else
+            @assert length(out) > 1
+            @assert s[1] == out[end]
+            pop!(out)
+            for j in 2:length(s)
+                push!(out, s[j])
+            end
+        end
+    end
+    return out
+end
+
+# ^ and / (non-broadcasted): first arg's shape, second must be scalar
+function infer_sizes(::typeof(^), base, exp)
+    @assert isempty(exp) "`^` expects scalar exponent"
+    return base
+end
+function infer_sizes(::typeof(/), num, den)
+    @assert isempty(den) "`/` expects scalar denominator"
+    return num
+end
+
+# ── Built-in tape operators: broadcasted ────────────────────────────────────
+# A broadcasted call lowers to `Base.broadcasted(op, args...)`; we use the
+# same shape — dispatching on `(typeof(broadcasted), typeof(op))` instead of
+# defining a parallel marker type.
+
+# Broadcasted +, -, *, /: combine via Julia's broadcasting axis-combination
+# rules. Output ndims = max child ndims; size in each dim is the max size > 1.
+function infer_sizes(
+    ::typeof(Base.broadcasted),
+    ::Union{typeof(+),typeof(-),typeof(*),typeof(/)},
+    shapes...,
+)
+    nd = maximum(length, shapes; init = 0)
+    out = ones(Int, nd)
+    for sz in shapes
+        for j in eachindex(sz)
+            if sz[j] > 1
+                if out[j] == 1
+                    out[j] = sz[j]
+                else
+                    @assert out[j] == sz[j]
+                end
+            end
+        end
+    end
+    return out
+end
+
+# Broadcasted ^: scalar exponent, base shape preserved
+function infer_sizes(::typeof(Base.broadcasted), ::typeof(^), base, exp)
+    @assert isempty(exp) "broadcasted `^` expects scalar exponent"
+    return base
+end
+
+# `:row` is an MOI tape primitive (one row of a matrix literal) without a
+# corresponding Julia function. Define an empty function so `infer_sizes` can
+# still dispatch on `typeof(_row_op)` — `_row_op` is never actually called.
+function _row_op end
+
+function infer_sizes(::typeof(_row_op), shapes...)
+    @assert all(isempty, shapes) "`row` expects scalar children"
+    return (1, length(shapes))
+end
+
+# Map a built-in operator symbol to its Julia function so `infer_sizes` can
+# dispatch on `typeof(fn)`. Returns `nothing` for `:sum_dims`, whose shape
+# depends on the constant dims vector and is handled inline by `_infer_sizes`.
+function _default_op_function(sym::Symbol)
+    if sym === :sum_dims
+        return nothing
+    end
+    if sym === :row
+        return _row_op
+    end
+    if sym === :dot || sym === :norm
+        return getfield(LinearAlgebra, sym)
+    end
+    return getfield(Base, sym)
+end
+
+# `:sum_dims` is the one tape op whose shape depends on data outside the
+# child-shape tuple (the constant dims vector), so it can't fit the generic
+# `infer_sizes(op, shapes...)` signature. Handled inline by `_infer_sizes`.
+function _sum_dims_shape(
+    sizes,
+    nodes,
+    children_arr,
+    children_indices,
+    block_shapes,
+    const_values,
+)
+    @assert length(children_indices) == 2 "`sum_dims` expects (array, dims_vector)"
+    arr_id = children_arr[first(children_indices)]
+    dims_id = children_arr[first(children_indices)+1]
+    @assert nodes[dims_id].type == NODE_VALUE_BLOCK "`sum_dims` requires constant dims (NODE_VALUE_BLOCK)"
+    dims_len = prod(block_shapes[dims_id])
+    start = nodes[dims_id].index
+    dims_vec = const_values[(start-1) .+ (1:dims_len)]
+    in_ndims = sizes.ndims[arr_id]
+    return map(1:in_ndims) do d
+        return d in dims_vec ? 1 : _size(sizes, arr_id, d)
+    end
+end
+
+# Resolve a multivariate tape node's operator to the Julia `Function` whose
+# `infer_sizes` method computes its output shape. Returns the bare op symbol
+# (`:sum_dims`) when the shape rule needs out-of-band data and is handled
+# inline by `_infer_sizes`, or `nothing` for unrecognised operators.
+# Type-unstable on purpose — called only at setup time.
+function _shape_op(node::Node, operators)
+    @assert node.type == NODE_CALL_MULTIVARIATE ||
+            node.type == NODE_CALL_MULTIVARIATE_BROADCASTED
+    if node.index in eachindex(DEFAULT_MULTIVARIATE_OPERATORS)
+        sym = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
+        func = _default_op_function(sym)
+        return func === nothing ? sym : func
+    end
+    if operators !== nothing &&
+       node.index in eachindex(operators.multivariate_operators)
+        op_sym = operators.multivariate_operators[node.index]
+        if haskey(operators.chainrules_operators, op_sym)
+            return operators.chainrules_operators[op_sym]
+        end
+    end
+    return nothing
 end
 
 function _infer_sizes(
@@ -396,189 +591,40 @@ function _infer_sizes(
         if node.type == NODE_VARIABLE_BLOCK ||
            node.type == NODE_VALUE_BLOCK ||
            node.type == NODE_MOI_VARIABLE_BLOCK
-            shape = block_shapes[k]
-            _add_size!(sizes, k, shape)
+            _add_size!(sizes, k, block_shapes[k])
             continue
         end
         children_indices = SparseArrays.nzrange(adj, k)
         N = length(children_indices)
-        if node.type == NODE_CALL_MULTIVARIATE
-            if !(node.index in eachindex(DEFAULT_MULTIVARIATE_OPERATORS))
-                if operators !== nothing &&
-                   node.index in eachindex(operators.multivariate_operators)
-                    op_sym = operators.multivariate_operators[node.index]
-                    if haskey(operators.chainrules_operators, op_sym)
-                        f = operators.chainrules_operators[op_sym]
-                        child_shapes = Tuple(
-                            ntuple(
-                                d -> _size(sizes, children_arr[c_idx], d),
-                                sizes.ndims[children_arr[c_idx]],
-                            ) for c_idx in children_indices
-                        )
-                        out_sz = infer_sizes(f, child_shapes...)
-                        if !isempty(out_sz)
-                            _add_size!(sizes, k, out_sz)
-                        end
-                        # Scalar output → ndims = 0 (already initialised).
-                        continue
-                    end
-                end
-                # TODO user-defined operators
-                continue
+        if node.type == NODE_CALL_MULTIVARIATE ||
+           node.type == NODE_CALL_MULTIVARIATE_BROADCASTED
+            op = _shape_op(node, operators)
+            if op === nothing
+                continue  # TODO user-defined operators
             end
-            op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
-            if op == :vect
-                _assert_scalar_children(
+            if op === :sum_dims
+                out_sz = _sum_dims_shape(
                     sizes,
+                    nodes,
                     children_arr,
                     children_indices,
-                    op,
+                    block_shapes,
+                    const_values,
                 )
-                _add_size!(sizes, k, (N,))
-            elseif op == :row
-                _assert_scalar_children(
-                    sizes,
-                    children_arr,
-                    children_indices,
-                    op,
-                )
-                _add_size!(sizes, k, (1, N))
-            elseif op == :dot
-                # TODO assert all arguments have same size
-            elseif op == :norm
-                # TODO actually norm should be moved to univariate
-            elseif op == :sum
-                # sum reduces array to scalar, ndims stays 0
-            elseif op == :+ || op == :-
-                # TODO assert all arguments have same size
-                _copy_size!(sizes, k, children_arr[first(children_indices)])
-            elseif op == :hcat
-                total_cols = 0
-                for c_idx in children_indices
-                    total_cols +=
-                        sizes.ndims[children_arr[c_idx]] <= 1 ? 1 :
-                        _size(sizes, children_arr[c_idx], 2)
-                end
-                if sizes.ndims[children_arr[first(children_indices)]] == 0
-                    shape = (1, total_cols)
-                else
-                    @assert sizes.ndims[children_arr[first(
-                        children_indices,
-                    )]] <= 2 "Hcat with ndims > 2 is not supported yet"
-                    shape = (
-                        _size(sizes, children_arr[first(children_indices)], 1),
-                        total_cols,
-                    )
-                end
-                _add_size!(sizes, k, tuple(shape...))
-            elseif op == :vcat
-                total_rows = 0
-                for c_idx in children_indices
-                    total_rows +=
-                        sizes.ndims[children_arr[c_idx]] <= 1 ? 1 :
-                        _size(sizes, children_arr[c_idx], 1)
-                end
-                if sizes.ndims[children_arr[first(children_indices)]] == 0
-                    shape = (total_rows, 1)
-                else
-                    @assert sizes.ndims[children_arr[first(
-                        children_indices,
-                    )]] <= 2 "Hcat with ndims > 2 is not supported yet"
-                    shape = (
-                        total_rows,
-                        _size(sizes, children_arr[first(children_indices)], 2),
-                    )
-                end
-                _add_size!(sizes, k, tuple(shape...))
-            elseif op == :*
-                sizes.ndims[k] = 0
-                for child in children_indices
-                    id = children_arr[child]
-                    ndims = sizes.ndims[id]
-                    if !iszero(ndims)
-                        sz = _size(sizes, id)
-                        if iszero(sizes.ndims[k])
-                            sizes.size_offset[k] = length(sizes.size)
-                            append!(sizes.size, sz)
-                            sizes.ndims[k] = ndims
-                        else
-                            @assert sizes.ndims[k] > 1
-                            @assert sz[1] == sizes.size[end]
-                            pop!(sizes.size)
-                            append!(sizes.size, @view(sz[2:end]))
-                            sizes.ndims[k] += ndims - 2
-                        end
-                    end
-                end
-            elseif op == :^ || op == :/
-                @assert N == 2
-                _assert_scalar_children(
-                    sizes,
-                    children_arr,
-                    children_indices[2:end],
-                    op,
-                )
-                _copy_size!(sizes, k, children_arr[first(children_indices)])
-            elseif op == :sum_dims
-                # Two args: (array, Vector{Float64}(dims)). Output keeps the
-                # input ndims with the reduced dims collapsed to size 1.
-                @assert N == 2 "`sum_dims` expects (array, dims_vector)"
-                arr_id = children_arr[first(children_indices)]
-                dims_id = children_arr[first(children_indices)+1]
-                @assert nodes[dims_id].type == NODE_VALUE_BLOCK "`sum_dims` requires constant dims (NODE_VALUE_BLOCK)"
-                # Read the dims values out of `const_values`. The block was
-                # appended at `nodes[dims_id].index` with length recorded in
-                # `block_shapes`.
-                dims_len = prod(block_shapes[dims_id])
-                start = nodes[dims_id].index
-                dims_vec = const_values[(start-1) .+ (1:dims_len)]
-                in_ndims = sizes.ndims[arr_id]
-                out_shape = map(1:in_ndims) do d
-                    return d in dims_vec ? 1 : _size(sizes, arr_id, d)
-                end
-                _add_size!(sizes, k, out_shape)
             else
-                _assert_scalar_children(
-                    sizes,
-                    children_arr,
-                    children_indices,
-                    op,
+                # Pass shape views directly — no Tuple/Vector conversion. The
+                # `infer_sizes` methods are generic over indexable containers.
+                child_shapes = ntuple(
+                    i -> _size(sizes, children_arr[children_indices[i]]),
+                    N,
                 )
-            end
-        elseif node.type == NODE_CALL_MULTIVARIATE_BROADCASTED
-            if !(node.index in eachindex(DEFAULT_MULTIVARIATE_OPERATORS))
-                # TODO user-defined operators
-                continue
-            end
-            op = DEFAULT_MULTIVARIATE_OPERATORS[node.index]
-            if op == :+ || op == :- || op == :* || op == :/
-                sizes.ndims[k] = maximum(children_indices, init = 0) do i
-                    return sizes.ndims[children_arr[i]]
+                out_sz = if node.type == NODE_CALL_MULTIVARIATE_BROADCASTED
+                    infer_sizes(Base.broadcasted, op, child_shapes...)
+                else
+                    infer_sizes(op, child_shapes...)
                 end
-                sizes.size_offset[k] = length(sizes.size)
-                for _ in 1:sizes.ndims[k]
-                    push!(sizes.size, 1)
-                end
-                sz_parent = _size(sizes, k)
-                for i in children_indices
-                    id = children_arr[i]
-                    sz = _size(sizes, id)
-                    for j in eachindex(sz)
-                        if sz[j] > 1
-                            if sz_parent[j] == 1
-                                sz_parent[j] = sz[j]
-                            else
-                                @assert sz_parent[j] == sz[j]
-                            end
-                        end
-                    end
-                end
-            elseif op == :^
-                # Broadcasted ^ with scalar exponent preserves base shape
-                @assert length(children_indices) == 2 "Expected two arguments for broadcasted operator `$op`, got $(length(children_indices))"
-                @assert iszero(sizes.ndims[children_arr[children_indices[2]]]) "Expected scalar exponent for broadcasted operator `$op`"
-                _copy_size!(sizes, k, children_arr[first(children_indices)])
             end
+            _add_size!(sizes, k, out_sz)
         elseif node.type == NODE_CALL_UNIVARIATE
             if !(
                 node.index in
@@ -615,10 +661,8 @@ function _infer_sizes(
                     continue
                 end
                 error("TODO user-defined operators")
-                continue
             end
             @assert N == 1
-            op = MOI.Nonlinear.DEFAULT_UNIVARIATE_OPERATORS[node.index]
             _copy_size!(sizes, k, children_arr[first(children_indices)])
         end
     end
@@ -667,7 +711,7 @@ struct _SubexpressionStorage{T<:Real,S<:AbstractVector{T}}
                 j = sizes.storage_offset[k] + 1
                 len = _length(sizes, k)
                 cpu_buffer[j:(j+len-1)] .=
-                    view(const_values, node.index:(node.index+len-1))
+                    view(const_values, (node.index):(node.index+len-1))
             end
         end
         forward_storage = convert(S, cpu_buffer)

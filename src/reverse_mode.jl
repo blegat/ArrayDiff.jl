@@ -173,7 +173,7 @@ function _forward_eval(
             len = length(tape_range)
             copyto!(
                 view(f.forward_storage, tape_range),
-                view(x, node.index:(node.index+len-1)),
+                view(x, (node.index):(node.index+len-1)),
             )
         elseif node.type == NODE_VALUE_BLOCK
             # Pre-loaded into `forward_storage` at construction.
@@ -792,6 +792,16 @@ function __reverse_broadcasted_div(f, ilhs, irhs, dout, dlhs, drhs)
     )
 end
 
+# Reverse for `:sum_dims`. `y = sum(x; dims=d)` collapses one axis, so
+# ∂y[i…]/∂x[j…] is 1 iff `j` matches `i` on every non-reduced axis (any
+# `j` along the reduced axis maps to the same `y` slot). Broadcasting the
+# (m,1) or (1,n) parent adjoint across the full child shape produces
+# exactly that pattern.
+function _reverse_sum_dims!(rev_arr, rev_parent)
+    rev_arr .= rev_parent
+    return
+end
+
 """
     _reverse_eval(f::_SubexpressionStorage)
 
@@ -1213,7 +1223,7 @@ function _extract_reverse_pass_inner(
         if node.type == NODE_VARIABLE_BLOCK
             tape_range = _storage_range(f.sizes, k)
             len = length(tape_range)
-            x_range = node.index:(node.index+len-1)
+            x_range = (node.index):(node.index+len-1)
             view(output, x_range) .+=
                 scale .* view(f.reverse_storage, tape_range)
         elseif node.type == NODE_VARIABLE

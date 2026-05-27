@@ -30,14 +30,14 @@ IndexedSet(n::Integer) = IndexedSet(zeros(Int, n), trues(n), 0)
 
 function Base.push!(v::IndexedSet, i::Integer)
     if v.empty[i]  # new index
-        v.nzidx[v.nnz+=1] = i
+        v.nzidx[v.nnz += 1] = i
         v.empty[i] = false
     end
     return
 end
 
 function Base.empty!(v::IndexedSet)
-    for i in 1:v.nnz
+    for i in 1:(v.nnz)
         v.empty[v.nzidx[i]] = true
     end
     v.nnz = 0
@@ -58,7 +58,7 @@ function Base.resize!(v::IndexedSet, n::Integer)
     return
 end
 
-Base.collect(v::IndexedSet) = v.nzidx[1:v.nnz]
+Base.collect(v::IndexedSet) = v.nzidx[1:(v.nnz)]
 
 function Base.union!(v::IndexedSet, s)
     for x in s
