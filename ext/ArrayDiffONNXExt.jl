@@ -70,14 +70,17 @@ function _tensor_to_array(t::ONNX.TensorProto)
         mat = collect(permutedims(reshape(flat, (n, m)), (2, 1)))
         return (mat, (m, n))
     else
-        error("Tensors with ndim > 2 not supported (got dims=$dims for '$(t.name)')")
+        error(
+            "Tensors with ndim > 2 not supported (got dims=$dims for '$(t.name)')",
+        )
     end
 end
 
 # ── User-supplied input wrapping ────────────────────────────────────────────
 
-_wrap_input(v::Vector{MOI.VariableIndex}) =
-    (ANF{1}(:vect, Any[v...], (length(v),), false), (length(v),))
+function _wrap_input(v::Vector{MOI.VariableIndex})
+    return (ANF{1}(:vect, Any[v...], (length(v),), false), (length(v),))
+end
 
 function _wrap_input(M::Matrix{MOI.VariableIndex})
     m, n = size(M)
@@ -105,19 +108,23 @@ _wrap_input(x) = error("Unsupported input value type: $(typeof(x))")
 
 function _broadcast_shape(a::_Shape, b::_Shape)
     # NumPy / ONNX semantics: align trailing dims; each pair must match or one is 1.
-    if a == () return b end
-    if b == () return a end
+    if a == ()
+        return b
+    end
+    if b == ()
+        return a
+    end
     n = max(length(a), length(b))
     out = Vector{Int}(undef, n)
     for i in 1:n
-        da = i <= length(a) ? a[end - i + 1] : 1
-        db = i <= length(b) ? b[end - i + 1] : 1
+        da = i <= length(a) ? a[end-i+1] : 1
+        db = i <= length(b) ? b[end-i+1] : 1
         if da == db
-            out[n - i + 1] = da
+            out[n-i+1] = da
         elseif da == 1
-            out[n - i + 1] = db
+            out[n-i+1] = db
         elseif db == 1
-            out[n - i + 1] = da
+            out[n-i+1] = da
         else
             error("Incompatible broadcast shapes $a vs $b")
         end
@@ -148,7 +155,8 @@ function _convert_node(node::ONNX.NodeProto, env::Dict{String,_Entry})
 
     elseif op == "Constant"
         t = _attr_tensor(node, "value")
-        t === nothing && error("Constant node '$(node.name)' has no 'value' attribute")
+        t === nothing &&
+            error("Constant node '$(node.name)' has no 'value' attribute")
         return _tensor_to_array(t)
 
     elseif op == "Add"
@@ -212,8 +220,9 @@ function _convert_matmul(node, env)
         # rewrite as Matᵀ × Vec by transposing the constant matrix at
         # convert time. Requires `b` to be a constant tensor (initializer).
         sa[1] == sb[1] || error("MatMul shape mismatch: $sa × $sb")
-        b isa AbstractMatrix{<:Real} ||
-            error("MatMul Vec × Mat requires the matrix to be a constant initializer (got $(typeof(b)))")
+        b isa AbstractMatrix{<:Real} || error(
+            "MatMul Vec × Mat requires the matrix to be a constant initializer (got $(typeof(b)))",
+        )
         bT = collect(permutedims(b))
         s = (sb[2],)
         return (_call(:*, Any[bT, a], s), s)
@@ -242,8 +251,9 @@ function _convert_gemm(node, env)
 
     transA && error("Gemm with transA=1 is not supported")
     if transB
-        B isa AbstractMatrix{<:Real} ||
-            error("Gemm with transB=1 requires B to be a constant tensor (got $(typeof(B)))")
+        B isa AbstractMatrix{<:Real} || error(
+            "Gemm with transB=1 requires B to be a constant tensor (got $(typeof(B)))",
+        )
         B = collect(permutedims(B))
         sB = (sB[2], sB[1])
     end
