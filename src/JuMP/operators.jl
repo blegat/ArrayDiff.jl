@@ -184,19 +184,11 @@ function evaluator(
     features::Vector{Symbol} = Symbol[:Grad, :Jac, :JacVec],
 )
     model = JuMP.Model()
-    JuMP.@variable(
-        model,
-        x[1:input_dim],
-        container = ArrayOfVariables,
-    )
+    JuMP.@variable(model, x[1:input_dim], container = ArrayOfVariables,)
     residual_expr = f(x)
     ad_model = Model()
     set_residual!(ad_model, JuMP.moi_function(residual_expr))
-    eval = Evaluator(
-        ad_model,
-        mode,
-        JuMP.index.(JuMP.all_variables(model)),
-    )
+    eval = Evaluator(ad_model, mode, JuMP.index.(JuMP.all_variables(model)))
     MOI.initialize(eval, features)
     return eval
 end
