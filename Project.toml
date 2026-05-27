@@ -16,12 +16,19 @@ OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 
+[weakdeps]
+MathOptAI = "e52c2cb8-508e-4e12-9dd2-9c4755b60e73"
+
+[extensions]
+ArrayDiffMathOptAIExt = "MathOptAI"
+
 [compat]
 Calculus = "0.5.2"
 ChainRulesCore = "1"
 DataStructures = "0.18, 0.19"
 ForwardDiff = "1"
 JuMP = "1.29.4"
+MathOptAI = "0.2"
 MathOptInterface = "1.40"
 NaNMath = "1"
 OrderedCollections = "1.8.1"

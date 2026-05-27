@@ -166,6 +166,33 @@ function Base.:(+)(
     return GenericArrayExpr{V,N}(:+, Any[x, y], size(x), false)
 end
 
+# ── Evaluator helper ─────────────────────────────────────────────────────────
+
+"""
+    evaluator(f::Function, input_dim::Int; mode = Mode(), features = [:Grad, :Jac, :JacVec])
+
+Compile a vector-valued Julia function `f` whose output is built with the
+JuMP/ArrayDiff array operators into an [`Evaluator`](@ref) ready for
+`eval_residual!` / `eval_residual_jtprod!`. The function is called once with a
+fresh length-`input_dim` `ArrayOfVariables`, the resulting array expression
+becomes the residual, and the evaluator is initialised with `features`.
+"""
+function evaluator(
+    f::Function,
+    input_dim::Int;
+    mode = Mode(),
+    features::Vector{Symbol} = Symbol[:Grad, :Jac, :JacVec],
+)
+    model = JuMP.Model()
+    JuMP.@variable(model, x[1:input_dim], container = ArrayOfVariables,)
+    residual_expr = f(x)
+    ad_model = Model()
+    set_residual!(ad_model, JuMP.moi_function(residual_expr))
+    eval = Evaluator(ad_model, mode, JuMP.index.(JuMP.all_variables(model)))
+    MOI.initialize(eval, features)
+    return eval
+end
+
 # ── User-defined array operators ─────────────────────────────────────────────
 #
 # `add_operator(model, arity, f)` registers `f` on the `ArrayDiff.Model` via
