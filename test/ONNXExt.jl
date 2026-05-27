@@ -415,6 +415,302 @@ function test_missing_input_errors()
     @test_throws ErrorException ArrayDiff.from_onnx(proto; inputs = Dict())
 end
 
+# ── Direct tests for private helpers ─────────────────────────────────────────
+
+const _ext = Base.get_extension(ArrayDiff, :ArrayDiffONNXExt)
+
+function test_broadcast_shape_helper()
+    @test _ext._broadcast_shape((), (3,)) == (3,)
+    @test _ext._broadcast_shape((3,), ()) == (3,)
+    @test _ext._broadcast_shape((2, 3), (2, 3)) == (2, 3)
+    # da == 1 broadcast
+    @test _ext._broadcast_shape((1, 3), (2, 3)) == (2, 3)
+    # db == 1 broadcast (1D bias-style)
+    @test _ext._broadcast_shape((2, 3), (3,)) == (2, 3)
+    # incompatible
+    @test_throws ErrorException _ext._broadcast_shape((2,), (3,))
+end
+
+function test_wrap_input_scalar_vector_matrix_real()
+    @test _ext._wrap_input(3.5) == (3.5, ())
+    @test _ext._wrap_input(2) == (2.0, ())
+    v = [1.0, 2.0, 3.0]
+    out, sz = _ext._wrap_input(v)
+    @test out == v && sz == (3,) && out isa Vector{Float64}
+    M = [1.0 2.0; 3.0 4.0]
+    outM, szM = _ext._wrap_input(M)
+    @test outM == M && szM == (2, 2) && outM isa Matrix{Float64}
+end
+
+function test_wrap_input_anf()
+    anf = ArrayDiff.ArrayNonlinearFunction{1}(:vect, Any[1.0, 2.0], (2,), false)
+    out, sz = _ext._wrap_input(anf)
+    @test out === anf && sz == (2,)
+end
+
+function test_wrap_input_unsupported()
+    @test_throws ErrorException _ext._wrap_input((1, 2, 3))
+end
+
+function test_wrap_input_matrix_vars_multi_row()
+    M = collect(reshape([MOI.VariableIndex(i) for i in 1:6], 2, 3))
+    out, sz = _ext._wrap_input(M)
+    @test sz == (2, 3)
+    @test out isa ArrayDiff.ArrayNonlinearFunction{2}
+    @test out.head == :vcat
+end
+
+# ── TensorProto encoding paths ───────────────────────────────────────────────
+
+function test_tensor_to_array_float_data()
+    t = ONNX.TensorProto(
+        dims = Int64[2, 3],
+        data_type = Int32(DT.FLOAT),
+        name = "t",
+        float_data = Float32[1, 2, 3, 4, 5, 6],
+    )
+    arr, sz = _ext._tensor_to_array(t)
+    @test sz == (2, 3)
+    @test arr == [1.0 2.0 3.0; 4.0 5.0 6.0]
+end
+
+function test_tensor_to_array_raw_data_float()
+    raw = Vector{UInt8}(reinterpret(UInt8, Float32[1.0, 2.0, 3.0]))
+    t = ONNX.TensorProto(
+        dims = Int64[3],
+        data_type = Int32(DT.FLOAT),
+        name = "t",
+        raw_data = raw,
+    )
+    arr, sz = _ext._tensor_to_array(t)
+    @test sz == (3,)
+    @test arr == [1.0, 2.0, 3.0]
+end
+
+function test_tensor_to_array_raw_data_double()
+    raw = Vector{UInt8}(reinterpret(UInt8, Float64[1.5, -2.5]))
+    t = ONNX.TensorProto(
+        dims = Int64[2],
+        data_type = Int32(DT.DOUBLE),
+        name = "t",
+        raw_data = raw,
+    )
+    arr, sz = _ext._tensor_to_array(t)
+    @test sz == (2,)
+    @test arr == [1.5, -2.5]
+end
+
+function test_tensor_to_array_raw_data_unsupported()
+    t = ONNX.TensorProto(
+        dims = Int64[2],
+        data_type = Int32(DT.INT32),
+        name = "t",
+        raw_data = UInt8[1, 2, 3, 4, 5, 6, 7, 8],
+    )
+    @test_throws ErrorException _ext._tensor_to_array(t)
+end
+
+function test_tensor_to_array_empty_encoding()
+    t = ONNX.TensorProto(
+        dims = Int64[2],
+        data_type = Int32(DT.INT32),
+        name = "t",
+    )
+    @test_throws ErrorException _ext._tensor_to_array(t)
+end
+
+function test_tensor_to_array_scalar()
+    t = _make_scalar_tensor("t", 3.5)
+    arr, sz = _ext._tensor_to_array(t)
+    @test arr == 3.5 && sz == ()
+end
+
+function test_tensor_to_array_3d_unsupported()
+    t = ONNX.TensorProto(
+        dims = Int64[1, 2, 3],
+        data_type = Int32(DT.DOUBLE),
+        name = "t",
+        double_data = Float64[1, 2, 3, 4, 5, 6],
+    )
+    @test_throws ErrorException _ext._tensor_to_array(t)
+end
+
+# ── Per-op coverage ──────────────────────────────────────────────────────────
+
+function test_neg()
+    vars = [MOI.VariableIndex(i) for i in 1:3]
+    node = _make_node("Neg", ["x"], ["y"])
+    proto = _build_model([node], ["x"], ["y"])
+    xv = [0.4, -1.2, 1.7]
+    val, g = _eval_with_gradient(proto, vars, xv)
+    fjulia(x) = sum((-x) .^ 2)
+    @test val ≈ fjulia(xv)
+    @test g ≈ ForwardDiff.gradient(fjulia, xv)
+end
+
+# Constant op with a scalar value.
+function test_constant_scalar()
+    vars = [MOI.VariableIndex(i) for i in 1:2]
+    c_t = _make_scalar_tensor("c_val", 1.5)
+    n1 = _make_node(
+        "Constant",
+        String[],
+        ["c"];
+        attrs = [_attr_tensor("value", c_t)],
+        name = "k",
+    )
+    n2 = _make_node("Add", ["x", "c"], ["y"])
+    proto = _build_model([n1, n2], ["x"], ["y"])
+    xv = [0.5, 1.0]
+    val, g = _eval_with_gradient(proto, vars, xv)
+    fjulia(x) = sum((x .+ 1.5) .^ 2)
+    @test val ≈ fjulia(xv)
+    @test g ≈ ForwardDiff.gradient(fjulia, xv)
+end
+
+function test_constant_missing_value_errors()
+    n = _make_node("Constant", String[], ["c"])
+    proto = _build_model(
+        [n, _make_node("Identity", ["c"], ["y"])],
+        String[],
+        ["y"],
+    )
+    @test_throws ErrorException ArrayDiff.from_onnx(proto)
+end
+
+# MatMul Mat × Vec: y = X * b, X = (2, 3) vars, b = (3,) const.
+function test_matmul_matrix_vector()
+    vars = [MOI.VariableIndex(i) for i in 1:6]
+    var_mat = collect(reshape(vars, 2, 3))
+    b = [0.4, -1.0, 0.9]
+    init = _make_tensor("b", b)
+    node = _make_node("MatMul", ["x", "b"], ["y"])
+    proto = _build_model([node], ["x"], ["y"]; initializers = [init])
+    xv = [0.3, -0.7, 1.1, 2.0, 0.5, -1.5]
+    val, g = _eval_with_gradient(proto, vars, xv; input = var_mat)
+    fjulia(x) = sum((reshape(x, 2, 3) * b) .^ 2)
+    @test val ≈ fjulia(xv)
+    @test g ≈ ForwardDiff.gradient(fjulia, xv)
+end
+
+# MatMul Mat × Mat: y = X * W, X = (2, 3) vars, W = (3, 2) const.
+function test_matmul_matrix_matrix()
+    vars = [MOI.VariableIndex(i) for i in 1:6]
+    var_mat = collect(reshape(vars, 2, 3))
+    W = [
+        0.4 -0.1
+        0.5 1.2
+        -0.3 0.7
+    ]
+    init = _make_tensor("W", W)
+    node = _make_node("MatMul", ["x", "W"], ["y"])
+    proto = _build_model([node], ["x"], ["y"]; initializers = [init])
+    xv = [0.2, 1.0, -0.5, 0.8, 1.4, -1.1]
+    val, g = _eval_with_gradient(proto, vars, xv; input = var_mat)
+    fjulia(x) = sum((reshape(x, 2, 3) * W) .^ 2)
+    @test val ≈ fjulia(xv)
+    @test g ≈ ForwardDiff.gradient(fjulia, xv)
+end
+
+# Vec × Vec is not a supported MatMul shape combination.
+function test_matmul_unsupported_shapes()
+    vars = [MOI.VariableIndex(i) for i in 1:3]
+    b = [1.0, 2.0, 3.0]
+    init = _make_tensor("b", b)
+    node = _make_node("MatMul", ["x", "b"], ["y"])
+    proto = _build_model([node], ["x"], ["y"]; initializers = [init])
+    @test_throws ErrorException ArrayDiff.from_onnx(
+        proto;
+        inputs = Dict("x" => vars),
+    )
+end
+
+# Gemm without C: 2-input form, no bias.
+function test_gemm_no_bias()
+    vars = [MOI.VariableIndex(i) for i in 1:2]
+    var_mat = reshape(vars, 1, 2)
+    W = [
+        0.4 -0.1
+        0.5 1.2
+    ]
+    init_W = _make_tensor("W", W)
+    node = _make_node(
+        "Gemm",
+        ["x", "W"],
+        ["y"];
+        attrs = [
+            _attr_float("alpha", 1.0),
+            _attr_float("beta", 1.0),
+            _attr_int("transA", 0),
+            _attr_int("transB", 0),
+        ],
+    )
+    proto = _build_model([node], ["x"], ["y"]; initializers = [init_W])
+    xv = [0.3, -0.7]
+    val, g = _eval_with_gradient(proto, vars, xv; input = var_mat)
+    fjulia(x) = sum((reshape(x, 1, 2) * W) .^ 2)
+    @test val ≈ fjulia(xv)
+    @test g ≈ ForwardDiff.gradient(fjulia, xv)
+end
+
+# Gemm with all attributes omitted: covers the default-attr path in `_find_attr`.
+function test_gemm_default_attrs()
+    vars = [MOI.VariableIndex(i) for i in 1:2]
+    var_mat = reshape(vars, 1, 2)
+    W = [
+        0.4 -0.1
+        0.5 1.2
+    ]
+    bias = [0.1, -0.2]
+    init_W = _make_tensor("W", W)
+    init_b = _make_tensor("b", bias)
+    node = _make_node("Gemm", ["x", "W", "b"], ["y"])
+    proto = _build_model([node], ["x"], ["y"]; initializers = [init_W, init_b])
+    xv = [0.3, -0.7]
+    val, g = _eval_with_gradient(proto, vars, xv; input = var_mat)
+    fjulia(x) = sum((reshape(x, 1, 2) * W .+ reshape(bias, 1, 2)) .^ 2)
+    @test val ≈ fjulia(xv)
+    @test g ≈ ForwardDiff.gradient(fjulia, xv)
+end
+
+# Gemm with a non-constant 1D bias is rejected.
+function test_gemm_non_const_1d_bias_errors()
+    vars_x = [MOI.VariableIndex(i) for i in 1:2]
+    vars_c = [MOI.VariableIndex(i) for i in 3:5]
+    var_mat = reshape(vars_x, 1, 2)
+    W = [
+        0.4 -0.1 0.5
+        1.2 -0.3 0.7
+    ]
+    init_W = _make_tensor("W", W)
+    node = _make_node("Gemm", ["x", "W", "c"], ["y"])
+    proto = _build_model([node], ["x", "c"], ["y"]; initializers = [init_W])
+    @test_throws ErrorException ArrayDiff.from_onnx(
+        proto;
+        inputs = Dict("x" => var_mat, "c" => vars_c),
+    )
+end
+
+# Graph declares "x" as both an input and an initializer: the initializer wins.
+function test_input_name_overlaps_initializer()
+    init_x = _make_tensor("x", [1.0, 2.0, 3.0])
+    node = _make_node("Identity", ["x"], ["y"])
+    proto = _build_model([node], ["x"], ["y"]; initializers = [init_x])
+    out = ArrayDiff.from_onnx(proto)
+    @test out == [1.0, 2.0, 3.0]
+end
+
+# Multi-output graph: result is keyed by output name.
+function test_multi_output()
+    vars = [MOI.VariableIndex(i) for i in 1:3]
+    n1 = _make_node("Identity", ["x"], ["a"]; name = "id")
+    n2 = _make_node("Neg", ["x"], ["b"]; name = "neg")
+    proto = _build_model([n1, n2], ["x"], ["a", "b"])
+    out = ArrayDiff.from_onnx(proto; inputs = Dict("x" => vars))
+    @test out isa Dict
+    @test sort(collect(keys(out))) == ["a", "b"]
+end
+
 end # module
 
 TestONNXExt.runtests()

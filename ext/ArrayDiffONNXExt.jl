@@ -32,11 +32,6 @@ function _attr_float(node, name; default::Float64)
     return a === nothing ? default : Float64(a.f)
 end
 
-function _attr_ints(node, name)
-    a = _find_attr(node, name)
-    return a === nothing ? Int[] : Int[Int(x) for x in a.ints]
-end
-
 function _attr_tensor(node, name)
     a = _find_attr(node, name)
     return a === nothing ? nothing : a.t
@@ -113,8 +108,6 @@ function _broadcast_shape(a::_Shape, b::_Shape)
     if a == () return b end
     if b == () return a end
     n = max(length(a), length(b))
-    pa = ntuple(i -> i <= length(a) ? a[end - length(a) + i + (n - n)] : 1, n)  # placeholder
-    # simpler explicit loop
     out = Vector{Int}(undef, n)
     for i in 1:n
         da = i <= length(a) ? a[end - i + 1] : 1
