@@ -1063,6 +1063,32 @@ function test_op_reversed_args()
     return
 end
 
+function test_matvec_gradient()
+    # `W * x` for a 1-D `ArrayOfVariables` `x` exercises the mat-vec branch
+    # of `_matmul_reverse!`. Loss is `sum((W*x - target).^2)` so the analytic
+    # gradient is `2 * W' * (W*x - target)`.
+    m, n = 3, 4
+    W = [
+        0.4 -0.2 0.1 0.3
+        -0.3 0.5 0.2 -0.1
+        0.1 0.1 -0.4 0.2
+    ]
+    target = [0.5, -0.2, 0.1]
+    model = Model()
+    @variable(model, x[1:n], container = ArrayDiff.ArrayOfVariables)
+    y = W * x
+    @test y isa ArrayDiff.GenericArrayExpr
+    @test ndims(y) == 1
+    @test size(y) == (m,)
+    @test y.head == :*
+    loss = sum((y .- target) .^ 2)
+    x_val = [0.6, -0.3, 0.4, -0.1]
+    _, val, g, _ = _eval(model, loss, x_val; x_grad = x_val)
+    @test val ≈ sum((W * x_val .- target) .^ 2)
+    @test g ≈ 2 * W' * (W * x_val .- target)
+    return
+end
+
 end  # module
 
 TestJuMP.runtests()
