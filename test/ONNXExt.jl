@@ -212,8 +212,6 @@ function test_elementwise_sub_mul_div()
 end
 
 # MatMul vector × matrix: y = x * W, W is (3, 2). Output is 1D length 2.
-# Pending the ArrayDiff PR that adds vec × mat shape inference to `:*` —
-# until then ArrayDiff trips `sizes.ndims[k] > 1` on the second operand.
 function test_matmul_vector_matrix()
     vars = [MOI.VariableIndex(i) for i in 1:3]
     W = [1.0 0.5;
@@ -223,11 +221,10 @@ function test_matmul_vector_matrix()
     node = _make_node("MatMul", ["x", "W"], ["y"])
     proto = _build_model([node], ["x"], ["y"]; initializers = [init])
     xv = [0.4, -1.0, 0.9]
+    val, g = _eval_with_gradient(proto, vars, xv)
     fjulia(x) = sum((x' * W) .^ 2)
-    @test_broken begin
-        val, g = _eval_with_gradient(proto, vars, xv)
-        val ≈ fjulia(xv) && g ≈ ForwardDiff.gradient(fjulia, xv)
-    end
+    @test val ≈ fjulia(xv)
+    @test g ≈ ForwardDiff.gradient(fjulia, xv)
 end
 
 # Gemm without transB: y = α * (X * W) + β * b. X is shape (1, K).

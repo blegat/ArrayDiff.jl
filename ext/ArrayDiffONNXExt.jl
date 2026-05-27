@@ -178,8 +178,13 @@ function _convert_node(node::ONNX.NodeProto, env::Dict{String,_Entry})
         return _convert_gemm(node, env)
 
     elseif op == "Relu"
+        # ArrayDiff's broadcasted-multivariate shape inference only handles
+        # {+, -, *, /, ^}, not `:max`. Express ReLU using the equivalent
+        # `(x + abs(x)) / 2` which uses only broadcast-supported ops.
         x, sx = env[node.input[1]]
-        return (_bcall(:max, Any[x, 0.0], sx), sx)
+        absx = _bcall(:abs, Any[x], sx)
+        s = _bcall(:+, Any[x, absx], sx)
+        return (_bcall(:/, Any[s, 2.0], sx), sx)
 
     elseif op == "Tanh"
         x, sx = env[node.input[1]]
@@ -209,12 +214,16 @@ function _convert_matmul(node, env)
     a, sa = env[node.input[1]]
     b, sb = env[node.input[2]]
     if length(sa) == 1 && length(sb) == 2
-        # NumPy-style Vec × Mat = Vec. Depends on ArrayDiff `:*` supporting
-        # vector × matrix shape inference (see ArrayDiff PR adding matrix-
-        # vector / vec-matrix product support).
+        # NumPy-style Vec × Mat = Vec. ArrayDiff's `:*` shape inference walks
+        # left-to-right and requires the first non-scalar child to be 2D, so
+        # rewrite as Matᵀ × Vec by transposing the constant matrix at
+        # convert time. Requires `b` to be a constant tensor (initializer).
         sa[1] == sb[1] || error("MatMul shape mismatch: $sa × $sb")
+        b isa AbstractMatrix{<:Real} ||
+            error("MatMul Vec × Mat requires the matrix to be a constant initializer (got $(typeof(b)))")
+        bT = collect(permutedims(b))
         s = (sb[2],)
-        return (_call(:*, Any[a, b], s), s)
+        return (_call(:*, Any[bT, a], s), s)
     elseif length(sa) == 2 && length(sb) == 1
         sa[2] == sb[1] || error("MatMul shape mismatch: $sa × $sb")
         s = (sa[1],)
