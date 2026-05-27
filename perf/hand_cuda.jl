@@ -111,4 +111,28 @@ function neural(
     end
 end
 
+function profile_gpu(;
+    T = Float32, h = 4096, d = 13, n = 178,
+    prealloc::Bool = true,
+)
+    Random.seed!(0)
+    W1 = randn(T, h, d)
+    W2 = randn(T, OUT_DIM, h)
+    X = randn(T, d, n)
+    y = randn(T, OUT_DIM, n)
+    W1g, W2g, Xg, yg = CuArray(W1), CuArray(W2), CuArray(X), CuArray(y)
+    CUDA.synchronize()
+    CUDA.@sync if prealloc
+        gradient!(Buffers{(typeof(W1g))}(h, d, n), W1g, W2g, Xg, yg)
+    else
+        gradient_alloc(W1g, W2g, Xg, yg)
+    end
+    return CUDA.@profile CUDA.@sync if prealloc
+        gradient!(Buffers{(typeof(W1g))}(h, d, n), W1g, W2g, Xg, yg)
+    else
+        gradient_alloc(W1g, W2g, Xg, yg)
+    end
+end
+
+
 end # module
