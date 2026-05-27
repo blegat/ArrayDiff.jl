@@ -4,6 +4,46 @@
 # Use of this source code is governed by an MIT-style license that can be found
 # in the LICENSE.md file or at https://opensource.org/licenses/MIT.
 
+# Reverse-mode contribution for a matmul node `k` with children `ix1`, `ix2`.
+# `f.sizes.ndims[k]` may be 1 (mat-vec) or 2 (mat-mat); `_reshape_call` picks
+# the right view type for each node and `LinearAlgebra.mul!` covers both
+# shape combinations.
+function _matmul_reverse!(f, k::Int, ix1::Int, ix2::Int)
+    _reshape_call(
+        f.forward_storage,
+        f.sizes,
+        (ix1, ix2),
+        _matmul_reverse_outer,
+        (f.reverse_storage, f.sizes, ix1, ix2, k),
+    )
+    return
+end
+
+function _matmul_reverse_outer(
+    reverse_storage,
+    sizes::Sizes,
+    ix1::Int,
+    ix2::Int,
+    k::Int,
+    v1,
+    v2,
+)
+    _reshape_call(
+        reverse_storage,
+        sizes,
+        (ix1, ix2, k),
+        _matmul_reverse_inner!,
+        (v1, v2),
+    )
+    return
+end
+
+function _matmul_reverse_inner!(v1, v2, rev_v1, rev_v2, rev_parent)
+    LinearAlgebra.mul!(rev_v1, rev_parent, transpose(v2))
+    LinearAlgebra.mul!(rev_v2, transpose(v1), rev_parent)
+    return
+end
+
 """
     _reverse_mode(d::NLPEvaluator, x)
 
@@ -177,10 +217,17 @@ function _forward_eval(
                     idx2 = last(children_indices)
                     @inbounds ix1 = children_arr[idx1]
                     @inbounds ix2 = children_arr[idx2]
-                    v1 = _view_matrix(f.forward_storage, f.sizes, ix1)
-                    v2 = _view_matrix(f.forward_storage, f.sizes, ix2)
-                    out = _view_matrix(f.forward_storage, f.sizes, k)
-                    LinearAlgebra.mul!(out, v1, v2)
+                    # `_reshape_call` dispatches each node to the right view
+                    # type based on its `ndims`. `LinearAlgebra.mul!` then
+                    # picks the matching method — mat-mat for `ndims[k] == 2`,
+                    # mat-vec for `ndims[k] == 1`.
+                    _reshape_call(
+                        f.forward_storage,
+                        f.sizes,
+                        (k, ix1, ix2),
+                        LinearAlgebra.mul!,
+                        (),
+                    )
                     # We deliberately don't write v1/v2 into partials_storage
                     # here: the matmul reverse branch reads forward_storage
                     # directly, so those writes were dead.
@@ -787,18 +834,15 @@ function _reverse_eval(
                         # straight from forward_storage (the matmul forward
                         # branch deliberately doesn't snapshot them into
                         # partials_storage), and the reverse views are written
-                        # in place.
+                        # in place. Two nested `_reshape_call`s dispatch each
+                        # node to the right view type based on `ndims`, so the
+                        # same code path covers mat-mat (`ndims[k] == 2`) and
+                        # mat-vec (`ndims[k] == 1`).
                         idx1 = first(children_indices)
                         idx2 = last(children_indices)
                         ix1 = children_arr[idx1]
                         ix2 = children_arr[idx2]
-                        v1 = _view_matrix(f.forward_storage, f.sizes, ix1)
-                        v2 = _view_matrix(f.forward_storage, f.sizes, ix2)
-                        rev_parent = _view_matrix(f.reverse_storage, f.sizes, k)
-                        rev_v1 = _view_matrix(f.reverse_storage, f.sizes, ix1)
-                        rev_v2 = _view_matrix(f.reverse_storage, f.sizes, ix2)
-                        LinearAlgebra.mul!(rev_v1, rev_parent, v2')
-                        LinearAlgebra.mul!(rev_v2, v1', rev_parent)
+                        _matmul_reverse!(f, k, ix1, ix2)
                         continue
                     end
                 elseif op == :vect

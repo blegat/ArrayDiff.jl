@@ -12,6 +12,27 @@ function Base.:(*)(A::AbstractJuMPMatrix, B::AbstractJuMPMatrix)
     return _matmul(JuMP.variable_ref_type(A), A, B)
 end
 
+# Matrix-vector products: output is a 1-D `GenericArrayExpr` of length
+# `size(A, 1)`. Allows users to write `W * x` for a vector variable `x`.
+function _matvec(::Type{V}, A, b) where {V}
+    return GenericArrayExpr{V,1}(:*, Any[A, b], (size(A, 1),), false)
+end
+
+function Base.:(*)(A::AbstractJuMPMatrix, b::Vector)
+    return _matvec(JuMP.variable_ref_type(A), A, b)
+end
+
+function Base.:(*)(A::Matrix, b::AbstractJuMPVector{T}) where {T}
+    return _matvec(JuMP.variable_ref_type(b), A, b)
+end
+
+function Base.:(*)(
+    A::AbstractJuMPMatrix,
+    b::AbstractJuMPVector{T},
+) where {T}
+    return _matvec(JuMP.variable_ref_type(A), A, b)
+end
+
 function __broadcast(
     ::Type{V},
     axes::NTuple{N,Base.OneTo{Int}},
