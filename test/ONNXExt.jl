@@ -570,11 +570,8 @@ end
 
 function test_constant_missing_value_errors()
     n = _make_node("Constant", String[], ["c"])
-    proto = _build_model(
-        [n, _make_node("Identity", ["c"], ["y"])],
-        String[],
-        ["y"],
-    )
+    proto =
+        _build_model([n, _make_node("Identity", ["c"], ["y"])], String[], ["y"])
     @test_throws ErrorException ArrayDiff.from_onnx(proto)
 end
 
