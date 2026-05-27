@@ -745,6 +745,16 @@ function __reverse_broadcasted_div(f, ilhs, irhs, dout, dlhs, drhs)
     )
 end
 
+# Reverse for `:sum_dims`. `y = sum(x; dims=d)` collapses one axis, so
+# ∂y[i…]/∂x[j…] is 1 iff `j` matches `i` on every non-reduced axis (any
+# `j` along the reduced axis maps to the same `y` slot). Broadcasting the
+# (m,1) or (1,n) parent adjoint across the full child shape produces
+# exactly that pattern.
+function _reverse_sum_dims!(rev_arr, rev_parent)
+    rev_arr .= rev_parent
+    return
+end
+
 """
     _reverse_eval(f::_SubexpressionStorage)
 

@@ -503,6 +503,58 @@ function test_size_vec_vect()
     return
 end
 
+# `:sum_dims` is emitted by `Base.sum(::AbstractJuMPArray; dims=…)` and is the
+# reduction building block both `LayerNorm` and `softmax` rely on, but no
+# existing test reaches it (`grep "sum.*dims" test/` only matches plain Julia
+# arrays). These tests exercise the forward path, the `_sum_dims_shape`
+# branch in `_infer_sizes`, and the reverse-mode contribution. The analytic
+# gradient of `f = ‖sum(W; dims=d)‖` is `s[i_d] / ‖s‖` broadcast over the
+# reduced axis.
+function test_sum_dims_along_rows()
+    rows, cols = 2, 3
+    model = Model()
+    @variable(model, W[1:rows, 1:cols], container = ArrayDiff.ArrayOfVariables)
+    expr = sum(W; dims = 2)
+    @test expr isa ArrayDiff.MatrixExpr
+    @test expr.head == :sum_dims
+    @test size(expr) == (rows, 1)
+    x = Float64.(collect(1:(rows*cols)))
+    W_val = reshape(x, rows, cols)
+    s = sum(W_val; dims = 2)
+    sizes, val, g = _eval(model, LinearAlgebra.norm(expr), x)
+    @test val ≈ LinearAlgebra.norm(s)
+    # `s` is the (rows, 1) column; broadcast across the reduced (cols) axis.
+    @test g ≈ vec(repeat(s, 1, cols)) ./ LinearAlgebra.norm(s)
+    # Tape: norm (k=1, scalar) → sum_dims (k=2, (rows, 1)).
+    @test sizes.ndims[1] == 0
+    @test sizes.ndims[2] == 2
+    sd_off = sizes.size_offset[2]
+    @test sizes.size[sd_off+1] == rows
+    @test sizes.size[sd_off+2] == 1
+    return
+end
+
+function test_sum_dims_along_cols()
+    rows, cols = 2, 3
+    model = Model()
+    @variable(model, W[1:rows, 1:cols], container = ArrayDiff.ArrayOfVariables)
+    expr = sum(W; dims = 1)
+    @test expr.head == :sum_dims
+    @test size(expr) == (1, cols)
+    x = Float64.(collect(1:(rows*cols)))
+    W_val = reshape(x, rows, cols)
+    s = sum(W_val; dims = 1)
+    sizes, val, g = _eval(model, LinearAlgebra.norm(expr), x)
+    @test val ≈ LinearAlgebra.norm(s)
+    # `s` is the (1, cols) row; broadcast across the reduced (rows) axis.
+    @test g ≈ vec(repeat(s, rows, 1)) ./ LinearAlgebra.norm(s)
+    @test sizes.ndims[2] == 2
+    sd_off = sizes.size_offset[2]
+    @test sizes.size[sd_off+1] == 1
+    @test sizes.size[sd_off+2] == cols
+    return
+end
+
 function test_broadcast_nonsquare_matrix()
     model = Model()
     @variable(model, W[1:2, 1:3], container = ArrayDiff.ArrayOfVariables)
