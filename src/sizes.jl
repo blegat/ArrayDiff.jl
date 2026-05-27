@@ -711,7 +711,7 @@ struct _SubexpressionStorage{T<:Real,S<:AbstractVector{T}}
                 j = sizes.storage_offset[k] + 1
                 len = _length(sizes, k)
                 cpu_buffer[j:(j+len-1)] .=
-                    view(const_values, node.index:(node.index+len-1))
+                    view(const_values, (node.index):(node.index+len-1))
             end
         end
         forward_storage = convert(S, cpu_buffer)

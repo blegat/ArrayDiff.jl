@@ -133,7 +133,7 @@ function _forward_eval(
             len = length(tape_range)
             copyto!(
                 view(f.forward_storage, tape_range),
-                view(x, node.index:(node.index+len-1)),
+                view(x, (node.index):(node.index+len-1)),
             )
         elseif node.type == NODE_VALUE_BLOCK
             # Pre-loaded into `forward_storage` at construction.
@@ -1169,7 +1169,7 @@ function _extract_reverse_pass_inner(
         if node.type == NODE_VARIABLE_BLOCK
             tape_range = _storage_range(f.sizes, k)
             len = length(tape_range)
-            x_range = node.index:(node.index+len-1)
+            x_range = (node.index):(node.index+len-1)
             view(output, x_range) .+=
                 scale .* view(f.reverse_storage, tape_range)
         elseif node.type == NODE_VARIABLE
