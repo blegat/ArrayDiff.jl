@@ -50,7 +50,7 @@ function test_objective_dot_univariate_and_scalar_mult()
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 0, 0, 1, 0, 1, 0]
-    @test sizes.size_offset == [0, 0, 0, 1, 0, 0, 0]
+    @test sizes.size_offset == [2, 0, 2, 1, 0, 0, 0]
     @test sizes.size == [1, 1]
     @test sizes.storage_offset == [0, 1, 2, 3, 4, 5, 6, 7]
     xv = [1.2]
@@ -100,7 +100,7 @@ function test_objective_hcat_scalars()
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 2, 0, 0, 2, 0, 0]
-    @test sizes.size_offset == [0, 2, 0, 0, 0, 0, 0]
+    @test sizes.size_offset == [4, 2, 0, 0, 0, 0, 0]
     @test sizes.size == [1, 2, 1, 2]
     @test sizes.storage_offset == [0, 1, 3, 4, 5, 7, 8, 9]
     x1 = 1.0
@@ -131,7 +131,7 @@ function test_objective_hcat_vectors()
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 2, 1, 0, 1, 0, 2, 1, 0, 1, 0]
-    @test sizes.size_offset == [0, 6, 5, 0, 4, 0, 2, 1, 0, 0, 0]
+    @test sizes.size_offset == [8, 6, 5, 0, 4, 0, 2, 1, 0, 0, 0]
     @test sizes.size == [1, 1, 1, 2, 1, 1, 1, 2]
     @test sizes.storage_offset == [0, 1, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13]
     x1 = 1.0
@@ -202,7 +202,7 @@ function test_objective_norm_bivariate()
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 1, 0, 0]
-    @test sizes.size_offset == [0, 0, 0, 0]
+    @test sizes.size_offset == [1, 0, 0, 0]
     @test sizes.size == [2]
     @test sizes.storage_offset == [0, 1, 3, 4, 5]
     xv = [3.0, 4.0]
@@ -231,7 +231,7 @@ function test_objective_norm_of_row_vector()
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 2, 0, 0]
-    @test sizes.size_offset == [0, 0, 0, 0]
+    @test sizes.size_offset == [2, 0, 0, 0]
     @test sizes.size == [1, 2]
     @test sizes.storage_offset == [0, 1, 3, 4, 5]
     x1 = 1.0
@@ -316,7 +316,7 @@ function test_objective_norm_of_row()
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 2, 0, 0]
-    @test sizes.size_offset == [0, 0, 0, 0]
+    @test sizes.size_offset == [2, 0, 0, 0]
     @test sizes.size == [1, 2]
     @test sizes.storage_offset == [0, 1, 3, 4, 5]
     x1 = 1.0
@@ -342,7 +342,7 @@ function test_objective_norm_of_matrix()
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 2, 2, 0, 0, 2, 0, 0]
-    @test sizes.size_offset == [0, 4, 2, 0, 0, 0, 0, 0]
+    @test sizes.size_offset == [6, 4, 2, 0, 0, 0, 0, 0]
     @test sizes.size == [1, 2, 1, 2, 2, 2]
     @test sizes.storage_offset == [0, 1, 5, 7, 8, 9, 11, 12, 13]
     x1 = 1.0
@@ -376,7 +376,7 @@ function test_objective_norm_of_matrix_with_sum()
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 2, 2, 2, 0, 0, 2, 0, 0, 2, 2, 0, 0, 2, 0, 0]
     @test sizes.size_offset ==
-          [0, 12, 10, 8, 0, 0, 6, 0, 0, 4, 2, 0, 0, 0, 0, 0]
+          [14, 12, 10, 8, 0, 0, 6, 0, 0, 4, 2, 0, 0, 0, 0, 0]
     @test sizes.size == [1, 2, 1, 2, 2, 2, 1, 2, 1, 2, 2, 2, 2, 2]
     @test sizes.storage_offset ==
           [0, 1, 5, 9, 11, 12, 13, 15, 16, 17, 21, 23, 24, 25, 27, 28, 29]
@@ -406,7 +406,7 @@ function test_objective_norm_of_product_of_matrices()
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 2, 2, 2, 0, 0, 2, 0, 0, 2, 2, 0, 0, 2, 0, 0]
     @test sizes.size_offset ==
-          [0, 12, 10, 8, 0, 0, 6, 0, 0, 4, 2, 0, 0, 0, 0, 0]
+          [14, 12, 10, 8, 0, 0, 6, 0, 0, 4, 2, 0, 0, 0, 0, 0]
     @test sizes.size == [1, 2, 1, 2, 2, 2, 1, 2, 1, 2, 2, 2, 2, 2]
     @test sizes.storage_offset ==
           [0, 1, 5, 9, 11, 12, 13, 15, 16, 17, 21, 23, 24, 25, 27, 28, 29]
@@ -469,7 +469,7 @@ function test_objective_norm_of_product_of_matrices_with_sum()
         0,
     ]
     @test sizes.size_offset == [
-        0,
+        22,
         20,
         18,
         16,
@@ -553,7 +553,7 @@ function test_objective_norm_of_mtx_vector_product()
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 2, 2, 2, 0, 0, 2, 0, 0, 2, 0, 0]
-    @test sizes.size_offset == [0, 8, 6, 4, 0, 0, 2, 0, 0, 0, 0, 0]
+    @test sizes.size_offset == [10, 8, 6, 4, 0, 0, 2, 0, 0, 0, 0, 0]
     @test sizes.size == [2, 1, 1, 2, 1, 2, 2, 2, 2, 1]
     @test sizes.storage_offset ==
           [0, 1, 3, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19]
