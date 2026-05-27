@@ -405,6 +405,11 @@ end
 infer_sizes(::typeof(+), shape, more...) = shape
 infer_sizes(::typeof(-), shape, more...) = shape
 
+function infer_sizes(::typeof(ifelse), cond, lhs, rhs)
+    @assert lhs == rhs
+    return lhs
+end
+
 # hcat: rows from first arg, total cols summed across children
 function infer_sizes(::typeof(hcat), shapes...)
     total_cols = sum(s -> length(s) <= 1 ? 1 : s[2], shapes)
