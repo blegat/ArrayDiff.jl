@@ -29,7 +29,7 @@ function test_objective_dot_univariate()
     MOI.initialize(evaluator, [:Grad, :Hess])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 1, 0, 1, 0]
-    @test sizes.size_offset == [0, 1, 0, 0, 0]
+    @test sizes.size_offset == [2, 1, 0, 0, 0]
     @test sizes.size == [1, 1]
     @test sizes.storage_offset == [0, 1, 2, 3, 4, 5]
     xv = [1.2]
@@ -75,7 +75,7 @@ function test_objective_dot_bivariate()
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0]
-    @test sizes.size_offset == [0, 6, 5, 0, 0, 4, 0, 0, 3, 2, 1, 0, 0, 0, 0, 0]
+    @test sizes.size_offset == [7, 6, 5, 0, 0, 4, 0, 0, 3, 2, 1, 0, 0, 0, 0, 0]
     @test sizes.size == [2, 2, 2, 2, 2, 2, 2]
     @test sizes.storage_offset ==
           [0, 1, 3, 5, 6, 7, 9, 10, 11, 13, 15, 17, 18, 19, 21, 22, 23]
@@ -158,7 +158,7 @@ function test_objective_dot_bivariate_on_rows()
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 2, 2, 0, 0, 2, 0, 0, 2, 2, 2, 0, 0, 2, 0, 0]
     @test sizes.size_offset ==
-          [0, 12, 10, 0, 0, 8, 0, 0, 6, 4, 2, 0, 0, 0, 0, 0]
+          [14, 12, 10, 0, 0, 8, 0, 0, 6, 4, 2, 0, 0, 0, 0, 0]
     @test sizes.size == [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2]
     @test sizes.storage_offset ==
           [0, 1, 3, 5, 6, 7, 9, 10, 11, 13, 15, 17, 18, 19, 21, 22, 23]
@@ -608,7 +608,7 @@ function test_objective_broadcasted_product()
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 1, 1, 0, 0, 1, 0, 0]
-    @test sizes.size_offset == [0, 2, 1, 0, 0, 0, 0, 0]
+    @test sizes.size_offset == [3, 2, 1, 0, 0, 0, 0, 0]
     @test sizes.size == [2, 2, 2]
     @test sizes.storage_offset == [0, 1, 3, 5, 6, 7, 9, 10, 11]
     x1 = 1.0
@@ -640,7 +640,7 @@ function test_objective_broadcasted_matrix_product()
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 2, 2, 2, 0, 0, 2, 0, 0, 2, 2, 0, 0, 2, 0, 0]
     @test sizes.size_offset ==
-          [0, 12, 10, 8, 0, 0, 6, 0, 0, 4, 2, 0, 0, 0, 0, 0]
+          [14, 12, 10, 8, 0, 0, 6, 0, 0, 4, 2, 0, 0, 0, 0, 0]
     @test sizes.size == [1, 2, 1, 2, 2, 2, 1, 2, 1, 2, 2, 2, 2, 2]
     @test sizes.storage_offset ==
           [0, 1, 5, 9, 11, 12, 13, 15, 16, 17, 21, 23, 24, 25, 27, 28, 29]
@@ -673,7 +673,7 @@ function test_objective_broadcasted_tanh()
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 1, 1, 0, 0]
-    @test sizes.size_offset == [0, 1, 0, 0, 0]
+    @test sizes.size_offset == [2, 1, 0, 0, 0]
     @test sizes.size == [2, 2]
     @test sizes.storage_offset == [0, 1, 3, 5, 6, 7]
     x1 = 1.0
