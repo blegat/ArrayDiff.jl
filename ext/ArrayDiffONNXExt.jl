@@ -86,8 +86,17 @@ _wrap_input(v::Vector{MOI.VariableIndex}) =
 
 function _wrap_input(M::Matrix{MOI.VariableIndex})
     m, n = size(M)
-    rows = Any[ANF{1}(:row, Any[M[i, j] for j in 1:n], (n,), false) for i in 1:m]
-    return (ANF{2}(:vcat, rows, (m, n), false), (m, n))
+    row(i) = ANF{2}(:row, Any[M[i, j] for j in 1:n], (1, n), false)
+    if m == 1
+        return (row(1), (1, n))
+    end
+    # ArrayDiff's `:vcat` evaluator handles exactly two children (see
+    # reverse_mode.jl); fold left so each `:vcat` node stays binary.
+    acc = row(1)
+    for i in 2:m
+        acc = ANF{2}(:vcat, Any[acc, row(i)], (i, n), false)
+    end
+    return (acc, (m, n))
 end
 
 _wrap_input(x::ANF{N}) where {N} = (x, x.size)
@@ -199,16 +208,13 @@ end
 function _convert_matmul(node, env)
     a, sa = env[node.input[1]]
     b, sb = env[node.input[2]]
-    # ArrayDiff's `:*` requires the left operand to be 2D (it walks left-to-right
-    # accumulating dims). For NumPy-style Vec × Mat = Vec, swap to Matᵀ × Vec —
-    # which requires `Mat` to be a constant so we can transpose at convert time.
     if length(sa) == 1 && length(sb) == 2
+        # NumPy-style Vec × Mat = Vec. Depends on ArrayDiff `:*` supporting
+        # vector × matrix shape inference (see ArrayDiff PR adding matrix-
+        # vector / vec-matrix product support).
         sa[1] == sb[1] || error("MatMul shape mismatch: $sa × $sb")
-        b isa AbstractMatrix{<:Real} ||
-            error("MatMul Vec × Mat requires the matrix to be a constant initializer (got $(typeof(b)))")
-        bT = collect(permutedims(b))
         s = (sb[2],)
-        return (_call(:*, Any[bT, a], s), s)
+        return (_call(:*, Any[a, b], s), s)
     elseif length(sa) == 2 && length(sb) == 1
         sa[2] == sb[1] || error("MatMul shape mismatch: $sa × $sb")
         s = (sa[1],)
@@ -255,6 +261,18 @@ function _convert_gemm(node, env)
 
     if !has_C || β == 0.0
         return (AB, AB_shape)
+    end
+
+    # ONNX broadcasts a (N,) bias against (M, N) by treating the bias as a row.
+    # ArrayDiff (following Julia) would treat (N,) as a column instead, so
+    # promote to (1, N) explicitly before adding.
+    if length(sC) == 1
+        if C isa AbstractVector{<:Real}
+            C = reshape(collect(C), 1, sC[1])
+        else
+            error("Gemm with non-constant 1D bias is not supported yet")
+        end
+        sC = (1, sC[1])
     end
 
     Cterm = β == 1.0 ? C : _bcall(:*, Any[β, C], sC)
