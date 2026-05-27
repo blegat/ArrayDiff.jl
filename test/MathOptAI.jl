@@ -34,11 +34,11 @@ end
 function test_build_predictor_only_gray_box()
     evaluator = _build_test_evaluator()
     # Default is `gray_box = true`; the non-gray-box path is unsupported.
-    @test_throws ErrorException MathOptAI.build_predictor(
+    @test_throws AssertionError MathOptAI.build_predictor(
         evaluator;
         gray_box = false,
     )
-    @test_throws ErrorException MathOptAI.build_predictor(
+    @test_throws AssertionError MathOptAI.build_predictor(
         evaluator;
         gray_box = true,
         hessian = true,
@@ -67,21 +67,28 @@ function test_vector_nonlinear_oracle()
 end
 
 function test_end_to_end_with_ipopt()
-    evaluator = _build_test_evaluator()
-    # Min ||y - [10, 0]||² subject to y = f(x), x free.
-    # f₁ = x₁(1 + x₂), f₂ = x₂(1 - x₁). One feasible solution to y = (10, 0)
-    # is x = (10, 0) → f = (10, 0). Optimization should drive y → (10, 0).
+    # Build a tiny MLP as the predictor: f(x) = W₂ * tanh.(W₁ * x .+ b₁) .+ b₂.
+    # The predictor is described with the same array math a user would write
+    # outside the optimization problem; `ArrayDiff.evaluator` compiles it into
+    # an `Evaluator` whose Jacobian the gray-box oracle then queries.
+    W1 = [0.4 -0.2 0.1; -0.3 0.5 0.2; 0.1 0.1 -0.4; 0.2 -0.1 0.3]
+    b1 = [0.05, -0.1, 0.1, 0.0]
+    W2 = [0.3 -0.4 0.2 0.1; -0.1 0.2 0.3 -0.5]
+    b2 = [0.0, 0.0]
+    f(x) = W2 * tanh.(W1 * x .+ b1) .+ b2
+    evaluator = ArrayDiff.evaluator(f, 3)
+    # Now use the evaluator as a gray-box inside a target JuMP problem:
+    # find `x` such that f(x) ≈ target, by minimizing ||y - target||² with
+    # y = f(x).
+    target = f([0.6, -0.3, 0.4])
     model = Model(Ipopt.Optimizer)
     set_silent(model)
-    @variable(model, x[1:2])
-    set_start_value(x[1], 1.0)
-    set_start_value(x[2], 0.5)
+    @variable(model, x[1:3], start = 0.0)
     y, _ = MathOptAI.add_predictor(model, evaluator, x; gray_box = true)
-    @objective(model, Min, (y[1] - 10.0)^2 + y[2]^2)
+    @objective(model, Min, sum((y .- target) .^ 2))
     optimize!(model)
     assert_is_solved_and_feasible(model)
-    @test isapprox(value(y[1]), 10.0; atol = 1e-4)
-    @test isapprox(value(y[2]), 0.0; atol = 1e-4)
+    @test isapprox(value.(y), target; atol = 1e-5)
     return
 end
 
