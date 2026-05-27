@@ -26,10 +26,7 @@ function Base.:(*)(A::Matrix, b::AbstractJuMPVector{T}) where {T}
     return _matvec(JuMP.variable_ref_type(b), A, b)
 end
 
-function Base.:(*)(
-    A::AbstractJuMPMatrix,
-    b::AbstractJuMPVector{T},
-) where {T}
+function Base.:(*)(A::AbstractJuMPMatrix, b::AbstractJuMPVector{T}) where {T}
     return _matvec(JuMP.variable_ref_type(A), A, b)
 end
 
