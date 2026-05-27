@@ -180,7 +180,7 @@ function test_objective_norm_univariate()
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 1, 0]
-    @test sizes.size_offset == [0, 0, 0]
+    @test sizes.size_offset == [1, 0, 0]
     @test sizes.size == [1]
     @test sizes.storage_offset == [0, 1, 2, 3]
     xv = [1.2]
@@ -257,7 +257,7 @@ function test_objective_norm_of_vcat_vector()
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 2, 0, 0]
-    @test sizes.size_offset == [0, 0, 0, 0]
+    @test sizes.size_offset == [2, 0, 0, 0]
     @test sizes.size == [2, 1]
     @test sizes.storage_offset == [0, 1, 3, 4, 5]
     x1 = 1.0
@@ -285,7 +285,7 @@ function test_objective_norm_of_vcat_matrix()
     MOI.initialize(evaluator, [:Grad])
     sizes = evaluator.backend.objective.expr.sizes
     @test sizes.ndims == [0, 2, 2, 0, 0, 2, 0, 0]
-    @test sizes.size_offset == [0, 4, 2, 0, 0, 0, 0, 0]
+    @test sizes.size_offset == [6, 4, 2, 0, 0, 0, 0, 0]
     @test sizes.size == [1, 2, 1, 2, 2, 2]
     @test sizes.storage_offset == [0, 1, 5, 7, 8, 9, 11, 12, 13]
     x1 = 1.0
