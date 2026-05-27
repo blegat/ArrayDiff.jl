@@ -1089,6 +1089,66 @@ function test_matvec_gradient()
     return
 end
 
+function test_matvec_jump_matrix_times_const_vector_gradient()
+    # `W * x` where `W` is an `AbstractJuMPMatrix` and `x` is a constant
+    # `Vector`. Loss = sum((W*x - target).^2). Analytic gradient w.r.t. W is
+    # `2 * (W*x - target) * x'` (outer product). JuMP stores `W` column-major,
+    # so the flat gradient vector is `vec(2 * (W*x - target) * x')`.
+    m, n = 3, 4
+    x_const = [0.6, -0.3, 0.4, -0.1]
+    target = [0.5, -0.2, 0.1]
+    model = Model()
+    @variable(model, W[1:m, 1:n], container = ArrayDiff.ArrayOfVariables)
+    y = W * x_const
+    @test y isa ArrayDiff.GenericArrayExpr
+    @test ndims(y) == 1
+    @test size(y) == (m,)
+    @test y.head == :*
+    loss = sum((y .- target) .^ 2)
+    W_val = [
+        0.4 -0.2 0.1 0.3
+        -0.3 0.5 0.2 -0.1
+        0.1 0.1 -0.4 0.2
+    ]
+    flat_W = vec(W_val)
+    _, val, g, _ = _eval(model, loss, flat_W; x_grad = flat_W)
+    @test val ≈ sum((W_val * x_const .- target) .^ 2)
+    @test g ≈ vec(2 * (W_val * x_const .- target) * x_const')
+    return
+end
+
+function test_matvec_jump_matrix_times_jump_vector_gradient()
+    # `W * x` where both `W` and `x` are `ArrayOfVariables`. Loss is
+    # `sum((W*x - target).^2)`. Gradients: ∂/∂W = 2 (Wx-t) x',
+    # ∂/∂x = 2 W' (Wx-t). The flat variable layout is `[vec(W); x]` because
+    # `W` is declared first.
+    m, n = 3, 4
+    target = [0.5, -0.2, 0.1]
+    model = Model()
+    @variable(model, W[1:m, 1:n], container = ArrayDiff.ArrayOfVariables)
+    @variable(model, x[1:n], container = ArrayDiff.ArrayOfVariables)
+    y = W * x
+    @test y isa ArrayDiff.GenericArrayExpr
+    @test ndims(y) == 1
+    @test size(y) == (m,)
+    @test y.head == :*
+    loss = sum((y .- target) .^ 2)
+    W_val = [
+        0.4 -0.2 0.1 0.3
+        -0.3 0.5 0.2 -0.1
+        0.1 0.1 -0.4 0.2
+    ]
+    x_val = [0.6, -0.3, 0.4, -0.1]
+    flat = [vec(W_val); x_val]
+    _, val, g, _ = _eval(model, loss, flat; x_grad = flat)
+    @test val ≈ sum((W_val * x_val .- target) .^ 2)
+    residual = W_val * x_val .- target
+    grad_W = 2 * residual * x_val'
+    grad_x = 2 * W_val' * residual
+    @test g ≈ [vec(grad_W); grad_x]
+    return
+end
+
 end  # module
 
 TestJuMP.runtests()
