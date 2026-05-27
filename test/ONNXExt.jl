@@ -52,19 +52,11 @@ function _attr_float(name::String, f::Real)
 end
 
 function _attr_int(name::String, i::Integer)
-    return ONNX.AttributeProto(
-        name = name,
-        i = Int64(i),
-        var"#type" = AT.INT,
-    )
+    return ONNX.AttributeProto(name = name, i = Int64(i), var"#type" = AT.INT)
 end
 
 function _attr_tensor(name::String, t::ONNX.TensorProto)
-    return ONNX.AttributeProto(
-        name = name,
-        t = t,
-        var"#type" = AT.TENSOR,
-    )
+    return ONNX.AttributeProto(name = name, t = t, var"#type" = AT.TENSOR)
 end
 
 function _make_node(
@@ -214,9 +206,11 @@ end
 # MatMul vector × matrix: y = x * W, W is (3, 2). Output is 1D length 2.
 function test_matmul_vector_matrix()
     vars = [MOI.VariableIndex(i) for i in 1:3]
-    W = [1.0 0.5;
-         -0.2 1.1;
-         0.3 -0.7]
+    W = [
+        1.0 0.5;
+        -0.2 1.1;
+        0.3 -0.7
+    ]
     init = _make_tensor("W", W)
     node = _make_node("MatMul", ["x", "W"], ["y"])
     proto = _build_model([node], ["x"], ["y"]; initializers = [init])
@@ -231,8 +225,10 @@ end
 function test_gemm_no_transpose()
     vars = [MOI.VariableIndex(i) for i in 1:2]
     var_mat = reshape(vars, 1, 2)  # (1, 2)
-    W = [0.4 -0.6 0.2;
-         1.1 0.3 -0.9]  # (2, 3)
+    W = [
+        0.4 -0.6 0.2;
+        1.1 0.3 -0.9
+    ]  # (2, 3)
     bias = [0.05, -0.1, 0.2]
     α, β = 0.5, 2.0
     init_W = _make_tensor("W", W)
@@ -251,7 +247,8 @@ function test_gemm_no_transpose()
     proto = _build_model([node], ["x"], ["y"]; initializers = [init_W, init_b])
     xv = [0.8, -0.3]
     val, g = _eval_with_gradient(proto, vars, xv; input = var_mat)
-    fjulia(x) = sum((α .* (reshape(x, 1, 2) * W) .+ β .* reshape(bias, 1, 3)) .^ 2)
+    fjulia(x) =
+        sum((α .* (reshape(x, 1, 2) * W) .+ β .* reshape(bias, 1, 3)) .^ 2)
     @test val ≈ fjulia(xv)
     @test g ≈ ForwardDiff.gradient(fjulia, xv)
 end
@@ -261,9 +258,11 @@ end
 function test_gemm_transB()
     vars = [MOI.VariableIndex(i) for i in 1:2]
     var_mat = reshape(vars, 1, 2)
-    W = [0.4 0.5;
-         -0.1 1.0;
-         0.9 -0.3]  # (3, 2) — Linear(in=2, out=3)
+    W = [
+        0.4 0.5;
+        -0.1 1.0;
+        0.9 -0.3
+    ]  # (3, 2) — Linear(in=2, out=3)
     bias = [0.0, 0.0, 0.0]
     init_W = _make_tensor("W", W)
     init_b = _make_tensor("b", bias)
@@ -326,7 +325,13 @@ function test_constant_then_add()
     vars = [MOI.VariableIndex(i) for i in 1:3]
     c = [0.5, -0.5, 1.0]
     const_t = _make_tensor("c_value", c)
-    n1 = _make_node("Constant", String[], ["c"]; attrs = [_attr_tensor("value", const_t)], name = "k")
+    n1 = _make_node(
+        "Constant",
+        String[],
+        ["c"];
+        attrs = [_attr_tensor("value", const_t)],
+        name = "k",
+    )
     n2 = _make_node("Add", ["x", "c"], ["y"])
     proto = _build_model([n1, n2], ["x"], ["y"])
     xv = [0.3, 0.8, -0.4]
@@ -360,9 +365,21 @@ function test_mlp_relu()
         _attr_int("transB", transB),
     ]
     nodes = [
-        _make_node("Gemm", ["x", "W1", "b1"], ["h_pre"]; attrs = gemm_attrs(1), name = "fc1"),
+        _make_node(
+            "Gemm",
+            ["x", "W1", "b1"],
+            ["h_pre"];
+            attrs = gemm_attrs(1),
+            name = "fc1",
+        ),
         _make_node("Relu", ["h_pre"], ["h"]; name = "act"),
-        _make_node("Gemm", ["h", "W2", "b2"], ["y"]; attrs = gemm_attrs(1), name = "fc2"),
+        _make_node(
+            "Gemm",
+            ["h", "W2", "b2"],
+            ["y"];
+            attrs = gemm_attrs(1),
+            name = "fc2",
+        ),
     ]
     proto = _build_model(nodes, ["x"], ["y"]; initializers = init)
     xv = [0.5, -0.7, 1.1]
@@ -394,11 +411,7 @@ function test_unsupported_op_errors()
 end
 
 function test_missing_input_errors()
-    proto = _build_model(
-        [_make_node("Identity", ["x"], ["y"])],
-        ["x"],
-        ["y"],
-    )
+    proto = _build_model([_make_node("Identity", ["x"], ["y"])], ["x"], ["y"])
     @test_throws ErrorException ArrayDiff.from_onnx(proto; inputs = Dict())
 end
 
