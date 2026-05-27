@@ -100,13 +100,16 @@ end
 
 _wrap_input(::Type{<:Real}, x::ANF{N}) where {N} = (x, x.size)
 _wrap_input(::Type{T}, x::Real) where {T<:Real} = (T(x), ())
-_wrap_input(::Type{T}, x::Vector{<:Real}) where {T<:Real} =
-    (Vector{T}(x), (length(x),))
-_wrap_input(::Type{T}, x::Matrix{<:Real}) where {T<:Real} =
-    (Matrix{T}(x), size(x))
+function _wrap_input(::Type{T}, x::Vector{<:Real}) where {T<:Real}
+    return (Vector{T}(x), (length(x),))
+end
+function _wrap_input(::Type{T}, x::Matrix{<:Real}) where {T<:Real}
+    return (Matrix{T}(x), size(x))
+end
 
-_wrap_input(::Type{<:Real}, x) =
-    error("Unsupported input value type: $(typeof(x))")
+function _wrap_input(::Type{<:Real}, x)
+    return error("Unsupported input value type: $(typeof(x))")
+end
 
 # ── Shape arithmetic ────────────────────────────────────────────────────────
 
@@ -340,7 +343,8 @@ function ArrayDiff.from_onnx(
     end
 end
 
-ArrayDiff.from_onnx(proto::ONNX.ModelProto; kwargs...) =
-    ArrayDiff.from_onnx(Float64, proto; kwargs...)
+function ArrayDiff.from_onnx(proto::ONNX.ModelProto; kwargs...)
+    return ArrayDiff.from_onnx(Float64, proto; kwargs...)
+end
 
 end # module
