@@ -432,29 +432,36 @@ function test_broadcast_shape_helper()
 end
 
 function test_wrap_input_scalar_vector_matrix_real()
-    @test _ext._wrap_input(3.5) == (3.5, ())
-    @test _ext._wrap_input(2) == (2.0, ())
+    @test _ext._wrap_input(Float64, 3.5) == (3.5, ())
+    @test _ext._wrap_input(Float64, 2) == (2.0, ())
     v = [1.0, 2.0, 3.0]
-    out, sz = _ext._wrap_input(v)
+    out, sz = _ext._wrap_input(Float64, v)
     @test out == v && sz == (3,) && out isa Vector{Float64}
     M = [1.0 2.0; 3.0 4.0]
-    outM, szM = _ext._wrap_input(M)
+    outM, szM = _ext._wrap_input(Float64, M)
     @test outM == M && szM == (2, 2) && outM isa Matrix{Float64}
+    # Float32 carries through to the wrapped value.
+    out32, _ = _ext._wrap_input(Float32, 3.5)
+    @test out32 isa Float32
+    outV32, _ = _ext._wrap_input(Float32, v)
+    @test outV32 isa Vector{Float32}
+    outM32, _ = _ext._wrap_input(Float32, M)
+    @test outM32 isa Matrix{Float32}
 end
 
 function test_wrap_input_anf()
     anf = ArrayDiff.ArrayNonlinearFunction{1}(:vect, Any[1.0, 2.0], (2,), false)
-    out, sz = _ext._wrap_input(anf)
+    out, sz = _ext._wrap_input(Float64, anf)
     @test out === anf && sz == (2,)
 end
 
 function test_wrap_input_unsupported()
-    @test_throws ErrorException _ext._wrap_input((1, 2, 3))
+    @test_throws ErrorException _ext._wrap_input(Float64, (1, 2, 3))
 end
 
 function test_wrap_input_matrix_vars_multi_row()
     M = collect(reshape([MOI.VariableIndex(i) for i in 1:6], 2, 3))
-    out, sz = _ext._wrap_input(M)
+    out, sz = _ext._wrap_input(Float64, M)
     @test sz == (2, 3)
     @test out isa ArrayDiff.ArrayNonlinearFunction{2}
     @test out.head == :vcat
@@ -469,7 +476,7 @@ function test_tensor_to_array_float_data()
         name = "t",
         float_data = Float32[1, 2, 3, 4, 5, 6],
     )
-    arr, sz = _ext._tensor_to_array(t)
+    arr, sz = _ext._tensor_to_array(Float64, t)
     @test sz == (2, 3)
     @test arr == [1.0 2.0 3.0; 4.0 5.0 6.0]
 end
@@ -482,7 +489,7 @@ function test_tensor_to_array_raw_data_float()
         name = "t",
         raw_data = raw,
     )
-    arr, sz = _ext._tensor_to_array(t)
+    arr, sz = _ext._tensor_to_array(Float64, t)
     @test sz == (3,)
     @test arr == [1.0, 2.0, 3.0]
 end
@@ -495,7 +502,7 @@ function test_tensor_to_array_raw_data_double()
         name = "t",
         raw_data = raw,
     )
-    arr, sz = _ext._tensor_to_array(t)
+    arr, sz = _ext._tensor_to_array(Float64, t)
     @test sz == (2,)
     @test arr == [1.5, -2.5]
 end
@@ -507,7 +514,7 @@ function test_tensor_to_array_raw_data_unsupported()
         name = "t",
         raw_data = UInt8[1, 2, 3, 4, 5, 6, 7, 8],
     )
-    @test_throws ErrorException _ext._tensor_to_array(t)
+    @test_throws ErrorException _ext._tensor_to_array(Float64, t)
 end
 
 function test_tensor_to_array_empty_encoding()
@@ -516,12 +523,12 @@ function test_tensor_to_array_empty_encoding()
         data_type = Int32(DT.INT32),
         name = "t",
     )
-    @test_throws ErrorException _ext._tensor_to_array(t)
+    @test_throws ErrorException _ext._tensor_to_array(Float64, t)
 end
 
 function test_tensor_to_array_scalar()
     t = _make_scalar_tensor("t", 3.5)
-    arr, sz = _ext._tensor_to_array(t)
+    arr, sz = _ext._tensor_to_array(Float64, t)
     @test arr == 3.5 && sz == ()
 end
 
@@ -532,7 +539,7 @@ function test_tensor_to_array_3d_unsupported()
         name = "t",
         double_data = Float64[1, 2, 3, 4, 5, 6],
     )
-    @test_throws ErrorException _ext._tensor_to_array(t)
+    @test_throws ErrorException _ext._tensor_to_array(Float64, t)
 end
 
 # ── Per-op coverage ──────────────────────────────────────────────────────────
@@ -695,6 +702,84 @@ function test_input_name_overlaps_initializer()
     proto = _build_model([node], ["x"], ["y"]; initializers = [init_x])
     out = ArrayDiff.from_onnx(proto)
     @test out == [1.0, 2.0, 3.0]
+end
+
+# Float32 end-to-end: the from_onnx output uses T-typed constants and the
+# evaluator returns Float32 values and Float32 gradients.
+function _eval_with_gradient_f32(
+    proto::ONNX.ModelProto,
+    vars::Vector{MOI.VariableIndex},
+    xv::Vector{Float32};
+    input = vars,
+)
+    out = ArrayDiff.from_onnx(Float32, proto; inputs = Dict("x" => input))
+    snf = MOI.ScalarNonlinearFunction(:dot, Any[out, out])
+    model = ArrayDiff.Model{Float32}()
+    ArrayDiff.set_objective(model, snf)
+    evaluator =
+        ArrayDiff.Evaluator(model, ArrayDiff.Mode{Vector{Float32}}(), vars)
+    MOI.initialize(evaluator, [:Grad])
+    val = MOI.eval_objective(evaluator, xv)
+    g = zeros(Float32, length(xv))
+    MOI.eval_objective_gradient(evaluator, g, xv)
+    return out, val, g
+end
+
+# Tensor initializers materialize as `Vector{Float32}` / `Matrix{Float32}`.
+function test_float32_initializer_eltype()
+    init = _make_tensor("b", [0.1, -0.3, 0.7, 1.0])
+    node = _make_node("Add", ["x", "b"], ["y"])
+    proto = _build_model([node], ["x"], ["y"]; initializers = [init])
+    vars = [MOI.VariableIndex(i) for i in 1:4]
+    xv = Float32[1.0, 2.0, -1.5, 0.4]
+    out, val, g = _eval_with_gradient_f32(proto, vars, xv)
+    @test out isa ArrayDiff.ArrayNonlinearFunction
+    # The bias is the second argument of the broadcasted `:+`.
+    bias_arg = out.args[2]
+    @test bias_arg isa Vector{Float32}
+    @test val isa Float32
+    @test g isa Vector{Float32}
+    fjulia(x) = sum((x .+ Float32[0.1, -0.3, 0.7, 1.0]) .^ 2)
+    @test val ≈ fjulia(xv)
+    @test g ≈ ForwardDiff.gradient(fjulia, xv)
+end
+
+# Sigmoid emits `zero(T)` and `one(T)` constants; Gemm's α/β are also typed.
+function test_float32_sigmoid_and_gemm()
+    vars = [MOI.VariableIndex(i) for i in 1:2]
+    var_mat = reshape(vars, 1, 2)
+    W = [0.4 -0.6 0.2; 1.1 0.3 -0.9]
+    bias = [0.05, -0.1, 0.2]
+    init_W = _make_tensor("W", W)
+    init_b = _make_tensor("b", bias)
+    gemm = _make_node(
+        "Gemm",
+        ["x", "W", "b"],
+        ["h"];
+        attrs = [
+            _attr_float("alpha", 0.5),
+            _attr_float("beta", 2.0),
+            _attr_int("transA", 0),
+            _attr_int("transB", 0),
+        ],
+    )
+    sig = _make_node("Sigmoid", ["h"], ["y"])
+    proto =
+        _build_model([gemm, sig], ["x"], ["y"]; initializers = [init_W, init_b])
+    xv = Float32[0.8, -0.3]
+    _, val, g = _eval_with_gradient_f32(proto, vars, xv; input = var_mat)
+    @test val isa Float32
+    @test g isa Vector{Float32}
+    fjulia(x) = sum(
+        (
+            1 ./ (
+                1 .+ exp.(
+                    .-(0.5f0 .* (reshape(x, 1, 2) * Float32.(W)) .+ 2.0f0 .* reshape(Float32.(bias), 1, 3)),
+                )
+            )
+        ) .^ 2,
+    )
+    @test val ≈ fjulia(xv) rtol = 1.0f-5
 end
 
 # Multi-output graph: result is keyed by output name.

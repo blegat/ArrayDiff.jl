@@ -8,7 +8,8 @@ const ANF = ArrayDiff.ArrayNonlinearFunction
 const _Shape = Tuple{Vararg{Int}}
 # An entry in the conversion env: the value plus its array shape.
 # Value may be `ANF`, `MOI.ScalarNonlinearFunction`, `MOI.VariableIndex`,
-# `Float64`, `Vector{Float64}`, or `Matrix{Float64}`. Shape is `()` for scalars.
+# scalar `T`, `Vector{T}`, or `Matrix{T}` (where `T` is the scalar type passed
+# to `from_onnx`). Shape is `()` for scalars.
 const _Entry = Tuple{Any,_Shape}
 
 # ── Attribute helpers ───────────────────────────────────────────────────────
@@ -27,9 +28,9 @@ function _attr_int(node, name; default::Int)
     return a === nothing ? default : Int(a.i)
 end
 
-function _attr_float(node, name; default::Float64)
+function _attr_float(::Type{T}, node, name; default) where {T<:Real}
     a = _find_attr(node, name)
-    return a === nothing ? default : Float64(a.f)
+    return a === nothing ? T(default) : T(a.f)
 end
 
 function _attr_tensor(node, name)
@@ -41,18 +42,18 @@ end
 # ONNX stores tensor values in C (row-major) order. Julia is column-major,
 # so a 2D tensor of dims=(m, n) must be reshaped to (n, m) then permuted.
 
-function _tensor_to_array(t::ONNX.TensorProto)
+function _tensor_to_array(::Type{T}, t::ONNX.TensorProto) where {T<:Real}
     DT = getfield(ONNX, Symbol("TensorProto.DataType"))
     dims = Int[Int(d) for d in t.dims]
     flat = if t.data_type == Int32(DT.DOUBLE) && !isempty(t.double_data)
-        Float64[x for x in t.double_data]
+        T[T(x) for x in t.double_data]
     elseif t.data_type == Int32(DT.FLOAT) && !isempty(t.float_data)
-        Float64[Float64(x) for x in t.float_data]
+        T[T(x) for x in t.float_data]
     elseif !isempty(t.raw_data)
         if t.data_type == Int32(DT.FLOAT)
-            Float64.(reinterpret(Float32, t.raw_data))
+            T.(reinterpret(Float32, t.raw_data))
         elseif t.data_type == Int32(DT.DOUBLE)
-            Float64.(reinterpret(Float64, t.raw_data))
+            T.(reinterpret(Float64, t.raw_data))
         else
             error("Unsupported raw_data type: $(t.data_type)")
         end
@@ -78,11 +79,11 @@ end
 
 # ── User-supplied input wrapping ────────────────────────────────────────────
 
-function _wrap_input(v::Vector{MOI.VariableIndex})
+function _wrap_input(::Type{<:Real}, v::Vector{MOI.VariableIndex})
     return (ANF{1}(:vect, Any[v...], (length(v),), false), (length(v),))
 end
 
-function _wrap_input(M::Matrix{MOI.VariableIndex})
+function _wrap_input(::Type{<:Real}, M::Matrix{MOI.VariableIndex})
     m, n = size(M)
     row(i) = ANF{2}(:row, Any[M[i, j] for j in 1:n], (1, n), false)
     if m == 1
@@ -97,12 +98,15 @@ function _wrap_input(M::Matrix{MOI.VariableIndex})
     return (acc, (m, n))
 end
 
-_wrap_input(x::ANF{N}) where {N} = (x, x.size)
-_wrap_input(x::Real) = (Float64(x), ())
-_wrap_input(x::Vector{<:Real}) = (Vector{Float64}(x), (length(x),))
-_wrap_input(x::Matrix{<:Real}) = (Matrix{Float64}(x), size(x))
+_wrap_input(::Type{<:Real}, x::ANF{N}) where {N} = (x, x.size)
+_wrap_input(::Type{T}, x::Real) where {T<:Real} = (T(x), ())
+_wrap_input(::Type{T}, x::Vector{<:Real}) where {T<:Real} =
+    (Vector{T}(x), (length(x),))
+_wrap_input(::Type{T}, x::Matrix{<:Real}) where {T<:Real} =
+    (Matrix{T}(x), size(x))
 
-_wrap_input(x) = error("Unsupported input value type: $(typeof(x))")
+_wrap_input(::Type{<:Real}, x) =
+    error("Unsupported input value type: $(typeof(x))")
 
 # ── Shape arithmetic ────────────────────────────────────────────────────────
 
@@ -148,7 +152,11 @@ end
 
 # ── Per-op conversion ───────────────────────────────────────────────────────
 
-function _convert_node(node::ONNX.NodeProto, env::Dict{String,_Entry})
+function _convert_node(
+    ::Type{T},
+    node::ONNX.NodeProto,
+    env::Dict{String,_Entry},
+) where {T<:Real}
     op = node.op_type
     if op == "Identity"
         return env[node.input[1]]
@@ -157,7 +165,7 @@ function _convert_node(node::ONNX.NodeProto, env::Dict{String,_Entry})
         t = _attr_tensor(node, "value")
         t === nothing &&
             error("Constant node '$(node.name)' has no 'value' attribute")
-        return _tensor_to_array(t)
+        return _tensor_to_array(T, t)
 
     elseif op == "Add"
         return _binop_broadcast(:+, node, env)
@@ -170,13 +178,13 @@ function _convert_node(node::ONNX.NodeProto, env::Dict{String,_Entry})
 
     elseif op == "Neg"
         x, sx = env[node.input[1]]
-        return (_bcall(:-, Any[0.0, x], sx), sx)
+        return (_bcall(:-, Any[zero(T), x], sx), sx)
 
     elseif op == "MatMul"
         return _convert_matmul(node, env)
 
     elseif op == "Gemm"
-        return _convert_gemm(node, env)
+        return _convert_gemm(T, node, env)
 
     elseif op == "Relu"
         # ArrayDiff's broadcasted-multivariate shape inference only handles
@@ -185,7 +193,7 @@ function _convert_node(node::ONNX.NodeProto, env::Dict{String,_Entry})
         x, sx = env[node.input[1]]
         absx = _bcall(:abs, Any[x], sx)
         s = _bcall(:+, Any[x, absx], sx)
-        return (_bcall(:/, Any[s, 2.0], sx), sx)
+        return (_bcall(:/, Any[s, T(2)], sx), sx)
 
     elseif op == "Tanh"
         x, sx = env[node.input[1]]
@@ -194,10 +202,10 @@ function _convert_node(node::ONNX.NodeProto, env::Dict{String,_Entry})
     elseif op == "Sigmoid"
         # 1 / (1 + exp(-x)), all broadcast over x's shape.
         x, sx = env[node.input[1]]
-        negx = _bcall(:-, Any[0.0, x], sx)
+        negx = _bcall(:-, Any[zero(T), x], sx)
         ex = _bcall(:exp, Any[negx], sx)
-        one_plus = _bcall(:+, Any[1.0, ex], sx)
-        return (_bcall(:/, Any[1.0, one_plus], sx), sx)
+        one_plus = _bcall(:+, Any[one(T), ex], sx)
+        return (_bcall(:/, Any[one(T), one_plus], sx), sx)
 
     else
         error("ONNX op '$(op)' is not supported by ArrayDiffONNXExt")
@@ -239,13 +247,13 @@ function _convert_matmul(node, env)
     end
 end
 
-function _convert_gemm(node, env)
+function _convert_gemm(::Type{T}, node, env) where {T<:Real}
     A, sA = env[node.input[1]]
     B, sB = env[node.input[2]]
     has_C = length(node.input) >= 3 && !isempty(node.input[3])
     C, sC = has_C ? env[node.input[3]] : (nothing, ())
-    α = _attr_float(node, "alpha"; default = 1.0)
-    β = _attr_float(node, "beta"; default = 1.0)
+    α = _attr_float(T, node, "alpha"; default = 1)
+    β = _attr_float(T, node, "beta"; default = 1)
     transA = _attr_int(node, "transA"; default = 0) != 0
     transB = _attr_int(node, "transB"; default = 0) != 0
 
@@ -267,11 +275,11 @@ function _convert_gemm(node, env)
     AB_shape = (sA[1], sB[2])
     AB = _call(:*, Any[A, B], AB_shape)
 
-    if α != 1.0
+    if !isone(α)
         AB = _bcall(:*, Any[α, AB], AB_shape)
     end
 
-    if !has_C || β == 0.0
+    if !has_C || iszero(β)
         return (AB, AB_shape)
     end
 
@@ -287,7 +295,7 @@ function _convert_gemm(node, env)
         sC = (1, sC[1])
     end
 
-    Cterm = β == 1.0 ? C : _bcall(:*, Any[β, C], sC)
+    Cterm = isone(β) ? C : _bcall(:*, Any[β, C], sC)
     out_shape = _broadcast_shape(AB_shape, sC)
     out = _bcall(:+, Any[AB, Cterm], out_shape)
     return (out, out_shape)
@@ -296,14 +304,15 @@ end
 # ── Entry point ─────────────────────────────────────────────────────────────
 
 function ArrayDiff.from_onnx(
+    ::Type{T},
     proto::ONNX.ModelProto;
     inputs::AbstractDict = Dict{String,Any}(),
-)
+) where {T<:Real}
     graph = proto.graph
     env = Dict{String,_Entry}()
 
     for tp in graph.initializer
-        env[tp.name] = _tensor_to_array(tp)
+        env[tp.name] = _tensor_to_array(T, tp)
     end
 
     for inp in graph.input
@@ -312,11 +321,11 @@ function ArrayDiff.from_onnx(
         end
         haskey(inputs, String(inp.name)) ||
             error("ONNX graph input '$(inp.name)' has no supplied value")
-        env[inp.name] = _wrap_input(inputs[String(inp.name)])
+        env[inp.name] = _wrap_input(T, inputs[String(inp.name)])
     end
 
     for node in graph.node
-        result = _convert_node(node, env)
+        result = _convert_node(T, node, env)
         # All currently-supported ops produce exactly one output.
         length(node.output) == 1 ||
             error("Multi-output op '$(node.op_type)' not supported")
@@ -330,5 +339,8 @@ function ArrayDiff.from_onnx(
         return Dict(name => env[name][1] for name in out_names)
     end
 end
+
+ArrayDiff.from_onnx(proto::ONNX.ModelProto; kwargs...) =
+    ArrayDiff.from_onnx(Float64, proto; kwargs...)
 
 end # module
