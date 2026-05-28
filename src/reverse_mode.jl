@@ -177,7 +177,7 @@ function _forward_eval(
             # elseif node.type == Nonlinear.NODE_MOI_VARIABLE
             #     f.forward_storage[k] = x[node.index]
         elseif node.type == NODE_VALUE
-            f.forward_storage[j] = f.const_values[node.index]
+            # Pre-loaded into `forward_storage` at construction.
         elseif node.type == NODE_VARIABLE_BLOCK
             # Contiguous-to-contiguous copy from `x` into the tape: on CPU a
             # `copyto!`, on GPU a single `cudaMemcpy`. This is the fast path

@@ -700,10 +700,13 @@ struct _SubexpressionStorage{T<:Real,S<:AbstractVector{T}}
     ) where {T<:Real,S<:AbstractVector{T}}
         sizes = _infer_sizes(nodes, adj, block_shapes, const_values, operators)
         N = _length(sizes)
-        # Pre-load value blocks into forward_storage once at construction;
-        # each block is a contiguous-to-contiguous bulk copy. Individual
-        # `NODE_VALUE` scalars (rare — exponents, constant divisors, etc) and
-        # variable nodes are loaded by `_forward_eval` in the per-node loop.
+        # Pre-load all constants (value blocks and individual `NODE_VALUE`
+        # scalars like exponents or constant divisors) into a host buffer here,
+        # then bulk-copy to `forward_storage` once. With a `CuVector` backing
+        # `S`, this avoids a per-call `cuMemcpyHtoDAsync` for every scalar
+        # `NODE_VALUE` in `_forward_eval` — those scalar setindex writes show
+        # up as dozens of microseconds of host launch overhead per gradient
+        # call. Variable nodes are still loaded per-call.
         cpu_buffer = zeros(T, N)
         for k in 1:length(nodes)
             node = nodes[k]
@@ -712,6 +715,8 @@ struct _SubexpressionStorage{T<:Real,S<:AbstractVector{T}}
                 len = _length(sizes, k)
                 cpu_buffer[j:(j+len-1)] .=
                     view(const_values, (node.index):(node.index+len-1))
+            elseif node.type == NODE_VALUE
+                cpu_buffer[sizes.storage_offset[k]+1] = const_values[node.index]
             end
         end
         forward_storage = convert(S, cpu_buffer)
