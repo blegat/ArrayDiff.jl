@@ -256,8 +256,10 @@ end
 # Forward-evaluate subexpressions and the residual at `x`.
 function _forward_pass_residual!(d::NLPEvaluator, x)
     for k in d.subexpression_order
+        _forward_eval(d.subexpressions[k], d, x)
+        # FIXME this assumes scalar output
         d.subexpression_forward_values[k] =
-            _forward_eval(d.subexpressions[k], d, x)
+            d.subexpressions[k].forward_storage[1]
     end
     _forward_eval(something(d.residual).expr, d, x)
     return
