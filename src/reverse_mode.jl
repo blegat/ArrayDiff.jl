@@ -43,7 +43,7 @@ function _matmul_reverse_outer(
         sizes,
         (ix, k),
         _matmul_reverse_inner!,
-        (lhs, v,),
+        (lhs, v),
     )
     return
 end
