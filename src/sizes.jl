@@ -70,16 +70,6 @@ function _setindex!(x, value, sizes::Sizes, k::Int, j)
     return x[sizes.storage_offset[k]+j] = value
 end
 
-"""
-    _scalar_load(storage, idx) -> Float64
-
-Read a single Float64 from `storage` at linear index `idx`. The default
-implementation just calls `getindex`; this is a hook for storage backends
-(such as `CuVector`) that disallow scalar indexing and need to dispatch to a
-1-element transfer instead.
-"""
-_scalar_load(storage::AbstractVector, idx::Int) = @inbounds storage[idx]
-
 function _view_scalar(storage::AbstractVector, sizes::Sizes, k::Int)
     pos = _scalar_pos(sizes, k)
     return view(storage, reshape(pos:pos, ()))
