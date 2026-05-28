@@ -90,11 +90,7 @@ function neural(
     return @benchmark(
         begin
             if $gpu
-                MOI.eval_objective_gradient(
-                    $state.evaluator,
-                    $g,
-                    $x,
-                )
+                MOI.eval_objective_gradient($state.evaluator, $g, $x)
                 CUDA.synchronize()
             else
                 MOI.eval_objective_gradient($state.evaluator, $g, $x)
@@ -109,11 +105,7 @@ function profile_gpu(; T = Float32, h = 4096, d = 13, n = 178)
     x = CUDA.CuVector{T}(vec(state.W1))
     g = CUDA.zeros(T, h * d)
     fill!(state.evaluator.backend.last_x, NaN)
-    CUDA.@sync MOI.eval_objective_gradient(
-        state.evaluator,
-        g,
-        x,
-    )
+    CUDA.@sync MOI.eval_objective_gradient(state.evaluator, g, x)
     fill!(state.evaluator.backend.last_x, NaN)
     return CUDA.@profile CUDA.@sync MOI.eval_objective_gradient(
         state.evaluator,
