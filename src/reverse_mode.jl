@@ -94,7 +94,8 @@ function _reverse_mode(d::NLPEvaluator, x)
     for k in d.subexpression_order
         _forward_eval(d.subexpressions[k], d, x)
         # FIXME this assumes scalar output
-        d.subexpression_forward_values[k] = d.subexpressions[k].forward_storage[1]
+        d.subexpression_forward_values[k] =
+            d.subexpressions[k].forward_storage[1]
     end
     if d.objective !== nothing
         _forward_eval(something(d.objective).expr, d, x)
