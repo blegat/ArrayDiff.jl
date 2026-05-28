@@ -18,9 +18,11 @@ SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 
 [weakdeps]
 MathOptAI = "e52c2cb8-508e-4e12-9dd2-9c4755b60e73"
+ONNX = "d0dd6a25-fac6-55c0-abf7-829e0c774d20"
 
 [extensions]
 ArrayDiffMathOptAIExt = "MathOptAI"
+ArrayDiffONNXExt = "ONNX"
 
 [compat]
 Calculus = "0.5.2"
@@ -31,6 +33,7 @@ JuMP = "1.29.4"
 MathOptAI = "0.2"
 MathOptInterface = "1.40"
 NaNMath = "1"
+ONNX = "0.2"
 OrderedCollections = "1.8.1"
 SparseArrays = "1.10"
 SpecialFunctions = "2.6.1"

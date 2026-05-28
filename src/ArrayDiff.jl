@@ -67,6 +67,23 @@ include("evaluator.jl")
 include("array_nonlinear_function.jl")
 include("parse_moi.jl")
 
+"""
+    from_onnx(model; inputs)
+
+Translate an ONNX `ModelProto` into a Julia `Expr` (or `Dict{String,Expr}` for
+multi-output graphs) suitable for `ArrayDiff.set_objective` or for composing
+further with `sum`, `LinearAlgebra.norm`, etc.
+
+`inputs` maps each ONNX graph-input name to the Julia value that should stand
+in for it — typically a `Vector{MOI.VariableIndex}` or a
+`Matrix{MOI.VariableIndex}` of the appropriate shape. Initializer tensors are
+inlined as `Vector{Float64}` / `Matrix{Float64}` constants.
+
+The implementation lives in the package extension `ArrayDiffONNXExt`, which is
+loaded automatically once `ONNX` is imported alongside `ArrayDiff`.
+"""
+function from_onnx end
+
 model(::Mode{S}) where {S} = Model{eltype(S)}()
 
 # Extend MOI.Nonlinear.set_objective so that solvers calling
