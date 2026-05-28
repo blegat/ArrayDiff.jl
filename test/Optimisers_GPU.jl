@@ -50,11 +50,7 @@ function test_neural_optimisers_gpu()
     @objective(model, Min, loss)
     set_attribute(model, "max_iter", 20_000)
     set_attribute(model, "tol", 1e-6)
-    # The variable-load and gradient-extract paths still do scalar reads/writes
-    # against the GPU-resident tape (forward_storage, reverse_storage). Those
-    # are what `@allowscalar` permits. They will be batched in a follow-up;
-    # for now this test is a correctness check, not a performance benchmark.
-    CUDA.@allowscalar optimize!(model)
+    optimize!(model)
     @test objective_value(model) < 1e-3
     return
 end
