@@ -112,7 +112,10 @@ function neural(
 end
 
 function profile_gpu(;
-    T = Float32, h = 4096, d = 13, n = 178,
+    T = Float32,
+    h = 4096,
+    d = 13,
+    n = 178,
     prealloc::Bool = true,
 )
     Random.seed!(0)
@@ -133,6 +136,5 @@ function profile_gpu(;
         gradient_alloc(W1g, W2g, Xg, yg)
     end
 end
-
 
 end # module

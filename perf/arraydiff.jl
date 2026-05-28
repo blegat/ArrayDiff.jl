@@ -106,9 +106,7 @@ function neural(
     )
 end
 
-function profile_gpu(
-    ;T = Float32, h = 4096, d = 13, n = 178
-)
+function profile_gpu(; T = Float32, h = 4096, d = 13, n = 178)
     state = _build(T, h, d, n, true)
     x = CUDA.CuVector{T}(vec(state.W1))
     g = CUDA.zeros(T, h * d)
