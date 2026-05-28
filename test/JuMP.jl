@@ -1210,7 +1210,9 @@ function _grad_with_sentinel(model, loss, x_in)
     ad = ArrayDiff.model(mode)
     MOI.Nonlinear.set_objective(ad, JuMP.moi_function(loss))
     evaluator = MOI.Nonlinear.Evaluator(
-        ad, mode, JuMP.index.(JuMP.all_variables(model)),
+        ad,
+        mode,
+        JuMP.index.(JuMP.all_variables(model)),
     )
     MOI.initialize(evaluator, [:Grad])
     expr = evaluator.backend.objective.expr
@@ -1222,7 +1224,8 @@ function _grad_with_sentinel(model, loss, x_in)
 end
 
 function _assert_value_block_slots_preserved(expr, sentinel)
-    const_ks = findall(node -> node.type == ArrayDiff.NODE_VALUE_BLOCK, expr.nodes)
+    const_ks =
+        findall(node -> node.type == ArrayDiff.NODE_VALUE_BLOCK, expr.nodes)
     @test !isempty(const_ks)
     for k in const_ks
         rng = ArrayDiff._storage_range(expr.sizes, k)
@@ -1281,7 +1284,8 @@ function test_matmul_both_variables_overwrites_reverse()
     loss = sum((W1 * W2) .^ 2)
     x_in = [vec(W1_val); vec(W2_val)]
     expr, _, sentinel = _grad_with_sentinel(model, loss, x_in)
-    var_ks = findall(node -> node.type == ArrayDiff.NODE_VARIABLE_BLOCK, expr.nodes)
+    var_ks =
+        findall(node -> node.type == ArrayDiff.NODE_VARIABLE_BLOCK, expr.nodes)
     @test length(var_ks) == 2
     for k in var_ks
         rng = ArrayDiff._storage_range(expr.sizes, k)
