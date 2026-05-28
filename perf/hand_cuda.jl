@@ -35,7 +35,7 @@ struct Buffers{M<:AbstractMatrix}
     W2T_J2::M   # h × n   = W2' * J_2, then ⊙= J_1
     grad::M     # h × d   = W2T_J2 * X'
     loss::M     # 1 × 1   = sum((W2*y_1 - y).^2), kept on-device to match
-                #         `arraydiff.jl`'s `forward_storage[1]`
+    #         `arraydiff.jl`'s `forward_storage[1]`
 end
 
 function Buffers{M}(h::Int, d::Int, n::Int) where {M}
