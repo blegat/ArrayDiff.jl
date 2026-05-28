@@ -518,10 +518,9 @@ function _forward_eval(
                 @inbounds ix1 = children_arr[idx1]
                 @inbounds ix2 = children_arr[idx2]
                 @assert f.sizes.ndims[ix2] == 0 "Broadcasted ^ requires scalar exponent"
-                exponent = _scalar_load(
-                    f.forward_storage,
-                    f.sizes.storage_offset[ix2]+1,
-                )
+                # If it is a constant, we can just read it from the `const_values` and avoid a GPU->CPU communication
+                @assert f.nodes[ix2].type == NODE_VALUE
+                exponent = f.const_values[f.nodes[ix2].index]
                 out = _view_linear(f.forward_storage, f.sizes, k)
                 inp = _view_linear(f.forward_storage, f.sizes, ix1)
                 partials = _view_linear(f.partials_storage, f.sizes, ix1)
