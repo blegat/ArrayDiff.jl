@@ -106,4 +106,22 @@ function neural(
     )
 end
 
+function profile_gpu(; T = Float32, h = 4096, d = 13, n = 178)
+    state = _build(T, h, d, n, true)
+    x = CUDA.CuVector{T}(vec(state.W1))
+    g = CUDA.zeros(T, h * d)
+    fill!(state.evaluator.backend.last_x, NaN)
+    CUDA.@sync CUDA.@allowscalar MOI.eval_objective_gradient(
+        state.evaluator,
+        g,
+        x,
+    )
+    fill!(state.evaluator.backend.last_x, NaN)
+    return CUDA.@profile CUDA.@sync CUDA.@allowscalar MOI.eval_objective_gradient(
+        state.evaluator,
+        g,
+        x,
+    )
+end
+
 end # module
