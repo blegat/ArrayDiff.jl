@@ -15,7 +15,7 @@ function _matmul_reverse!(f, k::Int, ix1::Int, ix2::Int)
             f.sizes,
             (ix2,),
             _matmul_reverse_outer,
-            (f.reverse_storage, f.sizes, false, ix1, k),
+            (f.reverse_storage, f.sizes, true, ix1, k),
         )
     end
     if f.nodes[ix2].type != CONSTANT
@@ -24,7 +24,7 @@ function _matmul_reverse!(f, k::Int, ix1::Int, ix2::Int)
             f.sizes,
             (ix1,),
             _matmul_reverse_outer,
-            (f.reverse_storage, f.sizes, true, ix2, k),
+            (f.reverse_storage, f.sizes, false, ix2, k),
         )
     end
     return
