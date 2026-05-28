@@ -9,7 +9,7 @@
 # the right view type for each node and `LinearAlgebra.mul!` covers both
 # shape combinations.
 function _matmul_reverse!(f, k::Int, ix1::Int, ix2::Int)
-    if f.nodes[ix1].type != CONSTANT
+    if f.nodes[ix1].type != NODE_VALUE_BLOCK
         _reshape_call(
             f.forward_storage,
             f.sizes,
@@ -18,7 +18,7 @@ function _matmul_reverse!(f, k::Int, ix1::Int, ix2::Int)
             (f.reverse_storage, f.sizes, true, ix1, k),
         )
     end
-    if f.nodes[ix2].type != CONSTANT
+    if f.nodes[ix2].type != NODE_VALUE_BLOCK
         _reshape_call(
             f.forward_storage,
             f.sizes,
