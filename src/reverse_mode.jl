@@ -92,8 +92,10 @@ function _reverse_mode(d::NLPEvaluator, x)
     end
     # Phase I
     for k in d.subexpression_order
+        _forward_eval(d.subexpressions[k], d, x)
+        # FIXME this assumes scalar output
         d.subexpression_forward_values[k] =
-            _forward_eval(d.subexpressions[k], d, x)
+            d.subexpressions[k].forward_storage[1]
     end
     if d.objective !== nothing
         _forward_eval(something(d.objective).expr, d, x)
@@ -158,7 +160,7 @@ function _forward_eval(
     f::_SubexpressionStorage,
     d::NLPEvaluator,
     x::AbstractVector{T},
-)::T where {T}
+) where {T}
     @assert length(f.forward_storage) >= length(f.nodes)
     @assert length(f.partials_storage) >= length(f.nodes)
     operators = d.data.operators
@@ -633,10 +635,7 @@ function _forward_eval(
             f.partials_storage[rhs] = zero(T)
         end
     end
-    # Caller is responsible for reading the right range of `f.forward_storage`
-    # for vector-valued roots (use `_storage_range(f.sizes, 1)`); the scalar
-    # return is only meaningful when the root is scalar.
-    return f.forward_storage[1]
+    return
 end
 
 """
@@ -823,9 +822,9 @@ Reverse-mode evaluation of an expression tree given in `f`.
  * This function assumes that `f.reverse_storage` has been initialized with 0.0.
 """
 function _reverse_eval(
-    f::_SubexpressionStorage,
-    seed::Union{Nothing,AbstractVector{Float64}} = nothing,
-)
+    f::_SubexpressionStorage{T},
+    seed::Union{Nothing,AbstractVector{T}} = nothing,
+) where {T}
     @assert length(f.reverse_storage) >= _length(f.sizes)
     @assert length(f.partials_storage) >= _length(f.sizes)
     # f.nodes is already in order such that parents always appear before
@@ -834,14 +833,10 @@ function _reverse_eval(
     children_arr = SparseArrays.rowvals(f.adj)
     root_range = _storage_range(f.sizes, 1)
     if seed === nothing
-        for i in root_range
-            f.reverse_storage[i] = one(Float64)
-        end
+        f.reverse_storage[root_range] .= one(T)
     else
         @assert length(seed) == length(root_range)
-        for (j, i) in enumerate(root_range)
-            f.reverse_storage[i] = seed[j]
-        end
+        f.reverse_storage[root_range] .= seed
     end
     for k in 1:length(f.nodes)
         node = f.nodes[k]
@@ -1108,17 +1103,20 @@ function _reverse_eval(
                     elseif op == :^
                         # We start with just .^2 to simplify
                         @assert f.sizes.ndims[rhs] == 0 "Broadcasted ^ requires scalar exponent"
-                        exp = _getscalar(f.forward_storage, f.sizes, rhs)
-                        # To simplify, so we don't need to compute its derivative
+                        # If it is a constant, we can just read it from the `const_values` and avoid a GPU->CPU communication
+                        # We also don't need to compute its derivative
+                        @assert f.nodes[rhs].type == NODE_VALUE
+                        exponent = f.const_values[f.nodes[rhs].index]
+
                         @assert f.nodes[rhs].type == NODE_VALUE
                         rev_parent = _view_linear(f.reverse_storage, f.sizes, k)
                         rev_child =
                             _view_linear(f.reverse_storage, f.sizes, lhs)
-                        if exp == 2
+                        if exponent == 2
                             child =
                                 _view_linear(f.forward_storage, f.sizes, lhs)
                             rev_child .= 2 .* child .* rev_parent
-                        elseif exp == 1
+                        elseif exponent == 1
                             rev_child .= rev_parent
                         else
                             partial =

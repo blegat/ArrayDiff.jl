@@ -68,10 +68,10 @@ trial; the timed block is just `MOI.eval_objective_gradient` plus a
 `CUDA.synchronize` when `gpu=true`.
 """
 function neural(
-    ::Type{T},
-    h::Int,
-    d::Int,
-    n::Int;
+    ::Type{T} = Float32,
+    h::Int = 4096,
+    d::Int = 13,
+    n::Int = 178;
     gpu::Bool = false,
 ) where {T<:Real}
     state = _build(T, h, d, n, gpu)
@@ -90,13 +90,7 @@ function neural(
     return @benchmark(
         begin
             if $gpu
-                # `@allowscalar` covers residual scalar leaves the BLOCK
-                # rewrite can't fold; the hot path is bulk.
-                CUDA.@allowscalar MOI.eval_objective_gradient(
-                    $state.evaluator,
-                    $g,
-                    $x,
-                )
+                MOI.eval_objective_gradient($state.evaluator, $g, $x)
                 CUDA.synchronize()
             else
                 MOI.eval_objective_gradient($state.evaluator, $g, $x)
@@ -111,13 +105,9 @@ function profile_gpu(; T = Float32, h = 4096, d = 13, n = 178)
     x = CUDA.CuVector{T}(vec(state.W1))
     g = CUDA.zeros(T, h * d)
     fill!(state.evaluator.backend.last_x, NaN)
-    CUDA.@sync CUDA.@allowscalar MOI.eval_objective_gradient(
-        state.evaluator,
-        g,
-        x,
-    )
+    CUDA.@sync MOI.eval_objective_gradient(state.evaluator, g, x)
     fill!(state.evaluator.backend.last_x, NaN)
-    return CUDA.@profile CUDA.@sync CUDA.@allowscalar MOI.eval_objective_gradient(
+    return CUDA.@profile CUDA.@sync MOI.eval_objective_gradient(
         state.evaluator,
         g,
         x,
