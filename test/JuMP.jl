@@ -555,6 +555,75 @@ function test_sum_dims_along_cols()
     return
 end
 
+function test_transpose_matrix()
+    rows, cols = 3, 2
+    model = Model()
+    @variable(model, W[1:rows, 1:cols], container = ArrayDiff.ArrayOfVariables)
+    expr = transpose(W)
+    @test expr isa ArrayDiff.MatrixExpr
+    @test expr.head == :transpose
+    @test size(expr) == (cols, rows)
+    @test expr.broadcasted == false
+    x = Float64.(collect(1:(rows*cols)))
+    W_val = reshape(x, rows, cols)
+    # f(W) = ‖Wᵀ‖_F = ‖W‖_F; gradient is W ./ ‖W‖_F in column-major order.
+    sizes, val, g = _eval(model, LinearAlgebra.norm(expr), x)
+    @test val ≈ LinearAlgebra.norm(W_val)
+    @test g ≈ x ./ LinearAlgebra.norm(W_val)
+    # Tape: norm (k=1, scalar) → transpose (k=2, (cols, rows)).
+    @test sizes.ndims[1] == 0
+    @test sizes.ndims[2] == 2
+    t_off = sizes.size_offset[2]
+    @test sizes.size[t_off+1] == cols
+    @test sizes.size[t_off+2] == rows
+    return
+end
+
+function test_transpose_matrix_inner_product()
+    # f(W) = sum(Wᵀ .* C) where C is a constant of shape (cols, rows).
+    # ∂f/∂W[i,j] = C[j,i].
+    rows, cols = 2, 3
+    model = Model()
+    @variable(model, W[1:rows, 1:cols], container = ArrayDiff.ArrayOfVariables)
+    C = reshape(Float64.(collect(1:(rows*cols))) .+ 0.5, cols, rows)
+    expr = sum(transpose(W) .* C)
+    x = Float64.(collect(1:(rows*cols)))
+    W_val = reshape(x, rows, cols)
+    _, val, g = _eval(model, expr, x)
+    @test val ≈ sum(transpose(W_val) .* C)
+    # Gradient column-major: g[(j-1)*rows + i] = C[j, i].
+    expected = vec([C[j, i] for i in 1:rows, j in 1:cols])
+    @test g ≈ expected
+    return
+end
+
+function test_transpose_vector()
+    n = 4
+    model = Model()
+    @variable(model, x[1:n], container = ArrayDiff.ArrayOfVariables)
+    expr = transpose(x)
+    @test expr isa ArrayDiff.MatrixExpr
+    @test expr.head == :transpose
+    @test size(expr) == (1, n)
+    xv = Float64.(collect(1:n))
+    # f(x) = ‖xᵀ‖ = ‖x‖; ∂f/∂x[i] = x[i] / ‖x‖.
+    _, val, g = _eval(model, LinearAlgebra.norm(expr), xv)
+    @test val ≈ LinearAlgebra.norm(xv)
+    @test g ≈ xv ./ LinearAlgebra.norm(xv)
+    return
+end
+
+function test_transpose_adjoint_alias()
+    rows, cols = 2, 3
+    model = Model()
+    @variable(model, W[1:rows, 1:cols], container = ArrayDiff.ArrayOfVariables)
+    expr = adjoint(W)
+    @test expr isa ArrayDiff.MatrixExpr
+    @test expr.head == :transpose
+    @test size(expr) == (cols, rows)
+    return
+end
+
 function test_broadcast_nonsquare_matrix()
     model = Model()
     @variable(model, W[1:2, 1:3], container = ArrayDiff.ArrayOfVariables)

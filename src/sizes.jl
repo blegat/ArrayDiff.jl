@@ -497,6 +497,15 @@ function infer_sizes(::typeof(_row_op), shapes...)
     return (1, length(shapes))
 end
 
+# transpose: vector (n,) → row matrix (1, n); matrix (m, n) → (n, m).
+function infer_sizes(::typeof(LinearAlgebra.transpose), shape)
+    if length(shape) == 1
+        return (1, shape[1])
+    end
+    @assert length(shape) == 2 "`transpose` only supports 1-D and 2-D inputs"
+    return (shape[2], shape[1])
+end
+
 # Map a built-in operator symbol to its Julia function so `infer_sizes` can
 # dispatch on `typeof(fn)`. Returns `nothing` for `:sum_dims`, whose shape
 # depends on the constant dims vector and is handled inline by `_infer_sizes`.

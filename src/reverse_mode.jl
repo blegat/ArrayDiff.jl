@@ -439,6 +439,16 @@ function _forward_eval(
                     sum!,
                     tuple(),
                 )
+            elseif node.index == 18 # transpose
+                @assert N == 1 "`transpose` expects a single child"
+                arr_ix = children_arr[first(children_indices)]
+                _reshape_call(
+                    f.forward_storage,
+                    f.sizes,
+                    (k, arr_ix),
+                    _forward_transpose!,
+                    tuple(),
+                )
             elseif node.index <= length(operators.multivariate_operators) &&
                    haskey(
                 operators.chainrules_operators,
@@ -813,6 +823,40 @@ function _reverse_sum_dims!(rev_arr, rev_parent)
     return
 end
 
+# Forward for `:transpose`. The child can be 1-D (treated as a column,
+# producing a row matrix `(1, n)`) or 2-D `(m, n)` producing `(n, m)`.
+# Hand-rolled loops because `permutedims!` allocates on the `ReshapedArray`
+# views returned by `_view_matrix`.
+function _forward_transpose!(out, x)
+    if ndims(x) == 1
+        for j in eachindex(x)
+            out[1, j] = x[j]
+        end
+    else
+        m, n = size(x)
+        for j in 1:n, i in 1:m
+            out[j, i] = x[i, j]
+        end
+    end
+    return
+end
+
+# Reverse for `:transpose`. `y = xᵀ`, so ∂L/∂x[i,j] = ∂L/∂y[j,i]; the inverse
+# permutation lifts the parent adjoint back to the child's shape.
+function _reverse_transpose!(rev_arr, rev_parent)
+    if ndims(rev_arr) == 1
+        for j in eachindex(rev_arr)
+            rev_arr[j] = rev_parent[1, j]
+        end
+    else
+        m, n = size(rev_arr)
+        for j in 1:n, i in 1:m
+            rev_arr[i, j] = rev_parent[j, i]
+        end
+    end
+    return
+end
+
 """
     _reverse_eval(f::_SubexpressionStorage)
 
@@ -1060,6 +1104,17 @@ function _reverse_eval(
                         f.sizes,
                         (arr_ix, k),
                         _reverse_sum_dims!,
+                        tuple(),
+                    )
+                    continue
+                elseif op == :transpose
+                    @assert length(children_indices) == 1 "`transpose` expects a single child"
+                    arr_ix = children_arr[first(children_indices)]
+                    _reshape_call(
+                        f.reverse_storage,
+                        f.sizes,
+                        (arr_ix, k),
+                        _reverse_transpose!,
                         tuple(),
                     )
                     continue
