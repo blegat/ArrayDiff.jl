@@ -83,12 +83,7 @@ end
 function _transpose(x::AbstractJuMPArray{T,N}) where {T,N}
     V = JuMP.variable_ref_type(x)
     if N == 1
-        return GenericArrayExpr{V,2}(
-            :transpose,
-            Any[x],
-            (1, size(x, 1)),
-            false,
-        )
+        return GenericArrayExpr{V,2}(:transpose, Any[x], (1, size(x, 1)), false)
     end
     @assert N == 2 "`transpose` only supports 1-D and 2-D arrays"
     return GenericArrayExpr{V,2}(
