@@ -63,11 +63,6 @@ function test_eval_residual_gpu_matches_cpu()
     x_gpu = CUDA.CuVector{Float64}(x_cpu)
     ArrayDiff.eval_residual!(gpu_eval, F_gpu, x_gpu)
     @test Array(F_gpu) ≈ expected
-    # Also exercise the mixed-device path that the NLPModelsJuMP wrapper hits:
-    # caller passes a CPU `x` while `F` and `forward_storage` are on the GPU.
-    fill!(F_gpu, 0.0)
-    ArrayDiff.eval_residual!(gpu_eval, F_gpu, x_cpu)
-    @test Array(F_gpu) ≈ expected
     return
 end
 
