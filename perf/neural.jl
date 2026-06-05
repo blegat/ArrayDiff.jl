@@ -6,34 +6,42 @@
 
 using JuMP
 using ArrayDiff
+import Random
 import NLopt
+import NLPModelsJuMP
 
-n = 2
-X = rand(n, n)
-target = rand(n, n)
+function bench(solver, ::Type{T} = Float64; h::Int = 4096, d::Int = 13, n::Int = 178, out_dim = 2, gpu::Bool = false) where {T<:Real}
+    Random.seed!(0)
+    X = randn(T, d, n)
+    Y = randn(T, out_dim, n)
 
-model = direct_model(NLopt.Optimizer())
-set_attribute(model, "algorithm", :LD_LBFGS)
+    model = GenericModel{T}(solver)
+    V = gpu ? CUDA.CuVector{T} : Vector{T}
+    set_attribute(model, MOI.AutomaticDifferentiationBackend(), ArrayDiff.Mode{V}())
 
-@variable(model, W1[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
-@variable(model, W2[1:n, 1:n], container = ArrayDiff.ArrayOfVariables)
+    @variable(model, W1[1:h, 1:d], container = ArrayDiff.ArrayOfVariables)
+    @variable(model, W2[1:out_dim, 1:h], container = ArrayDiff.ArrayOfVariables)
 
-# Set non-zero starting values to avoid saddle point at zero
-for i in 1:n, j in 1:n
-    set_start_value(W1[i, j], 0.1 * randn())
-    set_start_value(W2[i, j], 0.1 * randn())
+    Y_hat = W2 * tanh.(W1 * X)
+    loss = sum((Y_hat .- Y) .^ 2)
+    @objective(model, Min, loss)
+
+    for i in 1:n, j in 1:n
+        set_start_value(W1[i, j], 0.1 * randn())
+        set_start_value(W2[i, j], 0.1 * randn())
+    end
+    optimize!(model)
+
+    if !is_solved_and_feasible(model)
+        @warn(solution_summary(model))
+    end
+    return solve_time(model)
 end
 
-# Forward pass: Y = W2 * tanh.(W1 * X)
-Y = W2 * tanh.(W1 * X)
+nlopt = optimizer_with_attributes(
+    NLopt.Optimizer,
+    "algorithm" => :LD_LBFGS,
+    MOI.AutomaticDifferentiationBackend() => ArrayDiff.Mode(),
+)
 
-# Loss: sum of squared errors
-loss = sum((Y .- target) .^ 2)
-@objective(model, Min, loss)
-
-optimize!(model)
-
-println("Termination status: ", termination_status(model))
-println("Objective value:    ", objective_value(model))
-println("W1 = ", [value(W1[i, j]) for i in 1:n, j in 1:n])
-println("W2 = ", [value(W2[i, j]) for i in 1:n, j in 1:n])
+bench(nlopt)
