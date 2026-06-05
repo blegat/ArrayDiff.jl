@@ -12,3 +12,4 @@ if VERSION >= v"1.11"
     include("Optimisers.jl")
     include("Optimisers_GPU.jl")
 end
+include("eval_residual_gpu.jl")
