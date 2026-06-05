@@ -270,10 +270,7 @@ function _read_residual!(F::AbstractVector, d::NLPEvaluator)
     res = something(d.residual)
     range = _storage_range(res.expr.sizes, 1)
     @assert length(F) == length(range)
-    copyto!(
-        view(F, eachindex(range)),
-        view(res.expr.forward_storage, range),
-    )
+    copyto!(view(F, eachindex(range)), view(res.expr.forward_storage, range))
     return
 end
 

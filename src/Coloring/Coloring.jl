@@ -30,7 +30,7 @@ IndexedSet(n::Integer) = IndexedSet(zeros(Int, n), trues(n), 0)
 
 function Base.push!(v::IndexedSet, i::Integer)
     if v.empty[i]  # new index
-        v.nzidx[v.nnz += 1] = i
+        v.nzidx[v.nnz+=1] = i
         v.empty[i] = false
     end
     return
