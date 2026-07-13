@@ -18,8 +18,9 @@ function _mul_rev_lhs_const_rhs!(B, rev_x, rev_out)
     return LinearAlgebra.mul!(rev_x, rev_out, LinearAlgebra.transpose(B))
 end
 
-_is_constant_node(node::Node) =
-    node.type == NODE_VALUE_BLOCK || node.type == NODE_ARRAY_VALUE
+function _is_constant_node(node::Node)
+    return node.type == NODE_VALUE_BLOCK || node.type == NODE_ARRAY_VALUE
+end
 
 # Reverse-mode contribution for a matmul node `k` with children `ix1`, `ix2`.
 # `f.sizes.ndims[k]` may be 1 (mat-vec) or 2 (mat-mat); `_reshape_call` picks

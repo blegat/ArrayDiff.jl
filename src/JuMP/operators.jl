@@ -30,7 +30,10 @@ function Base.:(*)(A::AbstractMatrix, b::AbstractJuMPVector{T}) where {T}
 end
 
 # Disambiguate against `LinearAlgebra.:*(::Diagonal, ::AbstractVector)`.
-function Base.:(*)(A::LinearAlgebra.Diagonal, b::AbstractJuMPVector{T}) where {T}
+function Base.:(*)(
+    A::LinearAlgebra.Diagonal,
+    b::AbstractJuMPVector{T},
+) where {T}
     return _matvec(JuMP.variable_ref_type(b), A, b)
 end
 
