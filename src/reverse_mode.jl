@@ -4,28 +4,67 @@
 # Use of this source code is governed by an MIT-style license that can be found
 # in the LICENSE.md file or at https://opensource.org/licenses/MIT.
 
+# `_reshape_call`-style kernels for a matmul node with a `NODE_ARRAY_VALUE`
+# child: the constant array `A`/`B` is passed by reference (it has no tape
+# storage) and the remaining argument comes as a tape view.
+_mul_const_lhs!(A, out, x) = LinearAlgebra.mul!(out, A, x)
+_mul_const_rhs!(B, out, x) = LinearAlgebra.mul!(out, x, B)
+# Reverse: for `out = A * x` with constant `A`, `rev_x = A' * rev_out`; for
+# `out = x * B` with constant `B`, `rev_x = rev_out * B'`.
+function _mul_rev_rhs_const_lhs!(A, rev_x, rev_out)
+    return LinearAlgebra.mul!(rev_x, LinearAlgebra.transpose(A), rev_out)
+end
+function _mul_rev_lhs_const_rhs!(B, rev_x, rev_out)
+    return LinearAlgebra.mul!(rev_x, rev_out, LinearAlgebra.transpose(B))
+end
+
+_is_constant_node(node::Node) =
+    node.type == NODE_VALUE_BLOCK || node.type == NODE_ARRAY_VALUE
+
 # Reverse-mode contribution for a matmul node `k` with children `ix1`, `ix2`.
 # `f.sizes.ndims[k]` may be 1 (mat-vec) or 2 (mat-mat); `_reshape_call` picks
 # the right view type for each node and `LinearAlgebra.mul!` covers both
 # shape combinations.
 function _matmul_reverse!(f, k::Int, ix1::Int, ix2::Int)
-    if f.nodes[ix1].type != NODE_VALUE_BLOCK
-        _reshape_call(
-            f.forward_storage,
-            f.sizes,
-            (ix2,),
-            _matmul_reverse_outer,
-            (f.reverse_storage, f.sizes, true, ix1, k),
-        )
+    if !_is_constant_node(f.nodes[ix1])
+        if f.nodes[ix2].type == NODE_ARRAY_VALUE
+            B = f.const_arrays[f.nodes[ix2].index]
+            _reshape_call(
+                f.reverse_storage,
+                f.sizes,
+                (ix1, k),
+                _mul_rev_lhs_const_rhs!,
+                (B,),
+            )
+        else
+            _reshape_call(
+                f.forward_storage,
+                f.sizes,
+                (ix2,),
+                _matmul_reverse_outer,
+                (f.reverse_storage, f.sizes, true, ix1, k),
+            )
+        end
     end
-    if f.nodes[ix2].type != NODE_VALUE_BLOCK
-        _reshape_call(
-            f.forward_storage,
-            f.sizes,
-            (ix1,),
-            _matmul_reverse_outer,
-            (f.reverse_storage, f.sizes, false, ix2, k),
-        )
+    if !_is_constant_node(f.nodes[ix2])
+        if f.nodes[ix1].type == NODE_ARRAY_VALUE
+            A = f.const_arrays[f.nodes[ix1].index]
+            _reshape_call(
+                f.reverse_storage,
+                f.sizes,
+                (ix2, k),
+                _mul_rev_rhs_const_lhs!,
+                (A,),
+            )
+        else
+            _reshape_call(
+                f.forward_storage,
+                f.sizes,
+                (ix1,),
+                _matmul_reverse_outer,
+                (f.reverse_storage, f.sizes, false, ix2, k),
+            )
+        end
     end
     return
 end
@@ -192,6 +231,9 @@ function _forward_eval(
             )
         elseif node.type == NODE_VALUE_BLOCK
             # Pre-loaded into `forward_storage` at construction.
+        elseif node.type == NODE_ARRAY_VALUE
+            # Constant array kept by reference in `f.const_arrays`; it has no
+            # tape storage. Consumed directly by its parent (see `:*`).
         elseif node.type == NODE_SUBEXPRESSION
             f.forward_storage[j] = d.subexpression_forward_values[node.index]
         elseif node.type == NODE_PARAMETER
@@ -235,14 +277,37 @@ function _forward_eval(
                     # `_reshape_call` dispatches each node to the right view
                     # type based on its `ndims`. `LinearAlgebra.mul!` then
                     # picks the matching method — mat-mat for `ndims[k] == 2`,
-                    # mat-vec for `ndims[k] == 1`.
-                    _reshape_call(
-                        f.forward_storage,
-                        f.sizes,
-                        (k, ix1, ix2),
-                        LinearAlgebra.mul!,
-                        (),
-                    )
+                    # mat-vec for `ndims[k] == 1`. A `NODE_ARRAY_VALUE` child
+                    # has no tape storage: pass the referenced array itself so
+                    # `mul!` dispatches on its concrete (sparse/structured)
+                    # type.
+                    if f.nodes[ix1].type == NODE_ARRAY_VALUE
+                        A = f.const_arrays[f.nodes[ix1].index]
+                        _reshape_call(
+                            f.forward_storage,
+                            f.sizes,
+                            (k, ix2),
+                            _mul_const_lhs!,
+                            (A,),
+                        )
+                    elseif f.nodes[ix2].type == NODE_ARRAY_VALUE
+                        B = f.const_arrays[f.nodes[ix2].index]
+                        _reshape_call(
+                            f.forward_storage,
+                            f.sizes,
+                            (k, ix1),
+                            _mul_const_rhs!,
+                            (B,),
+                        )
+                    else
+                        _reshape_call(
+                            f.forward_storage,
+                            f.sizes,
+                            (k, ix1, ix2),
+                            LinearAlgebra.mul!,
+                            (),
+                        )
+                    end
                     # We deliberately don't write v1/v2 into partials_storage
                     # here: the matmul reverse branch reads forward_storage
                     # directly, so those writes were dead.
@@ -593,6 +658,31 @@ function _forward_eval(
                 partials = _view_linear(f.partials_storage, f.sizes, child_idx)
                 out .= tanh.(inp)
                 partials .= one(T) .- out .* out
+            elseif operators.univariate_operators[node.index] in
+                   (:sin, :cos, :exp, :sqrt, :log)
+                # Whole-array broadcasts: a single fused kernel on GPU
+                # storage instead of one scalar `eval_univariate_function_and_
+                # gradient` round-trip per element.
+                op_sym = operators.univariate_operators[node.index]
+                out = _view_linear(f.forward_storage, f.sizes, k)
+                inp = _view_linear(f.forward_storage, f.sizes, child_idx)
+                partials = _view_linear(f.partials_storage, f.sizes, child_idx)
+                if op_sym === :sin
+                    out .= sin.(inp)
+                    partials .= cos.(inp)
+                elseif op_sym === :cos
+                    out .= cos.(inp)
+                    partials .= .-sin.(inp)
+                elseif op_sym === :exp
+                    out .= exp.(inp)
+                    partials .= out
+                elseif op_sym === :sqrt
+                    out .= sqrt.(inp)
+                    partials .= inv.(2 .* out)
+                else # :log
+                    out .= log.(inp)
+                    partials .= inv.(inp)
+                end
             else
                 for j in _eachindex(f.sizes, k)
                     ret_f, ret_f′ = eval_univariate_function_and_gradient(

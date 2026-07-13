@@ -33,6 +33,12 @@ field, which should be interpreted as follows:
  * `NODE_VALUE_BLOCK`: a contiguous block of constants. `index` is the start
    index in the `.values` field; the next `m * n` entries (column-major) are
    the block's data. Shape stored in `Expression.block_shapes`.
+ * `NODE_ARRAY_VALUE`: a constant `AbstractArray` stored by reference (not
+   serialized on the tape). `index` is the index into the `.arrays` field of
+   `Expression`. Shape stored in `Expression.block_shapes`. Used for
+   non-dense constants (for example sparse or structured matrices) so that
+   `LinearAlgebra.mul!` can dispatch on the array's own type instead of a
+   dense view of the tape. These nodes occupy no tape storage.
 """
 @enum(
     NodeType,
@@ -67,6 +73,8 @@ field, which should be interpreted as follows:
     NODE_VARIABLE_BLOCK,
     # Block-of-constants node.
     NODE_VALUE_BLOCK,
+    # Constant `AbstractArray` stored by reference in `Expression.arrays`.
+    NODE_ARRAY_VALUE,
 )
 
 @enum(Linearity, CONSTANT, LINEAR, PIECEWISE_LINEAR, NONLINEAR)
@@ -151,7 +159,9 @@ function _classify_linearity(
         if node.type == NODE_VARIABLE || node.type == NODE_VARIABLE_BLOCK
             linearity[k] = LINEAR
             continue
-        elseif node.type == NODE_VALUE || node.type == NODE_VALUE_BLOCK
+        elseif node.type == NODE_VALUE ||
+               node.type == NODE_VALUE_BLOCK ||
+               node.type == NODE_ARRAY_VALUE
             linearity[k] = CONSTANT
             continue
         elseif node.type == NODE_PARAMETER

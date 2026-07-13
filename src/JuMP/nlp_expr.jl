@@ -23,4 +23,4 @@ JuMP.variable_ref_type(::Type{GenericArrayExpr{V,N}}) where {V,N} = V
 
 JuMP._is_real(::GenericArrayExpr) = true
 
-JuMP._is_real(::Array{<:Real}) = true
+JuMP._is_real(::AbstractArray{<:Real}) = true

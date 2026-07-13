@@ -580,7 +580,8 @@ function _infer_sizes(
         # by construction.
         if node.type == NODE_VARIABLE_BLOCK ||
            node.type == NODE_VALUE_BLOCK ||
-           node.type == NODE_MOI_VARIABLE_BLOCK
+           node.type == NODE_MOI_VARIABLE_BLOCK ||
+           node.type == NODE_ARRAY_VALUE
             _add_size!(sizes, k, block_shapes[k])
             continue
         end
@@ -657,7 +658,11 @@ function _infer_sizes(
         end
     end
     for k in eachindex(nodes)
-        sizes.storage_offset[k+1] = sizes.storage_offset[k] + _length(sizes, k)
+        # `NODE_ARRAY_VALUE` constants live outside the tape (they're kept by
+        # reference in `const_arrays`), so they occupy no tape storage. Their
+        # shape is still recorded above for size inference of their parents.
+        len = nodes[k].type == NODE_ARRAY_VALUE ? 0 : _length(sizes, k)
+        sizes.storage_offset[k+1] = sizes.storage_offset[k] + len
     end
     return sizes
 end
@@ -667,6 +672,11 @@ struct _SubexpressionStorage{T<:Real,S<:AbstractVector{T}}
     adj::SparseArrays.SparseMatrixCSC{Bool,Int}
     sizes::Sizes
     const_values::Vector{T}
+    # Constant arrays kept by reference (see `NODE_ARRAY_VALUE`), indexed by
+    # `node.index`. The element type is abstract on purpose: each entry can be
+    # a different sparse/structured/GPU matrix type and is only touched via
+    # dynamic dispatch to `LinearAlgebra.mul!` once per node per evaluation.
+    const_arrays::Vector{AbstractArray}
     forward_storage::S
     partials_storage::S
     reverse_storage::S
@@ -682,6 +692,7 @@ struct _SubexpressionStorage{T<:Real,S<:AbstractVector{T}}
         nodes::Vector{Node},
         adj::SparseArrays.SparseMatrixCSC{Bool,Int},
         const_values::Vector{T},
+        const_arrays::Vector{AbstractArray},
         block_shapes::Dict{Int,Vector{Int}},
         partials_storage_ϵ::Vector{Float64},
         linearity::Linearity,
@@ -715,6 +726,7 @@ struct _SubexpressionStorage{T<:Real,S<:AbstractVector{T}}
             adj,
             sizes,
             const_values,
+            const_arrays,
             forward_storage,
             fill!(S(undef, N), zero(T)),  # partials_storage,
             fill!(S(undef, N), zero(T)),  # reverse_storage,

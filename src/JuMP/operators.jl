@@ -2,10 +2,10 @@ function _matmul(::Type{V}, A, B) where {V}
     return GenericMatrixExpr{V}(:*, Any[A, B], (size(A, 1), size(B, 2)), false)
 end
 
-function Base.:(*)(A::AbstractJuMPMatrix, B::Matrix)
+function Base.:(*)(A::AbstractJuMPMatrix, B::AbstractMatrix)
     return _matmul(JuMP.variable_ref_type(A), A, B)
 end
-function Base.:(*)(A::Matrix, B::AbstractJuMPMatrix)
+function Base.:(*)(A::AbstractMatrix, B::AbstractJuMPMatrix)
     return _matmul(JuMP.variable_ref_type(B), A, B)
 end
 function Base.:(*)(A::AbstractJuMPMatrix, B::AbstractJuMPMatrix)
@@ -14,15 +14,23 @@ end
 
 # Matrix-vector products: output is a 1-D `GenericArrayExpr` of length
 # `size(A, 1)`. Allows users to write `W * x` for a vector variable `x`.
+# The constant matrix `A` can be any `AbstractMatrix`: dense matrices are
+# serialized on the AD tape while sparse/structured ones are kept by
+# reference (see `NODE_ARRAY_VALUE`).
 function _matvec(::Type{V}, A, b) where {V}
     return GenericArrayExpr{V,1}(:*, Any[A, b], (size(A, 1),), false)
 end
 
-function Base.:(*)(A::AbstractJuMPMatrix, b::Vector)
+function Base.:(*)(A::AbstractJuMPMatrix, b::AbstractVector)
     return _matvec(JuMP.variable_ref_type(A), A, b)
 end
 
-function Base.:(*)(A::Matrix, b::AbstractJuMPVector{T}) where {T}
+function Base.:(*)(A::AbstractMatrix, b::AbstractJuMPVector{T}) where {T}
+    return _matvec(JuMP.variable_ref_type(b), A, b)
+end
+
+# Disambiguate against `LinearAlgebra.:*(::Diagonal, ::AbstractVector)`.
+function Base.:(*)(A::LinearAlgebra.Diagonal, b::AbstractJuMPVector{T}) where {T}
     return _matvec(JuMP.variable_ref_type(b), A, b)
 end
 

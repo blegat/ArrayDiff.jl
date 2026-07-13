@@ -12,7 +12,7 @@ function JuMP.moi_function(x::GenericArrayExpr{V,N}) where {V,N}
     return ArrayNonlinearFunction{N}(x.head, args, x.size, x.broadcasted)
 end
 
-JuMP.moi_function(x::Array{<:Real}) = x
+JuMP.moi_function(x::AbstractArray{<:Real}) = x
 
 # ── Detect whether a JuMP expression contains array args ─────────────────────
 

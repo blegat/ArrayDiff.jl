@@ -227,12 +227,18 @@ function MOI.initialize(
     return
 end
 
+# Read a single leading element without scalar indexing so this also works
+# when the tape lives on a GPU array (GPUArrays disallows scalar `getindex`
+# by default outside the REPL).
+_get_first(v::Vector) = v[1]
+_get_first(v::AbstractVector) = first(Vector(view(v, 1:1)))
+
 function MOI.eval_objective(d::NLPEvaluator, x)
     if d.objective === nothing
         error("No nonlinear objective.")
     end
     _reverse_mode(d, x)
-    return something(d.objective).expr.forward_storage[1]
+    return _get_first(something(d.objective).expr.forward_storage)
 end
 
 function MOI.eval_objective_gradient(d::NLPEvaluator, g, x)

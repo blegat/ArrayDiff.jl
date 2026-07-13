@@ -8,6 +8,7 @@
     struct Expression
         nodes::Vector{Node}
         values::Vector{Float64}
+        arrays::Vector{AbstractArray}
         block_shapes::Dict{Int,Vector{Int}}
     end
 
@@ -18,21 +19,31 @@ tree.
 `block_shapes[k]` is the shape of node `k` (as a `Vector{Int}` of dimensions:
 `[m]` for a 1D vector block, `[m, n]` for a 2D matrix block, `[m, n, p]` for a
 3D tensor block, ...) when `nodes[k]` is one of `NODE_MOI_VARIABLE_BLOCK`,
-`NODE_VARIABLE_BLOCK`, or `NODE_VALUE_BLOCK`. Block nodes are leaves that
-stand in for an entire `prod(shape)`-element array of variables (or
-constants), preserving contiguity end-to-end so the AD tape can be filled and
-gathered with single contiguous bulk operations.
+`NODE_VARIABLE_BLOCK`, `NODE_VALUE_BLOCK`, or `NODE_ARRAY_VALUE`. Block nodes
+are leaves that stand in for an entire `prod(shape)`-element array of
+variables (or constants), preserving contiguity end-to-end so the AD tape can
+be filled and gathered with single contiguous bulk operations.
+
+`arrays` holds constant `AbstractArray`s that are *not* serialized on the
+tape but kept by reference (see `NODE_ARRAY_VALUE`). Dense `Array` constants
+are serialized in `values`; anything else (sparse or structured matrices,
+GPU arrays, ...) lands here so operations like `LinearAlgebra.mul!` can
+dispatch on the concrete array type.
 """
 struct Expression{T}
     nodes::Vector{Node}
     values::Vector{T}
+    arrays::Vector{AbstractArray}
     block_shapes::Dict{Int,Vector{Int}}
-    Expression{T}() where {T} = new{T}(Node[], T[], Dict{Int,Vector{Int}}())
+    function Expression{T}() where {T}
+        return new{T}(Node[], T[], AbstractArray[], Dict{Int,Vector{Int}}())
+    end
 end
 
 function Base.:(==)(x::Expression, y::Expression)
     return x.nodes == y.nodes &&
            x.values == y.values &&
+           x.arrays == y.arrays &&
            x.block_shapes == y.block_shapes
 end
 
@@ -115,6 +126,7 @@ function _subexpression_and_linearity(
         nodes,
         adj,
         convert(Vector{eltype(S)}, expr.values),
+        expr.arrays,
         copy(expr.block_shapes),
         partials_storage_ϵ,
         linearity[1],
