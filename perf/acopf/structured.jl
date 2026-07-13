@@ -78,19 +78,20 @@ function LinearAlgebra.mul!(
     return y
 end
 
+# cumsum! on vectors silently takes Base's scalar pairwise path (GPUArrays has no generic scan),
+# which is why we use padded gathers instead
 function LinearAlgebra.mul!(
     y::AbstractVector,
     At::LinearAlgebra.Transpose{Float64,<:GatherMatrix},
     w::AbstractVector,
 )
     A = LinearAlgebra.parent(At)
-    m = length(A.idx)
     D = size(A.tcols, 2)
     if D == 0
         fill!(y, 0.0)
         return y
     end
-    view(A.buf, 1:m) .= w # buf[m + 1] stays 0 (padding target)
+    view(A.buf, eachindex(A.idx)) .= w # buf[m + 1] stays 0 (padding target)
     y .= view(A.buf, view(A.tcols, :, 1))
     for k in 2:D
         y .+= view(A.buf, view(A.tcols, :, k))
