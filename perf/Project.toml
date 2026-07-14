@@ -1,21 +1,34 @@
 name = "ArrayDiffPerf"
 uuid = "00000000-0000-0000-0000-000000000001"
-authors = ["Benoît Legat <benoit.legat@gmail.com>"]
 version = "0.0.0"
+authors = ["Benoît Legat <benoit.legat@gmail.com>"]
 
 [deps]
 ArrayDiff = "c45fa1ca-6901-44ac-ae5b-5513a4852d50"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 CondaPkg = "992eb4ea-22a4-4c89-a5bb-47a3300528ab"
+JSOSolvers = "10dff2fc-5484-5881-a0e0-c90441020f8a"
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Lux = "b2108857-7c20-44ae-9111-449ecde12c47"
 MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
+NLPModels = "a4795742-8479-5a88-8948-cc11e1c8c1a6"
+NLPModelsJuMP = "792afdf1-32c1-5681-94e0-d7bf7a5df49e"
+NLopt = "76087f3c-5699-56af-9a33-bf431cd00edd"
+Optimisers = "3bd65402-5787-11e9-1adc-39752487f4e2"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SolverCore = "ff4d7338-4cf1-434d-91df-b86cb86fb843"
 
 [sources]
 ArrayDiff = {path = ".."}
+
+[compat]
+JSOSolvers = "0.14.8"
+NLPModels = "0.21.12"
+NLPModelsJuMP = "0.13.5"
+Optimisers = "0.4.7"
+SolverCore = "0.3.10"
