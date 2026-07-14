@@ -58,6 +58,13 @@ function Base.copy(f::ArrayOfContiguousVariables{N}) where {N}
     return f  # immutable
 end
 
+# An `ArrayNonlinearFunction` is always in canonical form (there are no
+# duplicate/zero terms to merge as there would be for an affine function), so
+# `canonicalize!` — called by MOI when a constraint is added to a cache — is a
+# no-op. Without this, adding an `ArrayNonlinearFunction`-in-set constraint to
+# a model errors.
+MOI.Utilities.canonicalize!(f::ArrayNonlinearFunction) = f
+
 # map_indices: remap MOI.VariableIndex values during MOI.copy_to
 function MOI.Utilities.map_indices(
     index_map::F,

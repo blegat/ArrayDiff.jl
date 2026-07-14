@@ -87,17 +87,30 @@ is device-generic, so on real hardware `MadNLPGPU.CUDSSSolver` + a CuArray tape
 is the intended GPU path. `jac_coord!` currently materializes a dense Jacobian
 (fine for these sizes); large GPU problems want a sparse/matrix-free assembly.
 
-## Remaining work: full `JuMP → MOI → NLPModelsJuMP.Optimizer` routing
+## Full `JuMP → MOI → NLPModelsJuMP.Optimizer` routing (done)
 
-`ArrayDiffNLPModel` is built directly from ArrayDiff evaluators here. To go
-through `NLPModelsJuMP.Optimizer` end-to-end (as the NLS path already does),
-vector nonlinear constraints must survive `JuMP.@constraint`: today
-`@constraint(m, arr_expr in MOI.Zeros(n))` fails because JuMP scalar-indexes the
-`GenericArrayExpr` (which ArrayDiff blocks). The steps are:
+The complete loop now works — see `jump_acopf.jl` for the AC-OPF written with
+`@constraint(model, expr in MOI.Zeros(n))` and solved with `optimize!`
+(case9: 347.67 vs Ipopt 347.70). The pieces:
 
-1. ArrayDiff JuMP layer: `JuMP.build_constraint(err, ::GenericArrayExpr, ::VLS)`
-   + a vector shape so the constraint is kept whole (no scalarization).
-2. NLPModelsJuMP ArrayDiff ext: collect `ArrayNonlinearFunction`-in-`Zeros`
-   constraints and build `ArrayDiffNLPModel` (move the type here from `adnlp.jl`).
-3. Route `Optimizer.copy_to` to that builder when the backend is `ArrayDiff.Mode`
-   and vector constraints are present.
+1. **ArrayDiff JuMP layer** (`src/JuMP/moi_bridge.jl`): `build_constraint` for
+   `AbstractJuMPArray in MOI.Zeros/Nonnegatives/Nonpositives` keeps the
+   expression whole (no scalarization) as an `ArrayNonlinearFunction`; plus
+   `MOI.Utilities.canonicalize!` so MOI caches accept it. Inside the JuMP
+   macros, MutableArithmetics' fused ops are normalized (`add_mul`/`sub_mul` →
+   `+`/`-` broadcasts) and its generic matmul is routed back to the whole-array
+   product (`_MA.operate(*, ::AbstractMatrix{<:Real}, ::AbstractJuMPArray)`),
+   which would otherwise silently scalarize `Matrix * ArrayOfVariables` into
+   `Vector{AffExpr}`.
+2. **NLPModelsJuMP ext** (`_try_array_nlp_model` hook + implementation):
+   collects the vector constraints into a constrained `ArrayDiffNLPModel`
+   (obj/grad + per-constraint vectorized cons/jprod/jtprod, dense `jac_coord`
+   for KKT solvers, no Hessian). Row bounds map from the set: `Zeros` → [0,0],
+   `Nonnegatives` → [0,∞), `Nonpositives` → (−∞,0].
+3. **NLS-path guard** (bug fix): `_try_nls_model` no longer fires on
+   constrained models — it used to silently drop the constraints when the
+   objective matched `sum((...)^2)`.
+
+Test: `ArrayDiff/test/NLPModelsJuMP.jl::test_vector_constraint_solve` (skips
+itself until the updated NLPModelsJuMP `bl/arraydiff` branch is pushed, since
+the test env pins the GitHub remote).

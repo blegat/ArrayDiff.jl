@@ -141,3 +141,7 @@ exa = opf_model(:exa, case)
 t = opf_timings(exa)
 print_timings(case, t)
 compare(case)
+
+import CUDA
+case = "pglib_opf_case14_ieee.m"
+arraydiff = opf_model(:arraydiff, case, mode=ArrayDiff.Mode{CUDA.CuVector{Float64}}(), device=CUDA.CuArray)

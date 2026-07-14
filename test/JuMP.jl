@@ -1294,6 +1294,38 @@ function test_matmul_both_variables_overwrites_reverse()
     return
 end
 
+# `@constraint(model, expr in set)` over a vectorized array expression keeps the
+# function whole as an `ArrayNonlinearFunction` (no scalarization). Relies on
+# JuMP #3451 allowing `AbstractArray` in nonlinear expressions.
+function test_vector_constraint()
+    n = 3
+    model = Model()
+    @variable(model, x[1:n], container = ArrayDiff.ArrayOfVariables)
+    linear = x .- [1.0, 2.0, 3.0]
+    nonlinear = sin.(x)
+    c1 = @constraint(model, linear in MOI.Zeros(n))
+    c2 = @constraint(model, nonlinear in MOI.Zeros(n))
+    types = MOI.get(model, MOI.ListOfConstraintTypesPresent())
+    @test (ArrayDiff.ArrayNonlinearFunction{1}, MOI.Zeros) in types
+    b = JuMP.backend(model)
+    F = ArrayDiff.ArrayNonlinearFunction{1}
+    @test MOI.get(b, MOI.NumberOfConstraints{F,MOI.Zeros}()) == 2
+    ci = MOI.get(b, MOI.ListOfConstraintIndices{F,MOI.Zeros}())
+    fs = [MOI.get(b, MOI.ConstraintFunction(), c) for c in ci]
+    # Each constraint kept its whole vectorized structure (not scalarized).
+    @test all(f isa F for f in fs)
+    @test all(f.size == (n,) for f in fs)
+    return
+end
+
+# A vector set whose dimension disagrees with the expression is rejected.
+function test_vector_constraint_dimension()
+    model = Model()
+    @variable(model, x[1:3], container = ArrayDiff.ArrayOfVariables)
+    @test_throws ErrorException @constraint(model, x .- 1.0 in MOI.Zeros(2))
+    return
+end
+
 end  # module
 
 TestJuMP.runtests()
