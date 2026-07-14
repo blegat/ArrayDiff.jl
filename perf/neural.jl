@@ -8,16 +8,22 @@ using ArrayDiff
 import Random
 
 # Benchmark used for SIAM'OP 26 talk.
-function bench(solver, ::Type{T} = Float64; h::Int = 4096, d::Int = 13, n::Int = 178, out_dim = 2, gpu::Bool = false) where {T<:Real}
+function bench(
+    solver,
+    ::Type{T} = Float64;
+    h::Int = 4096,
+    d::Int = 13,
+    n::Int = 178,
+    out_dim = 2,
+    gpu::Bool = false,
+) where {T<:Real}
     Random.seed!(0)
     X = randn(T, d, n)
     Y = randn(T, out_dim, n)
 
     model = GenericModel{T}(solver)
-    @variable(model, W1[1:h, 1:d],
-        container = ArrayDiff.ArrayOfVariables)
-    @variable(model, W2[1:out_dim, 1:h],
-        container = ArrayDiff.ArrayOfVariables)
+    @variable(model, W1[1:h, 1:d], container = ArrayDiff.ArrayOfVariables)
+    @variable(model, W2[1:out_dim, 1:h], container = ArrayDiff.ArrayOfVariables)
     Y_hat = W2 * tanh.(W1 * X)
     # We need `.-` and not `-` as a workaround for
     # https://github.com/blegat/ArrayDiff.jl/issues/83
@@ -29,9 +35,11 @@ function bench(solver, ::Type{T} = Float64; h::Int = 4096, d::Int = 13, n::Int =
         set_start_value(W2[i, j], 0.1 * randn())
     end
     V = gpu ? CUDA.CuVector{T} : Vector{T}
-    set_attribute(model,
+    set_attribute(
+        model,
         MOI.AutomaticDifferentiationBackend(),
-        ArrayDiff.Mode{V}())
+        ArrayDiff.Mode{V}(),
+    )
     optimize!(model)
 
     display(solution_summary(model))
@@ -46,15 +54,21 @@ import NLopt
 nlopt = optimizer_with_attributes(
     NLopt.Optimizer,
     "algorithm" => :LD_LBFGS,
-    "ftol_rel" => 1e-14,                                                      
+    "ftol_rel" => 1e-14,
     "ftol_abs" => 1e-14,
-    "xtol_rel" => 1e-14,                                                      
-    "maxeval"  => 100_000,
+    "xtol_rel" => 1e-14,
+    "maxeval" => 100_000,
 )
 m = bench(nlopt)
 
 import NLPModelsJuMP
-include(joinpath(dirname(dirname(pathof(ArrayDiff))), "test", "OptimisersSolver.jl"))
+include(
+    joinpath(
+        dirname(dirname(pathof(ArrayDiff))),
+        "test",
+        "OptimisersSolver.jl",
+    ),
+)
 
 import JSOSolvers
 lbfgs = optimizer_with_attributes(
