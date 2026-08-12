@@ -86,6 +86,12 @@ function from_onnx end
 
 model(::Mode{S}) where {S} = Model{eltype(S)}()
 
+# Hook so that solvers using `MOI.Nonlinear.model(backend)` (for example,
+# NLopt and NLPModelsJuMP) receive an ArrayDiff model for an ArrayDiff mode.
+# ArrayDiff's model natively parses scalar and array nonlinear functions, but
+# not the `MOI.VectorNonlinearOracle` set, hence no oracle layer either.
+Nonlinear.model(mode::Mode) = model(mode)
+
 # Extend MOI.Nonlinear.set_objective so that solvers calling
 # MOI.Nonlinear.set_objective(arraydiff_model, snf) dispatch here.
 function Nonlinear.set_objective(model::Model, obj::MOI.ScalarNonlinearFunction)
