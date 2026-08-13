@@ -12,7 +12,7 @@ function JuMP.moi_function(x::GenericArrayExpr{V,N}) where {V,N}
     return ArrayNonlinearFunction{N}(x.head, args, x.size, x.broadcasted)
 end
 
-JuMP.moi_function(x::Array{<:Real}) = x
+JuMP.moi_function(x::AbstractArray{<:Real}) = x
 
 # ── Detect whether a JuMP expression contains array args ─────────────────────
 
@@ -46,3 +46,49 @@ function JuMP.set_objective_function(
     model.is_model_dirty = true
     return
 end
+
+# ── Vector constraints over array expressions ────────────────────────────────
+#
+# `@constraint(model, expr in set)` where `expr` is an `AbstractJuMPArray`
+# (e.g. a vectorized residual `Pg .- Pd .- ...`) and `set` is a vector set
+# (`MOI.Zeros`, `MOI.Nonnegatives`, `MOI.Nonpositives`). JuMP's default
+# `VectorConstraint` scalarizes the function (`func[idx]` for each index),
+# which our array expressions deliberately don't support. Instead we keep the
+# expression whole: `moi_function` turns it into a single
+# `ArrayNonlinearFunction`, preserving the vectorized structure end-to-end.
+#
+# Relies on JuMP #3451 (`moi_function`/`_is_real` over `AbstractArray`).
+
+struct _ArrayVectorConstraint{F<:AbstractJuMPArray,S<:MOI.AbstractVectorSet} <:
+       JuMP.AbstractConstraint
+    func::F
+    set::S
+end
+
+function JuMP.build_constraint(
+    _error::Function,
+    func::AbstractJuMPArray,
+    set::MOI.AbstractVectorSet,
+)
+    n = length(func)
+    if n != MOI.dimension(set)
+        _error(
+            "Dimension of the function ($n) does not match the dimension of " *
+            "the set ($(MOI.dimension(set))).",
+        )
+    end
+    return _ArrayVectorConstraint(func, set)
+end
+
+# `jump_function`/`moi_function`/`moi_set` fall back to the generic
+# `AbstractConstraint` methods (which read `.func`/`.set`), so we only need the
+# shape and the belongs-to-model check. `moi_function(::GenericArrayExpr)`
+# already yields the `ArrayNonlinearFunction`.
+JuMP.shape(::_ArrayVectorConstraint) = JuMP.VectorShape()
+
+# The array expression carries whole variable blocks; the per-scalar ownership
+# check JuMP does for `Vector`-valued functions doesn't apply. Some JuMP
+# versions check the constraint, others the function, so cover both.
+JuMP.check_belongs_to_model(::AbstractJuMPArray, ::JuMP.AbstractModel) = nothing
+JuMP.check_belongs_to_model(::_ArrayVectorConstraint, ::JuMP.AbstractModel) =
+    nothing

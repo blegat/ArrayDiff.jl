@@ -12,9 +12,11 @@ MathOptAI = "e52c2cb8-508e-4e12-9dd2-9c4755b60e73"
 MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 NLPModels = "a4795742-8479-5a88-8948-cc11e1c8c1a6"
 NLPModelsJuMP = "792afdf1-32c1-5681-94e0-d7bf7a5df49e"
+NLPModelsModifiers = "e01155f1-5c6f-4375-a9d8-616dd036575f"
 NLopt = "76087f3c-5699-56af-9a33-bf431cd00edd"
 ONNX = "d0dd6a25-fac6-55c0-abf7-829e0c774d20"
 Optimisers = "3bd65402-5787-11e9-1adc-39752487f4e2"
+Percival = "01435c0c-c90d-11e9-3788-63660f8fbccc"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
@@ -30,3 +32,5 @@ NLopt = {rev = "bl/diff_backend", url = "https://github.com/jump-dev/NLopt.jl/"}
 
 [compat]
 NLPModels = "0.21.12"
+# Registered Percival (<= 0.7.6) requires NLPModelsModifiers 0.7.
+NLPModelsModifiers = "0.7"

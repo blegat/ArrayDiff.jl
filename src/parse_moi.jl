@@ -161,7 +161,7 @@ function _parse_moi_stack!(
     ::Vector{Tuple{Int,Any}},
     ::Model,
     expr::Expression,
-    x::AbstractArray{<:Real},
+    x::Array{<:Real},
     parent_index::Int,
 )
     # Emit a single value block. We push the flat values to
@@ -172,6 +172,23 @@ function _parse_moi_stack!(
     start_idx = length(expr.values) + 1
     append!(expr.values, x)
     push!(expr.nodes, Node(NODE_VALUE_BLOCK, start_idx, parent_index))
+    expr.block_shapes[length(expr.nodes)] = collect(size(x))
+    return
+end
+
+function _parse_moi_stack!(
+    ::Vector{Tuple{Int,Any}},
+    ::Model,
+    expr::Expression,
+    x::AbstractArray{<:Real},
+    parent_index::Int,
+)
+    # Non-dense constant array (sparse, structured, GPU-resident, ...): store
+    # it by reference in `expr.arrays` instead of serializing it on the tape.
+    # Evaluation will pass the array itself to `LinearAlgebra.mul!` so its
+    # specialized methods apply. The node occupies no tape storage.
+    push!(expr.arrays, x)
+    push!(expr.nodes, Node(NODE_ARRAY_VALUE, length(expr.arrays), parent_index))
     expr.block_shapes[length(expr.nodes)] = collect(size(x))
     return
 end

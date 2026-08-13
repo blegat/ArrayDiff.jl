@@ -2,10 +2,10 @@ function _matmul(::Type{V}, A, B) where {V}
     return GenericMatrixExpr{V}(:*, Any[A, B], (size(A, 1), size(B, 2)), false)
 end
 
-function Base.:(*)(A::AbstractJuMPMatrix, B::Matrix)
+function Base.:(*)(A::AbstractJuMPMatrix, B::AbstractMatrix)
     return _matmul(JuMP.variable_ref_type(A), A, B)
 end
-function Base.:(*)(A::Matrix, B::AbstractJuMPMatrix)
+function Base.:(*)(A::AbstractMatrix, B::AbstractJuMPMatrix)
     return _matmul(JuMP.variable_ref_type(B), A, B)
 end
 function Base.:(*)(A::AbstractJuMPMatrix, B::AbstractJuMPMatrix)
@@ -14,20 +14,43 @@ end
 
 # Matrix-vector products: output is a 1-D `GenericArrayExpr` of length
 # `size(A, 1)`. Allows users to write `W * x` for a vector variable `x`.
+# The constant matrix `A` can be any `AbstractMatrix`: dense matrices are
+# serialized on the AD tape while sparse/structured ones are kept by
+# reference (see `NODE_ARRAY_VALUE`).
 function _matvec(::Type{V}, A, b) where {V}
     return GenericArrayExpr{V,1}(:*, Any[A, b], (size(A, 1),), false)
 end
 
-function Base.:(*)(A::AbstractJuMPMatrix, b::Vector)
+function Base.:(*)(A::AbstractJuMPMatrix, b::AbstractVector)
     return _matvec(JuMP.variable_ref_type(A), A, b)
 end
 
-function Base.:(*)(A::Matrix, b::AbstractJuMPVector{T}) where {T}
+function Base.:(*)(A::AbstractMatrix, b::AbstractJuMPVector{T}) where {T}
+    return _matvec(JuMP.variable_ref_type(b), A, b)
+end
+
+# Disambiguate against `LinearAlgebra.:*(::Diagonal, ::AbstractVector)`.
+function Base.:(*)(
+    A::LinearAlgebra.Diagonal,
+    b::AbstractJuMPVector{T},
+) where {T}
     return _matvec(JuMP.variable_ref_type(b), A, b)
 end
 
 function Base.:(*)(A::AbstractJuMPMatrix, b::AbstractJuMPVector{T}) where {T}
     return _matvec(JuMP.variable_ref_type(A), A, b)
+end
+
+# The JuMP macros rewrite `A * x` into MutableArithmetics calls whose generic
+# matrix-vector product would silently scalarize the (indexable)
+# `ArrayOfVariables` into a `Vector{AffExpr}`, defeating the vectorization.
+# Route it back to the whole-array product.
+function JuMP._MA.operate(
+    ::typeof(*),
+    A::AbstractMatrix{<:Real},
+    x::AbstractJuMPArray,
+)
+    return A * x
 end
 
 function __broadcast(
@@ -40,12 +63,26 @@ function __broadcast(
 end
 
 function _broadcast(::Type{V}, op::Function, args...) where {V}
+    # The JuMP macros rewrite broadcasted `.+`/`.-` into MutableArithmetics'
+    # fused `add_mul`/`sub_mul` (`op(a, b, c...) = a ± b * c * ...`). The AD
+    # tape only knows the elementary operators, so normalize here:
+    if op === JuMP._MA.add_mul || op === JuMP._MA.sub_mul
+        base = args[1]
+        rest = length(args) == 2 ? args[2] : _broadcast(V, *, args[2:end]...)
+        return _broadcast(V, op === JuMP._MA.add_mul ? (+) : (-), base, rest)
+    end
     return __broadcast(V, Broadcast.combine_axes(args...), op, Any[args...])
 end
 
 function Base.broadcasted(op::Function, x::AbstractJuMPArray)
     return _broadcast(JuMP.variable_ref_type(x), op, x)
 end
+
+# `value.(x)` is a query, not an expression: return the solution values
+# instead of building a `GenericArrayExpr`. (`collect` materializes the
+# indexable `ArrayOfVariables` into a `Vector{VariableRef}` first.)
+Base.broadcasted(::typeof(JuMP.value), x::ArrayOfVariables) =
+    JuMP.value.(collect(x))
 
 function Base.broadcasted(op::Function, x::AbstractJuMPArray, y::AbstractArray)
     return _broadcast(JuMP.variable_ref_type(x), op, x, y)

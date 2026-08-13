@@ -1,6 +1,7 @@
 include("ReverseAD.jl")
 include("ArrayDiff.jl")
 include("JuMP.jl")
+include("StructuredConstants.jl")
 include("MathOptAI.jl")
 include("ONNXExt.jl")
 if VERSION >= v"1.11"

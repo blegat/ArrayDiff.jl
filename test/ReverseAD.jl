@@ -566,6 +566,7 @@ function test_linearity()
                 nodes,
                 adj,
                 convert(Vector{Float64}, expr.values),
+                expr.arrays,
                 expr.block_shapes,
                 Float64[],
                 ret[1],
