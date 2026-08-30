@@ -63,6 +63,7 @@ include("mathoptinterface_api.jl")
 include("model.jl")
 include("parse.jl")
 include("evaluator.jl")
+include("print.jl")
 
 include("array_nonlinear_function.jl")
 include("parse_moi.jl")
