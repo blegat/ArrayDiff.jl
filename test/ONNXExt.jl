@@ -55,6 +55,14 @@ function _attr_int(name::String, i::Integer)
     return ONNX.AttributeProto(name = name, i = Int64(i), var"#type" = AT.INT)
 end
 
+function _attr_ints(name::String, ints::AbstractVector{<:Integer})
+    return ONNX.AttributeProto(
+        name = name,
+        ints = Int64[Int64(i) for i in ints],
+        var"#type" = AT.INTS,
+    )
+end
+
 function _attr_tensor(name::String, t::ONNX.TensorProto)
     return ONNX.AttributeProto(name = name, t = t, var"#type" = AT.TENSOR)
 end
@@ -780,6 +788,111 @@ function test_float32_sigmoid_and_gemm()
         ) .^ 2,
     )
     @test val ≈ fjulia(xv) rtol = 1.0f-5
+end
+
+# Transpose on a variable matrix input followed by matmul against itself:
+# y = Wᵀ * v, where W is the (2,3) variable matrix and v is a constant.
+# f(W) = ‖y‖² = ‖Wᵀ v‖² ⇒ ∂f/∂W = 2 v (Wᵀ v)ᵀ = 2 v vᵀ W.
+function test_transpose_variable_matrix()
+    vars = [MOI.VariableIndex(i) for i in 1:6]
+    var_mat = collect(reshape(vars, 2, 3))
+    v = [0.4, -1.0]
+    init = _make_tensor("v", v)
+    n1 = _make_node(
+        "Transpose",
+        ["x"],
+        ["xT"];
+        attrs = [_attr_ints("perm", [1, 0])],
+    )
+    n2 = _make_node("MatMul", ["xT", "v"], ["y"])
+    proto = _build_model([n1, n2], ["x"], ["y"]; initializers = [init])
+    xv = [0.3, -0.7, 1.1, 2.0, 0.5, -1.5]
+    val, g = _eval_with_gradient(proto, vars, xv; input = var_mat)
+    fjulia(x) = sum((reshape(x, 2, 3)' * v) .^ 2)
+    @test val ≈ fjulia(xv)
+    @test g ≈ ForwardDiff.gradient(fjulia, xv)
+end
+
+# Transpose with no `perm` attribute (defaults to reverse-all): for 2-D this
+# is the (1,0) swap, same as explicit perm=[1,0].
+function test_transpose_default_perm()
+    vars = [MOI.VariableIndex(i) for i in 1:6]
+    var_mat = collect(reshape(vars, 2, 3))
+    v = [0.4, -1.0]
+    init = _make_tensor("v", v)
+    n1 = _make_node("Transpose", ["x"], ["xT"])  # no perm attr
+    n2 = _make_node("MatMul", ["xT", "v"], ["y"])
+    proto = _build_model([n1, n2], ["x"], ["y"]; initializers = [init])
+    xv = [0.3, -0.7, 1.1, 2.0, 0.5, -1.5]
+    val, g = _eval_with_gradient(proto, vars, xv; input = var_mat)
+    fjulia(x) = sum((reshape(x, 2, 3)' * v) .^ 2)
+    @test val ≈ fjulia(xv)
+    @test g ≈ ForwardDiff.gradient(fjulia, xv)
+end
+
+# Transpose with perm=[0,1] is a no-op; the result is `x` unchanged.
+function test_transpose_identity_perm()
+    vars = [MOI.VariableIndex(i) for i in 1:6]
+    var_mat = collect(reshape(vars, 2, 3))
+    n1 = _make_node(
+        "Transpose",
+        ["x"],
+        ["y"];
+        attrs = [_attr_ints("perm", [0, 1])],
+    )
+    proto = _build_model([n1], ["x"], ["y"])
+    xv = [0.3, -0.7, 1.1, 2.0, 0.5, -1.5]
+    val, g = _eval_with_gradient(proto, vars, xv; input = var_mat)
+    fjulia(x) = sum(x .^ 2)
+    @test val ≈ fjulia(xv)
+    @test g ≈ ForwardDiff.gradient(fjulia, xv)
+end
+
+# Transpose of a constant initializer: folded at conversion time. Verify the
+# graph still produces the correct value/gradient.
+function test_transpose_constant_initializer()
+    vars = [MOI.VariableIndex(i) for i in 1:3]
+    W = [
+        0.4 -0.1 0.5;
+        1.2 -0.3 0.7
+    ]  # (2, 3)
+    init = _make_tensor("W", W)
+    n1 = _make_node(
+        "Transpose",
+        ["W"],
+        ["Wt"];
+        attrs = [_attr_ints("perm", [1, 0])],
+    )
+    n2 = _make_node("MatMul", ["Wt", "x"], ["y"])  # (3,2) * (2,) = (3,)
+    proto = _build_model([n1, n2], ["x"], ["y"]; initializers = [init])
+    xv = [0.6, -0.4]
+    # Vec × Mat path: ArrayDiff routes Vec × Mat through a transpose trick that
+    # requires the matrix to be constant — `Wt` here is constant after folding.
+    # But MatMul Mat × Vec needs Wt as the LHS and x as the RHS. Since `x` is
+    # the variable vector, `Wt * x` is (3,2) × (2,) — Mat × Vec, which is fine.
+    val, g = _eval_with_gradient(proto, vars[1:2], xv)
+    fjulia(x) = sum((W' * x) .^ 2)
+    @test val ≈ fjulia(xv)
+    @test g ≈ ForwardDiff.gradient(fjulia, xv)
+end
+
+# Higher-dim Transpose isn't supported.
+function test_transpose_3d_errors()
+    init = _make_tensor("t", reshape(collect(1.0:6.0), 2, 3))
+    # Pretend the test input is 3-D by lying about it. Easier: try transposing
+    # a graph input declared as a 3-D Matrix-of-vars-shaped wrapping — but the
+    # wrapper itself rejects 3-D inputs. So instead exercise the path via the
+    # error inside `_convert_transpose` directly using a fake env entry.
+    ext = Base.get_extension(ArrayDiff, :ArrayDiffONNXExt)
+    fake_env = Dict{String,Tuple{Any,Tuple{Vararg{Int}}}}()
+    fake_env["x"] = (zeros(2, 2, 2), (2, 2, 2))
+    node = _make_node(
+        "Transpose",
+        ["x"],
+        ["y"];
+        attrs = [_attr_ints("perm", [2, 1, 0])],
+    )
+    @test_throws ErrorException ext._convert_transpose(node, fake_env)
 end
 
 # Multi-output graph: result is keyed by output name.

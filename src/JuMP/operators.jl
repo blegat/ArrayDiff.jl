@@ -80,6 +80,23 @@ function Base.broadcasted(
     return Base.broadcasted(^, x, y)
 end
 
+function _transpose(x::AbstractJuMPArray{T,N}) where {T,N}
+    V = JuMP.variable_ref_type(x)
+    if N == 1
+        return GenericArrayExpr{V,2}(:transpose, Any[x], (1, size(x, 1)), false)
+    end
+    @assert N == 2 "`transpose` only supports 1-D and 2-D arrays"
+    return GenericArrayExpr{V,2}(
+        :transpose,
+        Any[x],
+        (size(x, 2), size(x, 1)),
+        false,
+    )
+end
+
+LinearAlgebra.transpose(x::AbstractJuMPArray) = _transpose(x)
+LinearAlgebra.adjoint(x::AbstractJuMPArray) = _transpose(x)
+
 function Base.sum(x::AbstractJuMPArray; dims = Colon())
     V = JuMP.variable_ref_type(x)
     if dims === Colon()

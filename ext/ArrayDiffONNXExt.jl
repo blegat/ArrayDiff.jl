@@ -28,6 +28,11 @@ function _attr_int(node, name; default::Int)
     return a === nothing ? default : Int(a.i)
 end
 
+function _attr_ints(node, name; default::Union{Nothing,Vector{Int}} = nothing)
+    a = _find_attr(node, name)
+    return a === nothing ? default : Int[Int(x) for x in a.ints]
+end
+
 function _attr_float(::Type{T}, node, name; default) where {T<:Real}
     a = _find_attr(node, name)
     return a === nothing ? T(default) : T(a.f)
@@ -183,6 +188,9 @@ function _convert_node(
         x, sx = env[node.input[1]]
         return (_bcall(:-, Any[zero(T), x], sx), sx)
 
+    elseif op == "Transpose"
+        return _convert_transpose(node, env)
+
     elseif op == "MatMul"
         return _convert_matmul(node, env)
 
@@ -220,6 +228,34 @@ function _binop_broadcast(op::Symbol, node, env)
     b, sb = env[node.input[2]]
     s = _broadcast_shape(sa, sb)
     return (_bcall(op, Any[a, b], s), s)
+end
+
+function _convert_transpose(node, env)
+    x, sx = env[node.input[1]]
+    # ONNX `perm` is 0-indexed and defaults to reversing all axes.
+    perm = _attr_ints(node, "perm")
+    if length(sx) == 0
+        return (x, sx)
+    elseif length(sx) == 1
+        # 1-D tensor: transpose is a no-op on shape and on data.
+        return (x, sx)
+    elseif length(sx) == 2
+        # Only the two 2-D permutations are valid.
+        if perm === nothing || perm == [1, 0]
+            if x isa AbstractMatrix{<:Real}
+                # Constant input: just permute the values at conversion time.
+                return (collect(permutedims(x)), (sx[2], sx[1]))
+            end
+            new_shape = (sx[2], sx[1])
+            return (_call(:transpose, Any[x], new_shape), new_shape)
+        elseif perm == [0, 1]
+            return (x, sx)
+        else
+            error("Transpose: unsupported perm $perm for 2-D input")
+        end
+    else
+        error("Transpose: tensors with ndim > 2 are not supported (got $sx)")
+    end
 end
 
 function _convert_matmul(node, env)
