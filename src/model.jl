@@ -3,6 +3,9 @@
 
 function set_objective(model::Model, obj)
     model.objective = parse_expression(model, obj)
+    if model.objective_sense == MOI.FEASIBILITY_SENSE
+        model.objective_sense = MOI.MIN_SENSE
+    end
     return
 end
 
