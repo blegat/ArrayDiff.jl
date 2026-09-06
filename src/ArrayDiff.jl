@@ -88,14 +88,21 @@ model(::Mode{S}) where {S} = Model{eltype(S)}()
 
 # Hook so that solvers using `MOI.Nonlinear.model(backend)` (for example,
 # NLopt and NLPModelsJuMP) receive an ArrayDiff model for an ArrayDiff mode.
-# ArrayDiff's model natively parses scalar and array nonlinear functions, but
-# not the `MOI.VectorNonlinearOracle` set, hence no oracle layer either.
-Nonlinear.model(mode::Mode) = model(mode)
+# ArrayDiff handles scalar nonlinear functions. The outer layers own quadratic
+# functions, variables, bounds, parameters, and vector nonlinear oracles.
+function Nonlinear.model(mode::Mode)
+    return Nonlinear.ModelWithQuad(
+        Nonlinear.ModelWithOracles(model(mode)),
+    )
+end
 
 # Extend MOI.Nonlinear.set_objective so that solvers calling
 # MOI.Nonlinear.set_objective(arraydiff_model, snf) dispatch here.
 function Nonlinear.set_objective(model::Model, obj::MOI.ScalarNonlinearFunction)
     model.objective = parse_expression(model, obj)
+    if model.objective_sense == MOI.FEASIBILITY_SENSE
+        model.objective_sense = MOI.MIN_SENSE
+    end
     return
 end
 
@@ -103,6 +110,99 @@ function Nonlinear.set_objective(model::Model, ::Nothing)
     model.objective = nothing
     return
 end
+
+Nonlinear._parameter_values(model::Model) = model.parameters
+Nonlinear._has_nonlinear_data(model::Model) =
+    model.objective !== nothing || !isempty(model.constraints)
+Nonlinear._is_nonlinear_input(
+    ::Model{T},
+    ::MOI.ScalarNonlinearFunction,
+    ::Union{
+        MOI.LessThan{T},
+        MOI.GreaterThan{T},
+        MOI.EqualTo{T},
+        MOI.Interval{T},
+    },
+) where {T} = true
+Nonlinear._is_nonlinear_objective(
+    ::Model,
+    ::MOI.ScalarNonlinearFunction,
+) = true
+
+MOI.supports_incremental_interface(::Model) = true
+MOI.supports(::Model, ::MOI.ObjectiveSense) = true
+MOI.get(model::Model, ::MOI.ObjectiveSense) = model.objective_sense
+function MOI.set(model::Model, ::MOI.ObjectiveSense, sense)
+    model.objective_sense = sense
+    return
+end
+MOI.supports(
+    ::Model,
+    ::MOI.ObjectiveFunction{MOI.ScalarNonlinearFunction},
+) = true
+function MOI.set(
+    model::Model,
+    ::MOI.ObjectiveFunction{MOI.ScalarNonlinearFunction},
+    f::MOI.ScalarNonlinearFunction,
+)
+    return Nonlinear.set_objective(model, f)
+end
+
+function MOI.supports_constraint(
+    ::Model{T},
+    ::Type{MOI.ScalarNonlinearFunction},
+    ::Type{S},
+) where {
+    T,
+    S<:Union{
+        MOI.LessThan{T},
+        MOI.GreaterThan{T},
+        MOI.EqualTo{T},
+        MOI.Interval{T},
+    },
+}
+    return true
+end
+function MOI.add_constraint(
+    model::Model{T},
+    f::MOI.ScalarNonlinearFunction,
+    s::S,
+) where {
+    T,
+    S<:Union{
+        MOI.LessThan{T},
+        MOI.GreaterThan{T},
+        MOI.EqualTo{T},
+        MOI.Interval{T},
+    },
+}
+    ci = add_constraint(model, f, s)
+    return MOI.ConstraintIndex{typeof(f),S}(ci.value)
+end
+function MOI.is_valid(
+    model::Model{T},
+    ci::MOI.ConstraintIndex{MOI.ScalarNonlinearFunction,S},
+) where {
+    T,
+    S<:Union{
+        MOI.LessThan{T},
+        MOI.GreaterThan{T},
+        MOI.EqualTo{T},
+        MOI.Interval{T},
+    },
+}
+    return haskey(model.constraints, ConstraintIndex(ci.value))
+end
+
+function Nonlinear.constraint_rows(
+    model::Model,
+    ci::MOI.ConstraintIndex{MOI.ScalarNonlinearFunction,<:MOI.AbstractScalarSet},
+)
+    row = findfirst(==(ConstraintIndex(ci.value)), keys(model.constraints))
+    return [something(row)]
+end
+Nonlinear.constraint_dual_starts(model::Model{T}) where {T} =
+    fill(nothing, length(model.constraints))
 
 # Create an ArrayDiff Evaluator from an ArrayDiff Model.
 function Evaluator(
@@ -123,6 +223,12 @@ function Nonlinear.Evaluator(
 )
     return Evaluator(model, mode, ordered_variables)
 end
+
+function Nonlinear._constraint_bounds(evaluator::Evaluator)
+    return [_bound(c.set) for (_, c) in evaluator.model.constraints]
+end
+Nonlinear._has_objective(evaluator::Evaluator) =
+    evaluator.model.objective !== nothing
 
 include("JuMP/JuMP.jl")
 

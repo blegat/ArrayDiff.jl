@@ -30,7 +30,8 @@ end
 
 function MOI.eval_objective(evaluator::Evaluator, x)
     start = time()
-    obj = MOI.eval_objective(evaluator.backend, x)
+    obj = Nonlinear._objective_sign(evaluator.model.objective_sense) *
+          MOI.eval_objective(evaluator.backend, x)
     evaluator.eval_objective_timer += time() - start
     return obj
 end
@@ -38,6 +39,7 @@ end
 function MOI.eval_objective_gradient(evaluator::Evaluator, g, x)
     start = time()
     MOI.eval_objective_gradient(evaluator.backend, g, x)
+    g .*= Nonlinear._objective_sign(evaluator.model.objective_sense)
     evaluator.eval_objective_gradient_timer += time() - start
     return
 end
@@ -113,7 +115,8 @@ end
 
 function MOI.eval_hessian_lagrangian(evaluator::Evaluator, H, x, σ, μ)
     start = time()
-    MOI.eval_hessian_lagrangian(evaluator.backend, H, x, σ, μ)
+    sign = Nonlinear._objective_sign(evaluator.model.objective_sense)
+    MOI.eval_hessian_lagrangian(evaluator.backend, H, x, sign * σ, μ)
     evaluator.eval_hessian_lagrangian_timer += time() - start
     return
 end
@@ -146,7 +149,15 @@ function MOI.eval_hessian_lagrangian_product(
     μ,
 )
     start = time()
-    MOI.eval_hessian_lagrangian_product(evaluator.backend, H, x, v, σ, μ)
+    sign = Nonlinear._objective_sign(evaluator.model.objective_sense)
+    MOI.eval_hessian_lagrangian_product(
+        evaluator.backend,
+        H,
+        x,
+        v,
+        sign * σ,
+        μ,
+    )
     evaluator.eval_hessian_lagrangian_timer += time() - start
     return
 end
