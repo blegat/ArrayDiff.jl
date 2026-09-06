@@ -2,6 +2,7 @@ include("ReverseAD.jl")
 include("ArrayDiff.jl")
 include("JuMP.jl")
 include("MathOptAI.jl")
+include("IpoptBackend.jl")
 include("ONNXExt.jl")
 if VERSION >= v"1.11"
     # [sources] not supported on Julia v1.10

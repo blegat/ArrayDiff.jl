@@ -205,7 +205,7 @@ It has the following fields:
  * `parameters::Vector{Float64}` : holds the current values of the parameters.
  * `operators::OperatorRegistry` : stores the operators used in the model.
 """
-mutable struct Model{T}
+mutable struct Model{T} <: MOI.ModelLike
     objective::Union{Nothing,Expression{T}}
     # Vector residual for nonlinear least-squares objectives. When set, callers
     # can query its value, `J*v`, `J'*v`, etc. via the evaluator.
@@ -214,6 +214,7 @@ mutable struct Model{T}
     constraints::OrderedCollections.OrderedDict{ConstraintIndex,Constraint{T}}
     parameters::Vector{T}
     operators::OperatorRegistry
+    objective_sense::MOI.OptimizationSense
     # This is a private field, used only to increment the ConstraintIndex.
     last_constraint_index::Int64
     function Model{T}() where {T}
@@ -224,6 +225,7 @@ mutable struct Model{T}
             OrderedCollections.OrderedDict{ConstraintIndex,Constraint{T}}(),
             T[],
             OperatorRegistry(),
+            MOI.FEASIBILITY_SENSE,
             0,
         )
     end
