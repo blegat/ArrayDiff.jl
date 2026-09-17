@@ -1370,6 +1370,51 @@ function test_hessian_reinterpret_unsafe()
     return
 end
 
+function test_hessian_min()
+    x, y = MOI.VariableIndex.(1:2)
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(min($x^2, $y^2)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    MOI.initialize(evaluator, [:Grad, :Hess])
+    @test MOI.hessian_lagrangian_structure(evaluator) == [(1, 1), (2, 2)]
+    H = zeros(2)
+    MOI.eval_hessian_lagrangian(evaluator, H, [1.1, 2.3], 1.5, Float64[])
+    @test isapprox(H, [3.0, 0.0])
+    MOI.eval_hessian_lagrangian(evaluator, H, [2.3, 1.5], 1.2, Float64[])
+    @test isapprox(H, [0.0, 2.4])
+    return
+end
+
+function test_hessian_max()
+    x, y = MOI.VariableIndex.(1:2)
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(max($x^2, $y^2)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    MOI.initialize(evaluator, [:Grad, :Hess])
+    @test MOI.hessian_lagrangian_structure(evaluator) == [(1, 1), (2, 2)]
+    H = zeros(2)
+    MOI.eval_hessian_lagrangian(evaluator, H, [1.1, 2.3], 1.5, Float64[])
+    @test isapprox(H, [0.0, 3.0])
+    MOI.eval_hessian_lagrangian(evaluator, H, [2.3, 1.5], 1.2, Float64[])
+    @test isapprox(H, [2.4, 0.0])
+    return
+end
+
+function test_hessian_ifelse()
+    x, y = MOI.VariableIndex.(1:2)
+    model = ArrayDiff.Model()
+    ArrayDiff.set_objective(model, :(ifelse($x < $y, $x^2, $y^2)))
+    evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), [x, y])
+    MOI.initialize(evaluator, [:Grad, :Hess])
+    @test MOI.hessian_lagrangian_structure(evaluator) == [(1, 1), (2, 2)]
+    H = zeros(2)
+    MOI.eval_hessian_lagrangian(evaluator, H, [1.1, 2.3], 1.5, Float64[])
+    @test isapprox(H, [3.0, 0.0])
+    MOI.eval_hessian_lagrangian(evaluator, H, [2.3, 1.5], 1.2, Float64[])
+    @test isapprox(H, [0.0, 2.4])
+    return
+end
+
 end  # module
 
 TestReverseAD.runtests()
