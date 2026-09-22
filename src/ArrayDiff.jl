@@ -112,23 +112,6 @@ function Nonlinear.set_objective(model::Model, ::Nothing)
 end
 
 Nonlinear._parameter_values(model::Model) = model.parameters
-Nonlinear._has_nonlinear_data(model::Model) =
-    model.objective !== nothing || !isempty(model.constraints)
-Nonlinear._is_nonlinear_input(
-    ::Model{T},
-    ::MOI.ScalarNonlinearFunction,
-    ::Union{
-        MOI.LessThan{T},
-        MOI.GreaterThan{T},
-        MOI.EqualTo{T},
-        MOI.Interval{T},
-    },
-) where {T} = true
-Nonlinear._is_nonlinear_objective(
-    ::Model,
-    ::MOI.ScalarNonlinearFunction,
-) = true
-
 MOI.supports_incremental_interface(::Model) = true
 MOI.supports(::Model, ::MOI.ObjectiveSense) = true
 MOI.get(model::Model, ::MOI.ObjectiveSense) = model.objective_sense
@@ -194,12 +177,22 @@ function MOI.is_valid(
     return haskey(model.constraints, ConstraintIndex(ci.value))
 end
 
-function Nonlinear.constraint_rows(
+function MOI.Utilities.rows(
     model::Model,
     ci::MOI.ConstraintIndex{MOI.ScalarNonlinearFunction,<:MOI.AbstractScalarSet},
 )
     row = findfirst(==(ConstraintIndex(ci.value)), keys(model.constraints))
-    return [something(row)]
+    return something(row)
+end
+function MOI.Utilities.constraint_bounds(model::Model{T}) where {T}
+    lower = T[]
+    upper = T[]
+    for constraint in values(model.constraints)
+        bound = _bound(constraint.set)
+        push!(lower, bound.lower)
+        push!(upper, bound.upper)
+    end
+    return MOI.Utilities.Hyperrectangle(lower, upper)
 end
 Nonlinear.constraint_dual_starts(model::Model{T}) where {T} =
     fill(nothing, length(model.constraints))
@@ -223,12 +216,6 @@ function Nonlinear.Evaluator(
 )
     return Evaluator(model, mode, ordered_variables)
 end
-
-function Nonlinear._constraint_bounds(evaluator::Evaluator)
-    return [_bound(c.set) for (_, c) in evaluator.model.constraints]
-end
-Nonlinear._has_objective(evaluator::Evaluator) =
-    evaluator.model.objective !== nothing
 
 include("JuMP/JuMP.jl")
 
