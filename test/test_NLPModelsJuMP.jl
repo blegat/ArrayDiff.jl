@@ -60,6 +60,20 @@ function test_neural_tronls()
     return _test_neural_nlpmodels_jump(JSOSolvers.TronSolverNLS)
 end
 
+function test_arraydiff_backend()
+    model = Model(NLPModelsJuMP.Optimizer)
+    set_attribute(model, "solver", JSOSolvers.LBFGSSolver)
+    mode = ArrayDiff.Mode()
+    set_attribute(model, MOI.AutomaticDifferentiationBackend(), mode)
+    @variable(model, x, start = 0.5)
+    @objective(model, Min, (sin(x) - sin(1.0))^2)
+    optimize!(model)
+    @test termination_status(model) == MOI.LOCALLY_SOLVED
+    @test value(x) ≈ 1.0 atol = 1e-4
+    @test objective_value(model) ≈ 0.0 atol = 1e-8
+    return
+end
+
 end
 
 TestWithNLPModelsJuMP.runtests()
