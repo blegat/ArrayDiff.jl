@@ -26,6 +26,7 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [sources]
 ArrayDiff = {path = ".."}
+MathOptInterface = {rev = "bl/qp_block_data"}
 NLPModelsJuMP = {rev = "bl/arraydiff", url = "https://github.com/JuliaSmoothOptimizers/NLPModelsJuMP.jl"}
 NLopt = {rev = "bl/diff_backend", url = "https://github.com/jump-dev/NLopt.jl/"}
 
