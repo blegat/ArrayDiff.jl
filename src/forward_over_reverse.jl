@@ -65,7 +65,6 @@ function _eval_hessian(
         )
     end
     # TODO(odow): consider reverting to a view.
-    N = size(ex.seed_matrix, 1)
     output_slice = _UnsafeVectorView{Float64}(
         nzcount,
         length(ex.hess_I),
@@ -76,7 +75,6 @@ function _eval_hessian(
         output_slice,
         ex.seed_matrix,
         ex.rinfo,
-        d.output_ϵ,
     )
     for i in 1:length(output_slice)
         output_slice[i] *= scale

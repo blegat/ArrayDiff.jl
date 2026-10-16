@@ -441,7 +441,7 @@ function test_coloring_end_to_end_hessian_coloring_and_recovery()
         @test R == [1.0 0.0; 0.0 1.0]
         matmat = hess * R
         V = zeros(length(I))
-        ArrayDiff._recover_from_matmat!(colptr, V, matmat, rinfo, zeros(2))
+        ArrayDiff._recover_from_matmat!(colptr, V, matmat, rinfo)
         @test V == expected_V
     end
     return
@@ -466,6 +466,49 @@ function test_hessian_structurally_zero_diagonal()
             @test H == expected
             MOI.eval_hessian_lagrangian(evaluator, H, values, 1.5, Float64[])
             @test H == 1.5 .* expected
+        end
+    end
+    return
+end
+
+function test_coloring_lower_triangular_recovery()
+    for order in (ArrayDiff.SMC.NaturalOrder(), ArrayDiff.SMC.LargestFirst())
+        algorithm = ArrayDiff.SMC.GreedyColoringAlgorithm(
+            order;
+            decompression = :substitution,
+        )
+        for edges in (
+            Set([(2, 4), (4, 7), (7, 9)]),
+            Set([(4, 2), (2, 7), (9, 2), (7, 7)]),
+            Set([(4, 2), (4, 7), (7, 9), (9, 2), (4, 4), (9, 9)]),
+            Set([(2, 4), (4, 2), (2, 2)]),
+            Set([(2, 2), (9, 9)]),
+            Set{Tuple{Int,Int}}(),
+        )
+            H = zeros(9, 9)
+            for (i, j) in edges
+                H[i, j] = H[j, i] = 10 * min(i, j) + max(i, j)
+            end
+            colptr, I, J, result =
+                ArrayDiff._hessian_color_preprocess(edges, 9, algorithm)
+            expected_structure = sort!(
+                unique([(max(i, j), min(i, j)) for (i, j) in edges]);
+                by = reverse,
+            )
+            @test collect(zip(I, J)) == expected_structure
+            R = ArrayDiff._seed_matrix(result)
+            ArrayDiff._prepare_seed_matrix!(R, result)
+            local_indices = result.local_indices
+            compressed = H[local_indices, local_indices] * R
+            V = fill(NaN, length(I))
+            ArrayDiff._recover_from_matmat!(colptr, V, compressed, result)
+            @test V == [H[i, j] for (i, j) in expected_structure]
+            @test 0 == @allocated ArrayDiff._recover_from_matmat!(
+                colptr,
+                V,
+                compressed,
+                result,
+            )
         end
     end
     return
