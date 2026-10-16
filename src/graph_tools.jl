@@ -244,7 +244,10 @@ function _classify_linearity(
 end
 
 """
-    _compute_gradient_sparsity!(indices::Coloring.IndexedSet, f)
+    _compute_gradient_sparsity!(
+        indices::MOI.Nonlinear.ReverseAD.Coloring.IndexedSet,
+        f,
+    )
 
 Compute the sparsity pattern of the gradient of an expression (that is, a list
 of which variable indices are present).
@@ -255,7 +258,10 @@ For `NODE_VARIABLE_BLOCK` nodes, the block's length is read from `f.sizes`
 (via `_length`), and the block contributes that many consecutive variable
 indices starting at `nodes[k].index`.
 """
-function _compute_gradient_sparsity!(indices::Coloring.IndexedSet, f)
+function _compute_gradient_sparsity!(
+    indices::MOI.Nonlinear.ReverseAD.Coloring.IndexedSet,
+    f,
+)
     for (k, node) in enumerate(f.nodes)
         if node.type == NODE_VARIABLE
             push!(indices, node.index)

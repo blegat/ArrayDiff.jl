@@ -12,10 +12,11 @@ import LinearAlgebra
 import MathOptInterface as MOI
 const Nonlinear = MOI.Nonlinear
 import SparseArrays
+import SparseMatrixColorings as SMC
 import OrderedCollections
 
 """
-    Mode{S}() <: MOI.Nonlinear.AbstractAutomaticDifferentiation
+    Mode{S}([coloring_algorithm]) <: MOI.Nonlinear.AbstractAutomaticDifferentiation
 
 Fork of `MOI.Nonlinear.SparseReverseMode` to add array support.
 
@@ -24,9 +25,26 @@ partials, and reverse storage of each subexpression). It must satisfy
 `S<:AbstractVector{<:Real}`. Defaults to `Vector{Float64}`. Pass a different
 `S` (for example `Vector{Float32}` or `CuVector{Float64}`) to run AD in
 another precision or keep the tape on a GPU.
+
+The optional `coloring_algorithm` defaults to SMC's greedy coloring with
+substitution decompression.
 """
-struct Mode{S<:AbstractVector{<:Real}} <:
-       MOI.Nonlinear.AbstractAutomaticDifferentiation end
+struct Mode{S<:AbstractVector{<:Real},C<:SMC.GreedyColoringAlgorithm} <:
+       MOI.Nonlinear.AbstractAutomaticDifferentiation
+    coloring_algorithm::C
+end
+
+function Mode{S}(
+    coloring_algorithm::SMC.GreedyColoringAlgorithm = SMC.GreedyColoringAlgorithm(;
+        decompression = :substitution,
+    ),
+) where {S<:AbstractVector{<:Real}}
+    return Mode{S,typeof(coloring_algorithm)}(coloring_algorithm)
+end
+
+function Mode(coloring_algorithm::SMC.GreedyColoringAlgorithm)
+    return Mode{Vector{Float64}}(coloring_algorithm)
+end
 
 Mode() = Mode{Vector{Float64}}()
 
@@ -49,7 +67,7 @@ import NaNMath:
     pow,
     sqrt
 
-include("Coloring/Coloring.jl")
+include("coloring.jl")
 include("graph_tools.jl")
 include("sizes.jl")
 include("univariate_expressions.jl")
@@ -101,10 +119,17 @@ end
 # Create an ArrayDiff Evaluator from an ArrayDiff Model.
 function Evaluator(
     model::ArrayDiff.Model,
-    ::Mode{S},
+    mode::Mode{S},
     ordered_variables::Vector{MOI.VariableIndex},
 ) where {S<:AbstractVector{<:Real}}
-    return Evaluator(model, NLPEvaluator{eltype(S),S}(model, ordered_variables))
+    return Evaluator(
+        model,
+        NLPEvaluator{eltype(S),S}(
+            model,
+            ordered_variables,
+            mode.coloring_algorithm,
+        ),
+    )
 end
 
 # Called by solvers via MOI.Nonlinear.Evaluator(nlp_model, ad_backend, vars).
