@@ -417,22 +417,57 @@ function test_coloring_end_to_end_hessian_coloring_and_recovery()
     # Test the new coloring API through the compatibility layer
     coloring_algorithm =
         ArrayDiff.SMC.GreedyColoringAlgorithm(; decompression = :substitution)
-    colptr, I, J, rinfo = ArrayDiff._hessian_color_preprocess(
-        Set([(1, 2)]),
-        2,
-        coloring_algorithm,
-        MOI.Nonlinear.ReverseAD.Coloring.IndexedSet(0),
+    for (edges, hess, expected_I, expected_J, expected_V) in (
+        (
+            Set([(1, 1), (1, 2), (2, 2)]),
+            [3.4 2.1; 2.1 1.3],
+            [1, 2, 2],
+            [1, 1, 2],
+            [3.4, 2.1, 1.3],
+        ),
+        (Set([(1, 2)]), [0.0 2.1; 2.1 0.0], [2], [1], [2.1]),
+        (Set([(1, 2), (2, 2)]), [0.0 2.1; 2.1 1.3], [2, 2], [1, 2], [2.1, 1.3]),
     )
-    R = ArrayDiff._seed_matrix(rinfo)
-    ArrayDiff._prepare_seed_matrix!(R, rinfo)
-    @test I == [1, 2, 2]
-    @test J == [1, 1, 2]
-    @test R == [1.0 0.0; 0.0 1.0]
-    hess = [3.4 2.1; 2.1 1.3]
-    matmat = hess * R
-    V = zeros(3)
-    ArrayDiff._recover_from_matmat!(colptr, V, matmat, rinfo, zeros(3))
-    @test V == [3.4, 2.1, 1.3]
+        colptr, I, J, rinfo = ArrayDiff._hessian_color_preprocess(
+            edges,
+            2,
+            coloring_algorithm,
+            MOI.Nonlinear.ReverseAD.Coloring.IndexedSet(0),
+        )
+        R = ArrayDiff._seed_matrix(rinfo)
+        ArrayDiff._prepare_seed_matrix!(R, rinfo)
+        @test I == expected_I
+        @test J == expected_J
+        @test R == [1.0 0.0; 0.0 1.0]
+        matmat = hess * R
+        V = zeros(length(I))
+        ArrayDiff._recover_from_matmat!(colptr, V, matmat, rinfo, zeros(2))
+        @test V == expected_V
+    end
+    return
+end
+
+function test_hessian_structurally_zero_diagonal()
+    variables = MOI.VariableIndex.(1:4)
+    x, y = variables[2], variables[4]
+    for (expr, structure) in
+        ((:($x * $y), [(4, 2)]), (:($x * $y + $y^3), [(4, 2), (4, 4)]))
+        model = ArrayDiff.Model()
+        ArrayDiff.set_objective(model, expr)
+        evaluator = ArrayDiff.Evaluator(model, ArrayDiff.Mode(), variables)
+        MOI.initialize(evaluator, [:Hess])
+        @test MOI.hessian_objective_structure(evaluator) == structure
+        @test MOI.hessian_lagrangian_structure(evaluator) == structure
+        for y_value in (0.0, 2.0)
+            values = [0.0, 3.0, 0.0, y_value]
+            expected = length(structure) == 1 ? [1.0] : [1.0, 6 * y_value]
+            H = fill(NaN, length(structure))
+            MOI.eval_hessian_objective(evaluator, H, values)
+            @test H == expected
+            MOI.eval_hessian_lagrangian(evaluator, H, values, 1.5, Float64[])
+            @test H == 1.5 .* expected
+        end
+    end
     return
 end
 
@@ -1309,9 +1344,8 @@ function test_hessian_reinterpret_unsafe()
     H = zeros(length(H_s))
     x_v = ones(5)
     MOI.eval_hessian_lagrangian(evaluator, H, x_v, 0.0, [1.0, 1.0])
-    @test count(isapprox.(H, 1.0; atol = 1e-8)) == 3
-    @test count(isapprox.(H, 0.0; atol = 1e-8)) == 5
-    @test sort(H_s[round.(Bool, H)]) == [(3, 1), (3, 2), (5, 4)]
+    @test H ≈ ones(3)
+    @test sort(H_s) == [(3, 1), (3, 2), (5, 4)]
     return
 end
 

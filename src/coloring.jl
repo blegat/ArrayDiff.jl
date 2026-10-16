@@ -33,7 +33,7 @@ end
     )
 
 `edgelist` contains the nonzeros in the Hessian, *including* nonzeros on the
-diagonal.
+diagonal. Diagonal entries absent from `edgelist` are not added to the pattern.
 
 Returns `(colptr, I, J, result)` where `colptr`, `I` and `J` define the lower
 triangular CSC sparsity structure of the Hessian (in global variable indices),
@@ -48,10 +48,13 @@ function _hessian_color_preprocess(
     resize!(seen_idx, num_total_var)
     # Collect off-diagonal lower-triangular entries (local coords, filled later)
     I_off, J_off = Int[], Int[]
+    diagonal_indices = Int[]
     for (ei, ej) in edgelist
         push!(seen_idx, ei)
         push!(seen_idx, ej)
-        if ei != ej
+        if ei == ej
+            push!(diagonal_indices, ei)
+        else
             # Store in lower triangular format: row > col
             push!(I_off, max(ei, ej))
             push!(J_off, min(ei, ej))
@@ -72,16 +75,17 @@ function _hessian_color_preprocess(
 
     n = length(local_indices)
 
-    # Build full symmetric matrix: both (i,j) and (j,i) for off-diagonal, plus diagonal
+    # Build the full symmetric pattern, keeping only the supplied diagonal.
     I_full, J_full = Int[], Int[]
     for k in eachindex(I_off)
-        push!(I_full, I_off[k]);
+        push!(I_full, I_off[k])
         push!(J_full, J_off[k])  # lower
-        push!(I_full, J_off[k]);
+        push!(I_full, J_off[k])
         push!(J_full, I_off[k])  # upper (transpose)
     end
-    for k in 1:n
-        push!(I_full, k);
+    for i in diagonal_indices
+        k = global_to_local_idx[i]
+        push!(I_full, k)
         push!(J_full, k)  # diagonal
     end
     mat_sym =
