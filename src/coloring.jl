@@ -5,8 +5,8 @@
 # in the LICENSE.md file or at https://opensource.org/licenses/MIT.
 
 """
-    struct ColoringResult
-        result::SMC.AbstractColoringResult
+    struct ColoringResult{R<:SMC.AbstractColoringResult}
+        result::R
         local_indices::Vector{Int}  # map from local to global indices
         full_colptr::Vector{Int}    # colptr of the full symmetric matrix used for coloring
         lower_pos::Vector{Int}      # positions of lower-triangular entries in the full nzval
