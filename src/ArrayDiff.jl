@@ -109,9 +109,7 @@ model(::Mode{S}) where {S} = Model{eltype(S)}()
 # ArrayDiff handles scalar nonlinear functions. The outer layers own quadratic
 # functions, variables, bounds, parameters, and vector nonlinear oracles.
 function Nonlinear.model(mode::Mode)
-    return Nonlinear.ModelWithQuad(
-        Nonlinear.ModelWithOracles(model(mode)),
-    )
+    return Nonlinear.ModelWithQuad(Nonlinear.ModelWithOracles(model(mode)))
 end
 
 # Extend MOI.Nonlinear.set_objective so that solvers calling
@@ -130,6 +128,9 @@ function Nonlinear.set_objective(model::Model, ::Nothing)
 end
 
 Nonlinear._parameter_values(model::Model) = model.parameters
+function Nonlinear._has_objective(evaluator::Evaluator)
+    return evaluator.model.objective !== nothing
+end
 MOI.supports_incremental_interface(::Model) = true
 MOI.supports(::Model, ::MOI.ObjectiveSense) = true
 MOI.get(model::Model, ::MOI.ObjectiveSense) = model.objective_sense
@@ -137,10 +138,12 @@ function MOI.set(model::Model, ::MOI.ObjectiveSense, sense)
     model.objective_sense = sense
     return
 end
-MOI.supports(
+function MOI.supports(
     ::Model,
     ::MOI.ObjectiveFunction{MOI.ScalarNonlinearFunction},
-) = true
+)
+    return true
+end
 function MOI.set(
     model::Model,
     ::MOI.ObjectiveFunction{MOI.ScalarNonlinearFunction},
@@ -155,12 +158,7 @@ function MOI.supports_constraint(
     ::Type{S},
 ) where {
     T,
-    S<:Union{
-        MOI.LessThan{T},
-        MOI.GreaterThan{T},
-        MOI.EqualTo{T},
-        MOI.Interval{T},
-    },
+    S<:Union{MOI.LessThan{T},MOI.GreaterThan{T},MOI.EqualTo{T},MOI.Interval{T}},
 }
     return true
 end
@@ -170,12 +168,7 @@ function MOI.add_constraint(
     s::S,
 ) where {
     T,
-    S<:Union{
-        MOI.LessThan{T},
-        MOI.GreaterThan{T},
-        MOI.EqualTo{T},
-        MOI.Interval{T},
-    },
+    S<:Union{MOI.LessThan{T},MOI.GreaterThan{T},MOI.EqualTo{T},MOI.Interval{T}},
 }
     ci = add_constraint(model, f, s)
     return MOI.ConstraintIndex{typeof(f),S}(ci.value)
@@ -185,19 +178,17 @@ function MOI.is_valid(
     ci::MOI.ConstraintIndex{MOI.ScalarNonlinearFunction,S},
 ) where {
     T,
-    S<:Union{
-        MOI.LessThan{T},
-        MOI.GreaterThan{T},
-        MOI.EqualTo{T},
-        MOI.Interval{T},
-    },
+    S<:Union{MOI.LessThan{T},MOI.GreaterThan{T},MOI.EqualTo{T},MOI.Interval{T}},
 }
     return haskey(model.constraints, ConstraintIndex(ci.value))
 end
 
 function MOI.Utilities.rows(
     model::Model,
-    ci::MOI.ConstraintIndex{MOI.ScalarNonlinearFunction,<:MOI.AbstractScalarSet},
+    ci::MOI.ConstraintIndex{
+        MOI.ScalarNonlinearFunction,
+        <:MOI.AbstractScalarSet,
+    },
 )
     row = findfirst(==(ConstraintIndex(ci.value)), keys(model.constraints))
     return something(row)
@@ -212,8 +203,9 @@ function MOI.Utilities.constraint_bounds(model::Model{T}) where {T}
     end
     return MOI.Utilities.Hyperrectangle(lower, upper)
 end
-Nonlinear.constraint_dual_starts(model::Model{T}) where {T} =
-    fill(nothing, length(model.constraints))
+function Nonlinear.constraint_dual_starts(model::Model{T}) where {T}
+    return fill(nothing, length(model.constraints))
+end
 
 # Create an ArrayDiff Evaluator from an ArrayDiff Model.
 function Evaluator(

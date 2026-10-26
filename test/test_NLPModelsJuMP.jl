@@ -63,6 +63,9 @@ end
 function test_arraydiff_backend()
     model = Model(NLPModelsJuMP.Optimizer)
     set_attribute(model, "solver", JSOSolvers.LBFGSSolver)
+    # The first solve compiles ArrayDiff, which can exceed the default
+    # `max_time` of 30 seconds.
+    set_attribute(model, "max_time", 600.0)
     mode = ArrayDiff.Mode()
     set_attribute(model, MOI.AutomaticDifferentiationBackend(), mode)
     @variable(model, x, start = 0.5)
