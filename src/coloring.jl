@@ -49,7 +49,6 @@ function _hessian_color_preprocess(
     end
     local_indices = sort!(collect(seen_idx))
     empty!(seen_idx)
-
     global_to_local_idx = seen_idx.nzidx # steal for storage
     for k in eachindex(local_indices)
         global_to_local_idx[local_indices[k]] = k
