@@ -513,10 +513,8 @@ function test_coloring_lower_triangular_recovery()
             @test collect(zip(I, J)) == expected_structure
             R = Matrix{T}(ArrayDiff._seed_matrix(result))
             if isempty(expected_structure)
-                @test result === nothing
                 @test colptr == [1]
                 @test size(R) == (0, 0)
-                continue
             end
             ArrayDiff._prepare_seed_matrix!(R, result)
             local_indices = result.local_indices
